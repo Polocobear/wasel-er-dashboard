@@ -1015,7 +1015,7 @@ function renderChart(force) {
   setHTML($('#chartMeta'), html`${status} <span class="muted">${t('ch.legend')}</span>`);
   if (W < 80 || H < 60) { UI.geo = null; positionHover(); return; }
 
-  const pad = { l: 36, r: 12, t: 12, b: 22 };
+  const remK = (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) / 16; const pad = { l: 36 * remK, r: 12 * remK, t: 12 * remK, b: 22 * remK };
   const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
   const nowPt = { m: 0, v: bedsBusy() / Math.max(1, S.beds.length) * 100 };
   const hist = S.occ.map(o => ({ m: (o.t - S.t) / 60, v: o.occ })).filter(o => o.m >= -60.5 && o.m < 0).concat(nowPt);
@@ -1038,14 +1038,14 @@ function renderChart(force) {
     : '';
   const xTicks = [-60, -30, 0, 15, 30];
   const xLabel = m => (m === 0 ? t('ch.now') : (m < 0 ? UI_MINUS + Math.abs(m) : '+' + m) + (m === -60 || m === 30 ? ' min' : ''));
-  const axisStyle = 'fill:var(--muted);font-size:10px;font-variant-numeric:tabular-nums';
+  const axisStyle = 'fill:var(--muted);font-size:.625rem;font-variant-numeric:tabular-nums';
 
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   const peak = fcp.length ? Math.round(Math.max(...fcp.map(o => o.v))) : null;
   svg.setAttribute('aria-label', 'Bed occupancy over the last 60 minutes and 30-minute forecast. Now ' + Math.round(nowPt.v) + '%.' +
     (peak != null ? ' Forecast peak ' + peak + '%.' : '') +
     (fc.fullIn == null ? ' No overflow forecast.' : fc.fullIn === 0 ? ' At capacity now.' : ' Full in about ' + fc.fullIn + ' minutes.'));
-  setHTML(svg, html`${grid.map(v => html`<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}" style="stroke:var(--grid);stroke-width:1"/><text x="${pad.l - 6}" y="${f1(Y(v) + 3.5)}" text-anchor="end" style="${axisStyle}">${v}%</text>`)}${xTicks.map(m => html`<text x="${f1(X(m))}" y="${H - 6}" text-anchor="${m === -60 ? 'start' : m === 30 ? 'end' : 'middle'}" style="${axisStyle}">${xLabel(m)}</text>`)}${histArea ? html`<path d="${histArea}" style="fill:var(--accent);opacity:.12"/>` : ''}${overflow ? html`<path d="${overflow}" style="fill:var(--critical-weak)"/>` : ''}<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(100))}" y2="${f1(Y(100))}" style="stroke:var(--critical);stroke-width:1.5;stroke-dasharray:2 3"/><text x="${W - pad.r - 2}" y="${f1(Y(100) - 4)}" text-anchor="end" style="fill:var(--critical-fg);font-size:10px;font-weight:600">${t('ch.cap')}</text><line x1="${f1(X(0))}" x2="${f1(X(0))}" y1="${pad.t}" y2="${H - pad.b}" style="stroke:var(--text-2);stroke-width:1;stroke-dasharray:3 3"/><path d="${path(hist)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round"/>${fcp.length ? html`<path d="${path(fcp)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round"/>` : ''}<circle cx="${f1(X(0))}" cy="${f1(Y(nowPt.v))}" r="3.5" style="fill:var(--accent)"/>`);
+  setHTML(svg, html`${grid.map(v => html`<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}" style="stroke:var(--grid);stroke-width:1"/><text x="${pad.l - 6 * remK}" y="${f1(Y(v) + 3.5 * remK)}" text-anchor="end" style="${axisStyle}">${v}%</text>`)}${xTicks.map(m => html`<text x="${f1(X(m))}" y="${H - 6 * remK}" text-anchor="${m === -60 ? 'start' : m === 30 ? 'end' : 'middle'}" style="${axisStyle}">${xLabel(m)}</text>`)}${histArea ? html`<path d="${histArea}" style="fill:var(--accent);opacity:.12"/>` : ''}${overflow ? html`<path d="${overflow}" style="fill:var(--critical-weak)"/>` : ''}<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(100))}" y2="${f1(Y(100))}" style="stroke:var(--critical);stroke-width:1.5;stroke-dasharray:2 3"/><text x="${W - pad.r - 2}" y="${f1(Y(100) - 4 * remK)}" text-anchor="end" style="fill:var(--critical-fg);font-size:.625rem;font-weight:600">${t('ch.cap')}</text><line x1="${f1(X(0))}" x2="${f1(X(0))}" y1="${pad.t}" y2="${H - pad.b}" style="stroke:var(--text-2);stroke-width:1;stroke-dasharray:3 3"/><path d="${path(hist)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round"/>${fcp.length ? html`<path d="${path(fcp)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round"/>` : ''}<circle cx="${f1(X(0))}" cy="${f1(Y(nowPt.v))}" r="3.5" style="fill:var(--accent)"/>`);
 
   UI.geo = { X, Y, pad, pw, W, H, hist, fc: fcp };
   positionHover();
