@@ -137,13 +137,62 @@
   @keyframes pulse { 50% { opacity: .45; transform: scale(.94); } }
   .scan .scan-label { background-image: linear-gradient(90deg, rgba(255, 255, 255, .3) 0%, #fff 50%, rgba(255, 255, 255, .3) 100%); }
 
-  /* Profile page */
-  .profile { justify-content: flex-start; align-items: stretch; overflow-y: auto; padding: calc(var(--st) + 36px) 16px calc(var(--sb) + 24px); }
-  .p-head { display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .p-photo { width: 132px; height: 132px; border-radius: 50%; object-fit: cover; }
-  .profile .status { margin-top: 16px; }
-  .profile .name { margin-top: 6px; }
-  .profile .group { margin-top: 26px; }
+  /* Profile page: light medical record */
+  .profile {
+    --pbg: #f2f2f7; --card: #fff; --ink: #1c1c1e; --ink2: #6e6e73; --line: #e5e5ea; --navy: #1d3557; --ok: #1e7a46;
+    background: var(--pbg); color: var(--ink); justify-content: flex-start; align-items: stretch; overflow-y: auto; gap: 12px;
+    padding: calc(var(--st, env(safe-area-inset-top)) + 10px) 14px calc(var(--sb, env(safe-area-inset-bottom)) + 18px);
+  }
+  .profile > * { flex: none; }
+  .profile svg { flex: none; }
+  .r-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px; }
+  .r-brand { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+  .r-brand svg { width: 22px; height: 22px; color: var(--navy); }
+  .r-pill { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: #e6f4ea; color: var(--ok); font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .r-pill svg, .r-ok svg { width: 16px; height: 16px; }
+  .r-card { background: var(--card); border-radius: 18px; padding: 14px; }
+  .r-id { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 16px; align-items: center; padding: 10px; }
+  .r-photo { position: relative; aspect-ratio: 132 / 150; border-radius: 14px; overflow: hidden; background: #fff; }
+  .r-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .br { position: absolute; width: 22px; height: 22px; border: 2.5px solid rgba(0, 0, 0, .6); }
+  .br.tl { left: 12px; top: 12px; border-right: 0; border-bottom: 0; border-top-left-radius: 8px; }
+  .br.tr { right: 12px; top: 12px; border-left: 0; border-bottom: 0; border-top-right-radius: 8px; }
+  .br.bl { left: 12px; bottom: 12px; border-right: 0; border-top: 0; border-bottom-left-radius: 8px; }
+  .br.bt { right: 12px; bottom: 12px; border-left: 0; border-top: 0; border-bottom-right-radius: 8px; }
+  .r-name { font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
+  .r-ok { margin-top: 8px; display: flex; align-items: center; gap: 6px; color: var(--ok); font-size: 15px; font-weight: 500; }
+  .r-idno { margin-top: 8px; color: var(--ink2); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .r-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .r-h h2, .r-list h2 { font-size: 17px; font-weight: 600; }
+  .r-h span { font-size: 12px; color: var(--ink2); }
+  .r-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; }
+  .r-stats div { padding: 10px 8px; min-width: 0; }
+  .r-stats div + div { border-left: 1px solid var(--line); }
+  .r-stats small { display: block; font-size: 10px; letter-spacing: .05em; color: var(--ink2); text-transform: uppercase; white-space: nowrap; }
+  .r-stats b { display: block; margin-top: 4px; font-size: 16px; font-weight: 600; white-space: nowrap; }
+  .r-alert { border-radius: 18px; background: linear-gradient(180deg, #b3191d, #931316); color: #fff; padding: 2px 14px; }
+  .r-alert-h { display: flex; align-items: center; gap: 10px; padding: 12px 0; font-size: 15px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .r-alert-h svg, .r-alert .row svg { width: 20px; height: 20px; }
+  .r-alert .row { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid rgba(255, 255, 255, .18); font-size: 17px; }
+  .r-alert .row b { font-weight: 600; }
+  .r-alert .row span { opacity: .9; }
+  .r-list h2 { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; }
+  .r-list h2 svg, .r-list .row svg { width: 20px; height: 20px; color: var(--navy); }
+  .r-list .row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 17px; }
+  .r-list .row:last-child { padding-bottom: 2px; }
+  .r-list .row .chev { margin-left: auto; width: 14px; height: 14px; color: #c7c7cc; }
+  .r-list .row svg.red { color: #c62828; }
+  .r-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .r-btn {
+    height: 56px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); color: var(--ink);
+    display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 10px; font-size: 15px; font-weight: 500; text-align: center;
+  }
+  .r-btn svg { width: 18px; height: 18px; }
+  .r-btn.dark { background: var(--navy); border-color: var(--navy); color: #fff; font-weight: 600; }
+  .r-btn:active { transform: scale(.98); }
+  .r-link { height: 32px; color: var(--ink2); font-size: 15px; }
+  .r-foot { display: flex; justify-content: center; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); }
+  .r-foot svg { width: 13px; height: 13px; }
 
   /* Profile sheet */
   .sheet {
@@ -315,19 +364,41 @@
   </div>
 </section>
 
-<section id="profile" class="screen profile off" aria-label="Patient profile">
-  <div class="p-head">
-    <img class="p-photo" src="demo-patient.jpg" alt="Photo on file">
-    <div class="status"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M5.8 10.4l2.7 2.7 5.7-6.1" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="status"></span></div>
-    <h1 class="name" id="name"></h1>
-    <p class="sub" id="sub"></p>
+<section id="profile" class="screen profile off" aria-label="Patient record">
+  <header class="r-top">
+    <span class="r-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l8 3v6.5c0 5-3.4 9.1-8 10.5-4.6-1.4-8-5.5-8-10.5V5z"/><path fill="#fff" d="M12 7.5s2.8 3.1 2.8 5a2.8 2.8 0 0 1-5.6 0c0-1.9 2.8-5 2.8-5z"/></svg>Response / Secure record</span>
+    <span class="r-pill"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M5.8 10.4l2.7 2.7 5.7-6.1" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Identity verified</span>
+  </header>
+  <div class="r-card r-id">
+    <div class="r-photo"><img src="demo-patient.jpg" alt="Photo on file"><i class="br tl"></i><i class="br tr"></i><i class="br bl"></i><i class="br bt"></i></div>
+    <div>
+      <h1 class="r-name" id="name"></h1>
+      <p class="r-ok"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M5.8 10.4l2.7 2.7 5.7-6.1" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Patient verified</p>
+      <p class="r-idno" id="idno"></p>
+    </div>
   </div>
-  <div id="facts" class="group"></div>
-  <p class="fine" id="source"></p>
-  <div class="actions">
-    <button id="start" class="primary">Start Triage</button>
-    <button id="not-them" class="secondary">Not this person</button>
+  <div class="r-card">
+    <div class="r-h"><h2>Patient details</h2><span id="updated"></span></div>
+    <div class="r-stats" id="stats"></div>
   </div>
+  <div class="r-alert">
+    <div class="r-alert-h"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M8.6 2.6a1.6 1.6 0 0 1 2.8 0l7.2 12.8A1.6 1.6 0 0 1 17.2 18H2.8a1.6 1.6 0 0 1-1.4-2.6z"/><path d="M10 7v4.6" stroke="#a3171a" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="14.4" r="1.1" fill="#a3171a"/></svg>Critical allergies</div>
+    <div id="allergies"></div>
+  </div>
+  <div class="r-card r-list">
+    <h2><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5z"/><path d="M8 12h8M8 16h6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>Medical history</h2>
+    <div id="history"></div>
+  </div>
+  <div class="r-card r-list">
+    <h2><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="7" width="15" height="6" rx="3" fill="currentColor" transform="rotate(-35 10 10)"/></svg>Current medication</h2>
+    <div id="meds"></div>
+  </div>
+  <div class="r-actions">
+    <button id="contact" class="r-btn" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M6.2 2.5l2 3.6-1.5 1.6a10 10 0 0 0 5.6 5.6l1.6-1.5 3.6 2-.8 3a1.5 1.5 0 0 1-1.6 1C7.9 17.4 2.6 12.1 2.2 4.9a1.5 1.5 0 0 1 1-1.6z"/></svg><span>Emergency contact</span></button>
+    <button id="start" class="r-btn dark" type="button">Start triage ›</button>
+  </div>
+  <button id="not-them" class="r-link" type="button">Not this person</button>
+  <p class="r-foot"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 5.5V10l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Access logged · Emergency use only</p>
 </section>
 
 <div id="glow" class="glow" aria-hidden="true"><div class="soft"><div class="ring"></div></div><div class="ring"></div></div>
@@ -342,7 +413,12 @@ const SCAN_MS = 1100;
 /* One enrolled demo patient: the scan is simulated, the record is a simulated Riayati lookup. */
 const PATIENT = {
   name: 'Githu Jacob', initials: 'G.J.', age: 21, sex: 'Male', dob: '14 Mar 2005', similarity: 0.94,
-  allergies: ['Morphine', 'Penicillin'], conditions: ['Asthma'], medications: 'None', bloodType: 'O+',
+  idLast4: '7193', height: '176 cm', weight: '68 kg', updated: '2 Sep 2026, 09:41',
+  allergies: ['Morphine', 'Penicillin'],
+  allergyDetail: [['Morphine', 'anaphylaxis'], ['Penicillin', 'severe rash']],
+  history: [['lungs', 'Asthma'], ['doc', 'Appendectomy · 2019']],
+  meds: ['Salbutamol inhaler 100 mcg · as needed'],
+  conditions: ['Asthma'], medications: 'Salbutamol inhaler', bloodType: 'O+',
   contact: 'Father · +971 50 ••• 4412', source: 'Riayati', asOf: '2026-09-02', asOfText: '2 Sep 2026',
 };
 
@@ -409,18 +485,41 @@ function fact(icon, value, label) {
   return row;
 }
 
+const R_ICON = {
+  pill: '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="7" width="15" height="6" rx="3" fill="currentColor" transform="rotate(-35 10 10)"/></svg>',
+  warn: '<svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M8.6 2.6a1.6 1.6 0 0 1 2.8 0l7.2 12.8A1.6 1.6 0 0 1 17.2 18H2.8a1.6 1.6 0 0 1-1.4-2.6z"/></svg>',
+  lungs: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 3h2v7.5l1.6 1.2C15 8.6 16.4 6 18 6c2.2 0 4 4.7 4 10.3 0 2.6-1.4 3.7-3.4 3.7-2.6 0-5.6-1.2-5.6-4.5v-2.6L12 12l-1 .9v2.6c0 3.3-3 4.5-5.6 4.5C3.4 20 2 18.9 2 16.3 2 10.7 3.8 6 6 6c1.6 0 3 2.6 3.4 5.7L11 10.5z"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V8h4.5z"/></svg>',
+  chev: '<svg class="chev" viewBox="0 0 10 16" aria-hidden="true"><path d="M2 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+
+function rRow(icon, content, chev) {
+  const row = el('div', 'row');
+  row.insertAdjacentHTML('afterbegin', icon);
+  row.append(content);
+  if (chev) row.insertAdjacentHTML('beforeend', R_ICON.chev);
+  return row;
+}
+
 function openProfile() {
   const p = PATIENT;
-  $('#status').textContent = `Identified · face match ${Math.round(p.similarity * 100)}%`;
   $('#name').textContent = p.name;
-  $('#sub').textContent = `${p.age} · ${p.sex} · ${p.bloodType}`;
-  $('#facts').replaceChildren(
-    fact(p.allergies.length ? ICON.warn : ICON.drop, p.allergies.join(', ') || 'None', 'Allergies'),
-    fact(ICON.heart, p.conditions.join(', ') || 'None', 'Conditions'),
-    fact(ICON.pill, p.medications, 'Medications'),
-    fact(ICON.drop, p.bloodType, 'Blood type'),
-    fact(ICON.phone, p.contact, 'Emergency contact'));
-  $('#source').textContent = `${p.source} · updated ${p.asOfText} · DOB ${p.dob} · confirm identity at the ED door`;
+  $('#idno').textContent = `ID •••• ${p.idLast4}`;
+  $('#updated').textContent = `Updated ${p.updated}`;
+  $('#stats').replaceChildren(...[['Age', p.age], ['Sex', p.sex], ['Height', p.height], ['Weight', p.weight], ['Blood', p.bloodType]].map(([k, v]) => {
+    const d = el('div'); d.append(el('small', '', k), el('b', '', String(v))); return d;
+  }));
+  $('#allergies').replaceChildren(...p.allergyDetail.map(([name, reaction], i) => {
+    const txt = el('div'); txt.append(el('b', '', name), el('span', '', ` — ${reaction}`));
+    return rRow(i ? R_ICON.warn : R_ICON.pill, txt, false);
+  }));
+  $('#history').replaceChildren(...p.history.map(([icon, text]) => rRow(R_ICON[icon], el('span', '', text), true)));
+  $('#meds').replaceChildren(...p.meds.map(text => {
+    const r = rRow(R_ICON.pill, el('span', '', text), true);
+    r.querySelector('svg').classList.add('red');
+    return r;
+  }));
+  $('#contact span').textContent = 'Emergency contact';
   $('#profile').scrollTop = 0;
   showScreen('profile');
 }
@@ -616,6 +715,7 @@ function scheduleSend() {
 $('#orb').onclick = scan;
 $('#start').onclick = startTriage;
 $('#not-them').onclick = goHome;
+$('#contact').onclick = () => { $('#contact span').textContent = PATIENT.contact; };
 $('#t-back').onclick = openProfile;
 $('#pain').oninput = e => set('pain', Number(e.target.value));
 buildInputs();
