@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 python3 -I - <<'PY'
 import pathlib
 src = pathlib.Path('src')
-files = [f for f in ['00-core.js', '10-engine.js', '15-wasel.js', '16-readiness.js', '20-ai.js', '30-ui.js', '40-bridge.js'] if (src / f).exists()]
+files = [f for f in ['00-core.js', '10-engine.js', '15-wasel.js', '16-readiness.js', '20-ai.js', '30-ui.js', '40-bridge.js', '50-viz.js'] if (src / f).exists()]
 js = '\n\n'.join((src / f).read_text() for f in files)
 shell = (src / 'shell.html').read_text()
 assert shell.count('/*__SCRIPT__*/') == 1, 'shell must contain exactly one /*__SCRIPT__*/ placeholder'
