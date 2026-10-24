@@ -381,8 +381,8 @@ input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0; accent-color: var
 .chip.st-black { background: #000; color: #fff; box-shadow: inset 0 0 0 1px var(--border-strong); }
 
 /* ---------- ESI v4 triage badges ----------
- * ESI 1 is the only solid fill; 2–4 are tinted with the number in the level's
- * colour, 5 is neutral. The list reads by acuity instead of as a rainbow. */
+ * Solid level colour with the number in dark ink (white on ESI 1's red); on a
+ * solid flagged row the badge inverts to the row's ink. */
 .esi {
   flex: none; display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
   width: 2.125rem; height: 2.125rem; border-radius: var(--radius-sm); line-height: 1;
@@ -397,10 +397,10 @@ input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0; accent-color: var
 .esi.mini b { font-size: inherit; }
 .esi.mini small { margin: 0; font-size: inherit; letter-spacing: 0; opacity: 1; }
 .esi.e1 { background: var(--critical); color: var(--on-fill); }
-.esi.e2 { background: var(--serious-weak); color: var(--serious-fg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--serious) 45%, transparent); }
-.esi.e3 { background: var(--warning-weak); color: var(--warning-fg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 55%, transparent); }
-.esi.e4 { background: var(--good-weak); color: var(--good-fg); }
-.esi.e5 { background: var(--fill); color: var(--text-2); }
+.esi.e2 { background: var(--serious); color: var(--on-light-fill); }
+.esi.e3 { background: var(--warning); color: var(--on-light-fill); }
+.esi.e4 { background: var(--good); color: var(--on-light-fill); }
+.esi.e5 { background: var(--neutral); color: var(--on-light-fill); }
 
 /* ---------- Patient journey strip ----------
  * Six steps, calm by default. A step with a problem becomes a solid tile: red
@@ -620,6 +620,8 @@ button.pa:hover { background: var(--fill); }
 .prow.f-critical .pnews.critical { background: var(--on-fill); color: var(--critical); }
 .prow.f-serious :is(.esi, .pnews) { background: var(--on-light-fill-weak); color: var(--on-light-fill); box-shadow: none; }
 .prow.f-serious .pnews.critical { background: var(--on-light-fill); color: var(--on-fill); }
+.prow.f-critical .esi { background: var(--on-fill); color: var(--critical); }
+.prow.f-serious .esi { background: var(--on-light-fill); color: var(--serious); }
 .pid, .pcond, .ploc { min-width: 0; overflow: hidden; }
 .pid { font-weight: 600; font-size: var(--t-body); white-space: nowrap; text-overflow: ellipsis; }
 .pid > b, .pid > strong { font-weight: 600; }
