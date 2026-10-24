@@ -160,7 +160,7 @@ function invariants(run) {
       seen = { type: s.type, level0: s.level, owner0: s.owner, esc0: s.escalated || 0 };
       run.seen.set(s.id, seen);
       if (seen.esc0 === 0 && s.owner !== (OWNER0[s.type] || 'Charge nurse')) f('wrong initial owner', `${s.type} → ${s.owner}`);
-      if (seen.esc0 === 0 && s.escalatesAt !== s.at + ESC_MIN[s.level] * 60) f('wrong escalatesAt', `${s.id} ${s.type} at=${s.at} esc=${s.escalatesAt}`);
+      if (seen.esc0 === 0 && s.escalatesAt !== s.at + escWindow(s.level)) f('wrong escalatesAt', `${s.id} ${s.type} at=${s.at} esc=${s.escalatesAt}`);
       run.created[s.type] = (run.created[s.type] || 0) + 1;
     }
     const e = (s.escalated || 0) - seen.esc0;

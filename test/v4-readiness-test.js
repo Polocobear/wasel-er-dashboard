@@ -104,7 +104,7 @@ function invariants(run) {
       if (first) {
         run.trauma++;
         for (const x of s.rules || []) run.ruleKinds[x.split(' ')[0]] = (run.ruleKinds[x.split(' ')[0]] || 0) + 1;
-        if (s.owner !== 'Physician' || s.level !== 1 || s.escalatesAt !== s.at + ESC_MIN[1] * 60) f('trauma owner/level/clock', `${s.owner} L${s.level}`);
+        if (s.owner !== 'Physician' || s.level !== 1 || s.escalatesAt !== s.at + escWindow(1)) f('trauma owner/level/clock', `${s.owner} L${s.level}`);
         const now = p ? traumaRules(p).map(r => r.text) : [];
         if (!now.length || now.join('|') !== (s.rules || []).join('|')) f('trauma card rules differ from traumaRules()', `${now.join('|')} vs ${(s.rules || []).join('|')}`);
       }
@@ -241,7 +241,7 @@ fresh(404);
   ok(traumaRules(p2).map(r => r.text).join('|') === want2.join('|'), 'trauma rules: SBP, GCS, RR, penetrating, amputation', traumaRules(p2).map(r => r.text).join('|'));
   ok(c2 && c2.title === 'Activate trauma team for T-802' && c2.level === 1 && c2.owner === 'Physician', 'trauma card: title, level 1, owner Physician', c2 && `${c2.title} L${c2.level} ${c2.owner}`);
   ok(c2 && c2.why.includes(ACS) && want2.every(x => c2.why.includes(x)), 'trauma card why: guideline + every rule with its values', c2 && c2.why);
-  ok(c2 && c2.escalatesAt === c2.at + ESC_MIN[1] * 60, 'trauma card escalation clock');
+  ok(c2 && c2.escalatesAt === c2.at + escWindow(1), 'trauma card escalation clock');
 
   // --- RR < 10 and AVPU from the responder's sliders when GCS is not reported as ≤ 13 ---
   receivePreAlert(SAMPLE('T-803', { signs: { hr: 58, sbp: 112, rr: 8, spo2: 95 }, triage: { avpu: 'P' } }));

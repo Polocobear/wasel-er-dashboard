@@ -718,11 +718,15 @@ const WASEL_OWNER = {
 };                                        // every other type (staffing, capacity, supply, surge, outage, equipment): Charge nurse
 const WASEL_ESCALATION = { 'Receiving nurse': 'Charge nurse', 'Physician': 'ED coordinator', 'Charge nurse': 'ED coordinator' };
 
+// Escalation window in sim seconds. ESC_MIN is real minutes at 1× speed; when the simulation is
+// accelerated the window stretches so staff still get ~30 s of wall-clock time to act on a critical card.
+function escWindow(level) { return ESC_MIN[level] * 60 * Math.max(1, (S.speed || 1) / 6); }
+
 // Called by addSugg()
 function waselAssignOwner(s) {
   s.owner = WASEL_OWNER[s.type] || 'Charge nurse';
   s.escalated = 0;
-  s.escalatesAt = s.at + ESC_MIN[s.level] * 60;
+  s.escalatesAt = s.at + escWindow(s.level);
 }
 
 // Called by aiPlan(): an open task past its clock moves one step up the chain and gains urgency.
@@ -735,7 +739,7 @@ function waselEscalate() {
     s.escalated = (s.escalated || 0) + 1;
     s.owner = next;
     s.level = Math.max(1, s.level - 1);
-    s.escalatesAt = WASEL_ESCALATION[next] ? S.t + ESC_MIN[s.level] * 60 : null;
+    s.escalatesAt = WASEL_ESCALATION[next] ? S.t + escWindow(s.level) : null;
     emit('roster', 'Paging', `Escalated: ${s.title} → ${s.owner}`);
     audit(`Escalated: ${s.title} → ${s.owner}`);
     if (s.level === 1) aiAnnounce('Escalated: ' + s.title);

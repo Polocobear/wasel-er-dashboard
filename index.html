@@ -1132,6 +1132,23 @@ body[data-view="calm"] .amb-top { font-size: 15px; }
 body[data-view="calm"] :is(.amb-top, .pa-top) > b { font-size: 16px; }
 body[data-view="calm"] .eta { font-size: 20px; }
 body[data-view="calm"] .pas.brief .pa { font-size: 14px; }
+
+/* ---------- v4: "Other screens" footer menu (session-owned section; tokens only) ---------- */
+.screens { position: relative; display: inline-block; }
+.screens > summary { list-style: none; cursor: pointer; }
+.screens > summary::-webkit-details-marker { display: none; }
+.screens > summary::after { content: " ▾"; }
+.screens[open] > nav {
+  position: absolute; inset-block-end: calc(100% + var(--s2)); inset-inline-end: 0; z-index: 30;
+  display: grid; min-width: 240px; padding: var(--s2);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+}
+.screens nav a {
+  color: var(--text); text-decoration: none; font-size: var(--t-small);
+  padding: var(--s2) var(--s3); border-radius: var(--radius-sm);
+}
+.screens nav a:hover, .screens nav a:focus-visible { background: var(--surface-2); }
 </style>
 </head>
 <body>
@@ -1261,6 +1278,20 @@ body[data-view="calm"] .pas.brief .pa { font-size: 14px; }
       <button type="button" class="btn ghost sm" data-act="family" data-i18n="ft.family">Family desk</button>
       <button type="button" class="btn ghost sm" data-act="standards" data-i18n="ft.standards">Standards &amp; security</button>
       <button type="button" class="btn ghost sm" data-act="datamap" data-i18n="ft.datamap">Data map</button>
+      <details class="screens">
+        <summary class="btn ghost sm">Other screens</summary>
+        <nav aria-label="Other WASEL screens">
+          <a href="dispatch.html" target="_blank" rel="noopener">998 dispatch</a>
+          <a href="responder.html" target="_blank" rel="noopener">Paramedic responder</a>
+          <a href="commander.html" target="_blank" rel="noopener">MCI commander</a>
+          <a href="kiosk.html" target="_blank" rel="noopener">Lobby kiosk &amp; TV</a>
+          <a href="supply.html" target="_blank" rel="noopener">Stores &amp; blood bank</a>
+          <a href="equipment.html" target="_blank" rel="noopener">Equipment map</a>
+          <a href="admin.html" target="_blank" rel="noopener">Privacy &amp; security</a>
+          <a href="algorithms.html" target="_blank" rel="noopener">How the algorithms decide</a>
+          <a href="architecture.html" target="_blank" rel="noopener">Architecture &amp; data map</a>
+        </nav>
+      </details>
     </div>
   </footer>
 </div>
@@ -2924,11 +2955,15 @@ const WASEL_OWNER = {
 };                                        // every other type (staffing, capacity, supply, surge, outage, equipment): Charge nurse
 const WASEL_ESCALATION = { 'Receiving nurse': 'Charge nurse', 'Physician': 'ED coordinator', 'Charge nurse': 'ED coordinator' };
 
+// Escalation window in sim seconds. ESC_MIN is real minutes at 1× speed; when the simulation is
+// accelerated the window stretches so staff still get ~30 s of wall-clock time to act on a critical card.
+function escWindow(level) { return ESC_MIN[level] * 60 * Math.max(1, (S.speed || 1) / 6); }
+
 // Called by addSugg()
 function waselAssignOwner(s) {
   s.owner = WASEL_OWNER[s.type] || 'Charge nurse';
   s.escalated = 0;
-  s.escalatesAt = s.at + ESC_MIN[s.level] * 60;
+  s.escalatesAt = s.at + escWindow(s.level);
 }
 
 // Called by aiPlan(): an open task past its clock moves one step up the chain and gains urgency.
@@ -2941,7 +2976,7 @@ function waselEscalate() {
     s.escalated = (s.escalated || 0) + 1;
     s.owner = next;
     s.level = Math.max(1, s.level - 1);
-    s.escalatesAt = WASEL_ESCALATION[next] ? S.t + ESC_MIN[s.level] * 60 : null;
+    s.escalatesAt = WASEL_ESCALATION[next] ? S.t + escWindow(s.level) : null;
     emit('roster', 'Paging', `Escalated: ${s.title} → ${s.owner}`);
     audit(`Escalated: ${s.title} → ${s.owner}`);
     if (s.level === 1) aiAnnounce('Escalated: ' + s.title);

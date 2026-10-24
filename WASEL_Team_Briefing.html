@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WASEL Team Briefing</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+  :root {
+    --text: #14161a; --text-2: #4a4f57; --muted: #7a808a; --line: #e2e4e8; --soft: #f5f6f8;
+    --accent: #2a78d6; --critical: #d03b3b; --good: #0c8a0c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--text); background: #fff;
+         font: 10.5pt/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header.cover { border-bottom: 3px solid var(--critical); padding-bottom: 10px; margin-bottom: 14px;
+                 display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .logo { width: 34px; height: 34px; border-radius: 8px; background: var(--critical); color: #fff;
+          display: grid; place-items: center; font-weight: 800; font-size: 20px; }
+  h1 { font-size: 20pt; margin: 0; letter-spacing: -.01em; }
+  .sub { color: var(--text-2); font-size: 10pt; }
+  .meta { text-align: right; font-size: 9pt; color: var(--text-2); line-height: 1.45; }
+  .meta a { color: var(--accent); text-decoration: none; }
+  .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 14px; }
+  .links div { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 9pt; }
+  .links b { display: block; font-size: 8pt; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .links a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  section { break-inside: avoid-page; margin: 0 0 12px; }
+  h2 { font-size: 12.5pt; margin: 14px 0 6px; display: flex; align-items: baseline; gap: 8px; }
+  h2 .n { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 6px;
+          background: var(--text); color: #fff; font-size: 10pt; }
+  h3 { font-size: 10.5pt; margin: 8px 0 3px; color: var(--text-2); }
+  p { margin: 4px 0; }
+  ul { margin: 4px 0 4px 18px; padding: 0; }
+  li { margin: 2px 0; }
+  code { font: 9pt/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--soft);
+         border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 9.5pt; }
+  th, td { text-align: left; vertical-align: top; padding: 5px 7px; border-bottom: 1px solid var(--line); }
+  th { background: var(--soft); font-size: 8.5pt; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
+  .note { border-left: 3px solid var(--accent); background: #eef5fd; padding: 6px 10px; border-radius: 0 6px 6px 0; font-size: 9.5pt; }
+  .warn { border-left: 3px solid var(--critical); background: #fdf0f0; padding: 6px 10px; border-radius: 0 6px 6px 0; font-size: 9.5pt; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .flow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 9pt; margin: 6px 0; }
+  .flow span { background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .flow i { color: var(--muted); font-style: normal; }
+  footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <div class="brand">
+    <div class="logo">+</div>
+    <div>
+      <h1>WASEL · Team Briefing</h1>
+      <div class="sub">ER Command Dashboard · Nexus 26, Track 3 (Informatics) · Answers to the team's 10 questions</div>
+    </div>
+  </div>
+  <div class="meta">24 October 2026<br>All data shown is fictional / simulated</div>
+</header>
+
+<div class="links">
+  <div><b>Live dashboard</b><a href="https://wasel-er-dashboard.pages.dev">wasel-er-dashboard.pages.dev</a></div>
+  <div><b>Source code</b><a href="https://github.com/Polocobear/wasel-er-dashboard">github.com/Polocobear/wasel-er-dashboard</a></div>
+  <div><b>Architecture diagram</b><a href="https://wasel-er-dashboard.pages.dev/architecture">…pages.dev/architecture</a></div>
+</div>
+
+<section>
+  <h2><span class="n">1</span>Framework used</h2>
+  <ul>
+    <li><b>No front-end framework.</b> Plain HTML, CSS and JavaScript (ES2020) with zero dependencies. It runs offline in any browser, there is nothing to install, and the code is easy to audit. A small Python build script stitches the source modules into one self-contained HTML file.</li>
+    <li><b>Face ID service:</b> Python with FastAPI and DeepFace (Facenet512 model, RetinaFace face detector). Enrolled faces are stored in SQLite.</li>
+    <li><b>Standards it is built on:</b> HL7 FHIR R4 (data model), HL7 v2.5 (messaging), IEEE 11073 (medical devices), LOINC (vital signs), ICD-10-CM (diagnoses), ESI v4 and START (triage), NEWS2 (early warning).</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">2</span>Dataset</h2>
+  <ul>
+    <li><b>No real patient data.</b> Every patient and name is fictional and generated by the simulation.</li>
+    <li><b>The clinical model is real:</b> 23 conditions with real ICD-10-CM codes, typical presenting vital signs, the published NEWS2 scoring bands (Royal College of Physicians, 2017) and real LOINC codes.</li>
+    <li><b>No training dataset is needed.</b> Decision support is rule-based, not machine learning.</li>
+    <li><b>The only model is face ID,</b> which uses DeepFace's pre-trained network. It was tested on DeepFace's own labelled test photos.</li>
+    <li><b>In a real hospital,</b> data would come from the EHR and the health exchanges (Riayati, Malaffi, NABIDH) over FHIR, read-only in phase 1.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">3</span>Platforms used to build</h2>
+  <table>
+    <tr><th style="width:32%">Platform</th><th>Used for</th></tr>
+    <tr><td>Claude Code</td><td>AI-assisted coding (disclose this if asked)</td></tr>
+    <tr><td>GitHub</td><td>Version control: github.com/Polocobear/wasel-er-dashboard</td></tr>
+    <tr><td>Cloudflare Pages</td><td>Hosting: wasel-er-dashboard.pages.dev (auto-deploys on every push)</td></tr>
+    <tr><td>Python 3</td><td>Build script, local demo server, face-ID service</td></tr>
+    <tr><td>JavaScriptCore</td><td>Automated tests (300+ checks)</td></tr>
+    <tr><td>Google Chrome</td><td>Browser testing</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">4</span>How the real-time data works</h2>
+  <div class="two">
+    <div>
+      <h3>In the demo</h3>
+      <ul>
+        <li>A simulation engine updates every half second: ambulances move, vital signs drift, beds are cleaned, patients arrive.</li>
+        <li>The screens talk through browser messaging channels:
+          <ul>
+            <li>dispatch → dashboard: incidents</li>
+            <li>responder → dashboard: pre-alerts</li>
+            <li>dashboard → other screens: capacity, plus a state snapshot with names removed, every 2 s</li>
+            <li>other screens → dashboard: commands</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+    <div>
+      <h3>In production</h3>
+      <ul>
+        <li>Each of the 10 hospital systems pushes events into a <b>FHIR R4 integration gateway</b>:
+          <ul>
+            <li>HL7 v2 messages from registration</li>
+            <li>IEEE 11073 data from monitors and wearables</li>
+            <li>location tags on equipment</li>
+            <li>the ambulance dispatch feed</li>
+          </ul>
+        </li>
+        <li>The gateway feeds the event engine, and screens update live.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="note">The <b>Live data feed</b> panel on the dashboard shows every message with its standard tag, e.g. <i>IEEE 11073 · Observation LOINC 8867-4 Heart rate = 126</i>.</p>
+</section>
+
+<section>
+  <h2><span class="n">5</span>What MCI (Mass Casualty Incident) mode does</h2>
+  <ul>
+    <li><b>Triggered</b> automatically when an incident has 10 or more expected casualties, or declared by hand by the charge nurse or commander.</li>
+    <li><b>What changes:</b>
+      <ul>
+        <li>The mode chip turns to <b>MCI</b>.</li>
+        <li>Field patients get <b>START colours</b> (red / yellow / green / black).</li>
+        <li>A <b>silent surge</b> card appears: recall nurses, open recovery-room overflow beds, put the blood bank on standby. One confirmation does all three.</li>
+        <li>A <b>diversion</b> card sends walking ESI 4–5 patients to nearby EDs.</li>
+        <li>The <b>commander view</b> opens: incoming red patients with a readiness score, capacity gauges, staff call-back, task ownership, family reunification.</li>
+      </ul>
+    </li>
+    <li><b>Stepping down:</b> the mode only steps down after the lower load has held for 10 minutes, so it doesn't flicker.</li>
+  </ul>
+  <div class="flow"><span>Steady</span><i>→</i><span>Strain</span><i>→</i><span>Surge</span><i>→</i><span>MCI</span> &nbsp;Four modes, each triggered by readable rules</div>
+</section>
+
+<section>
+  <h2><span class="n">6</span>Sample code: real-time updates and reacting to sudden influxes</h2>
+  <p>All files are in <code>github.com/Polocobear/wasel-er-dashboard/tree/main/src</code></p>
+  <table>
+    <tr><th style="width:26%">File</th><th>What it shows</th></tr>
+    <tr><td><code>10-engine.js</code></td><td>The simulation: <code>advance()</code> is the real-time loop, <code>SCEN.pileup</code> is the sudden influx (22 casualties across 9 ambulances), and <code>updateVitals()</code> makes patients deteriorate</td></tr>
+    <tr><td><code>20-ai.js</code></td><td>The reactions: <code>aiPlan()</code> produces re-triage, bed placement, pre-arrival prep, supply alerts and capacity diversion. The file name is historical; the logic is rule-based</td></tr>
+    <tr><td><code>15-wasel.js</code></td><td>Operating modes, <code>receivePreAlert()</code>, <code>receiveIncident()</code>, and the allergy hard stop in <code>checkOrder()</code></td></tr>
+    <tr><td><code>16-readiness.js</code></td><td>Trauma activation rules and the pre-arrival readiness score</td></tr>
+    <tr><td><code>test/*.js</code></td><td>300+ automated checks across 7 scenarios</td></tr>
+  </table>
+  <h3>Why it's realistic for a hospital IT stack</h3>
+  <ul>
+    <li>The engine and decision logic never touch the screen, so they can run server-side and are tested headless.</li>
+    <li>All data is shaped as FHIR resources.</li>
+    <li>Every displayed value is escaped against code injection.</li>
+    <li>Commands between screens are whitelisted.</li>
+    <li>There are no third-party dependencies.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">7</span>Cybersecurity checks</h2>
+  <div class="two">
+    <div>
+      <h3>Built and working in the demo</h3>
+      <ul>
+        <li><b>Role-based access with least privilege:</b> 5 roles (Wall display, Nurse, Charge nurse, Physician, IT/Admin)</li>
+        <li><b>Wall display de-identified:</b> initials only, nothing clickable</li>
+        <li><b>Break-glass:</b> opening a chart outside your care needs a reason and is logged</li>
+        <li><b>Audit log</b> of every record view, action, role switch and command</li>
+        <li><b>Auto-lock</b> after 5 minutes idle</li>
+        <li><b>Escaping:</b> all displayed values are escaped against cross-site scripting</li>
+        <li><b>Whitelisted commands</b> between screens; rejected ones are logged</li>
+        <li><b>No patient data stored</b> in URLs or browser storage</li>
+        <li><b>Content Security Policy</b> on the extra pages</li>
+        <li><b>Biometric safeguards:</b> candidate-only, no images sent or stored, consent required to enrol</li>
+        <li><b>Kill switch</b> to downtime mode, plus anomaly alerts</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Production design (described, not built)</h3>
+      <ul>
+        <li>Badge-tap multi-factor login</li>
+        <li>TLS encryption in transit and at rest</li>
+        <li>Hosting inside the UAE</li>
+        <li>Signed messages with replay protection</li>
+        <li>Network segmentation</li>
+        <li>Immutable backups</li>
+      </ul>
+      <p class="warn">Be honest if asked: <b>no external penetration test</b> has been done.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">8</span>Dashboard criteria: where each rubric item is met</h2>
+  <table>
+    <tr><th style="width:30%">Criterion</th><th>Where it is met</th></tr>
+    <tr><td>UI &amp; data integration (40%)</td><td>One clutter-free screen plus the Focus view; clinical terms (ESI, NEWS2, ICD-10, LOINC); live data; the <b>Data map</b> button and architecture page for data mapping</td></tr>
+    <tr><td>Code (30%)</td><td>Live simulation with 6+ scenarios, reactions to sudden influx, the security controls above, 300+ automated tests</td></tr>
+    <tr><td>Standards (15%)</td><td><b>Standards &amp; security</b> button on the dashboard, plus COMPLIANCE.md in the repo</td></tr>
+    <tr><td>Innovation (15%)</td><td>Pre-alerts and slider triage (communication breakdowns), nurse workload and fatigue balancing (nurse fatigue), deterioration watch and forecasting (delayed decisions)</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">9</span>Where NFC and medical history data show on the dashboard</h2>
+  <h3>Medical history</h3>
+  <p>Click any patient row to open the <b>patient drawer</b>. From top to bottom:</p>
+  <ul>
+    <li><b>Allergy banner,</b> with its source (Riayati / Malaffi / NABIDH) and date, or <b>UNKNOWN</b> if there is no record. It never says "no allergies" just because the record is empty.</li>
+    <li>Identity status, then the field report.</li>
+    <li><b>"History · shared record":</b> conditions and medications (including blood thinners), each with source and date.</li>
+    <li>The auto-written SBAR handover, then the FHIR bundle.</li>
+  </ul>
+  <p>Before the patient arrives, safety chips appear on the pre-alert card, e.g. <i>⚠ Penicillin</i>, <i>Allergies UNKNOWN</i>, <i>Anticoagulant</i>.</p>
+  <h3>NFC wristband</h3>
+  <ul>
+    <li>The wristband stores <b>only the encounter token</b>, never medical data.</li>
+    <li>On arrival, the tap shows in the <b>Live data feed</b>, e.g. <i>NFC · Wristband T-104 tapped at ambulance bay · encounter token matched</i>.</li>
+    <li>The tap links the patient to their reserved bed and record.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">10</span>How the structure works</h2>
+  <h3>Four layers</h3>
+  <div class="flow"><span>10 source systems</span><i>→</i><span>FHIR R4 integration gateway</span><i>→</i><span>Event engine + rule-based decision support</span><i>→</i><span>Role-based screens</span></div>
+  <p>The 10 source systems are: EHR, registration, beds, lab, radiology, pharmacy, asset tags, monitors, ambulance dispatch and staff rostering.</p>
+  <h3>Patient flow</h3>
+  <div class="flow"><span>998 dispatch</span><i>→</i><span>Paramedic responder (face ID + sliders)</span><i>→</i><span>Pre-alert</span><i>→</i><span>ER dashboard</span><i>→</i><span>Commander · kiosk · supply · equipment · admin</span></div>
+  <p>The decision layer suggests. A human approves each action.</p>
+  <h3>Code layout</h3>
+  <table>
+    <tr><th style="width:26%">Module</th><th>Role</th></tr>
+    <tr><td><code>00-core</code></td><td>Reference data: conditions, codes, roles</td></tr>
+    <tr><td><code>10-engine</code></td><td>Simulation</td></tr>
+    <tr><td><code>15-wasel</code>, <code>16-readiness</code></td><td>Modes, pre-alerts, safety checks, trauma rules</td></tr>
+    <tr><td><code>20-ai</code></td><td>Decision rules</td></tr>
+    <tr><td><code>30-ui</code></td><td>Dashboard screens</td></tr>
+    <tr><td><code>40-bridge</code></td><td>Links the other screens to the dashboard</td></tr>
+  </table>
+  <p>Diagram: <b>wasel-er-dashboard.pages.dev/architecture</b></p>
+</section>
+
+<footer>WASEL · ER Command Dashboard · Nexus 26 Track 3 · All patients, names and data are fictional and simulated.</footer>
+</body>
+</html>
