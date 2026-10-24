@@ -166,10 +166,10 @@
   .r-h h2, .r-list h2 { font-size: 17px; font-weight: 600; }
   .r-h span { font-size: 12px; color: var(--ink2); }
   .r-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; }
-  .r-stats div { padding: 10px 8px; min-width: 0; }
+  .r-stats div { padding: 9px 6px; min-width: 0; }
   .r-stats div + div { border-left: 1px solid var(--line); }
-  .r-stats small { display: block; font-size: 10px; letter-spacing: .05em; color: var(--ink2); text-transform: uppercase; white-space: nowrap; }
-  .r-stats b { display: block; margin-top: 4px; font-size: 16px; font-weight: 600; white-space: nowrap; }
+  .r-stats small { display: block; font-size: 9px; letter-spacing: .05em; color: var(--ink2); text-transform: uppercase; white-space: nowrap; }
+  .r-stats b { display: block; margin-top: 4px; font-size: 14px; font-weight: 600; white-space: nowrap; }
   .r-alert { border-radius: 18px; background: linear-gradient(180deg, #b3191d, #931316); color: #fff; padding: 2px 14px; }
   .r-alert-h { display: flex; align-items: center; gap: 10px; padding: 12px 0; font-size: 15px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
   .r-alert-h svg, .r-alert .row svg { width: 20px; height: 20px; }
@@ -240,7 +240,7 @@
   .t-head .n { font-size: 17px; font-weight: 600; }
   .t-head .s { font-size: 13px; color: var(--secondary); }
   .t-head .back { margin-left: auto; font-size: 15px; color: var(--secondary); }
-  .t-body { padding: 4px 16px calc(var(--sb) + 190px); }
+  .t-body { padding: 4px 16px calc(var(--sb) + 250px); }
   .sec-label { margin: 22px 4px 8px; font-size: 13px; color: var(--secondary); text-transform: uppercase; letter-spacing: .02em; }
   .card { background: var(--grouped); border-radius: 14px; padding: 12px; }
   .card + .card { margin-top: 10px; }
@@ -297,6 +297,15 @@
   .to .live { margin-left: auto; font-size: 12px; color: var(--secondary); white-space: nowrap; }
   .to .live::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--green); vertical-align: 1px; }
   .to .live.idle::before { background: var(--tertiary); }
+  .send { width: 100%; height: 50px; margin-top: 12px; border-radius: 25px; background: #fff; color: #000; font-weight: 600; transition: transform .2s var(--ease), opacity .2s; }
+  .send:active { transform: scale(.97); }
+  .send.sent { background: rgba(118, 118, 128, .24); color: var(--label); }
+  .sent-ok { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    background: rgba(0, 0, 0, .82); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); opacity: 0; pointer-events: none; transition: opacity .3s; text-align: center; padding: 24px; }
+  .sent-ok.on { opacity: 1; pointer-events: auto; }
+  .sent-ok svg { width: 84px; height: 84px; color: var(--green); }
+  .sent-ok b { font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+  .sent-ok span { font-size: 15px; color: var(--secondary); }
 
   @media (prefers-reduced-motion: reduce) { .blob, .orb, .ring, .shimmer::before, .scan-label { animation: none; } }
 </style>
@@ -361,6 +370,7 @@
     <div class="prio"><span id="dot" class="dot"></span><span id="p" class="p"></span><span id="ps" class="ps"></span></div>
     <p id="why" class="why"></p>
     <div class="to"><span>To <b id="to"></b></span><span id="live" class="live idle">Not sent</span></div>
+    <button id="send" class="send" type="button">Send to hospital</button>
   </div>
 </section>
 
@@ -401,6 +411,10 @@
   <p class="r-foot"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 5.5V10l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Access logged · Emergency use only</p>
 </section>
 
+<div id="sent-ok" class="sent-ok" role="status" aria-live="polite">
+  <svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="currentColor"/><path d="M19 33l9 9 17-19" fill="none" stroke="#000" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <b>Sent to hospital</b><span id="sent-detail"></span>
+</div>
 <div id="glow" class="glow" aria-hidden="true"><div class="soft"><div class="ring"></div></div><div class="ring"></div></div>
 </div>
 
@@ -537,7 +551,7 @@ function startTriage() {
 
 function goHome() {
   closeProfile();
-  t = fresh(); touched = false; destChoice = null; encounter = null; lastSent = null;
+  t = fresh(); touched = false; destChoice = null; encounter = null; lastSent = null; dirty = false;
   buildInputs();
   showScreen('home');
 }
@@ -656,8 +670,11 @@ function render() {
   $('#why').textContent = a.why.join(' · ');
   $('#to').textContent = `${dest.name} · ${dest.eta} min`;
   const live = $('#live');
-  live.classList.toggle('idle', !lastSent);
-  live.textContent = lastSent ? `Sent ${lastSent}` : 'Sending…';
+  live.classList.toggle('idle', !lastSent || dirty);
+  live.textContent = lastSent ? (dirty ? `Changed since ${lastSent}` : `Sent ${lastSent}`) : 'Not sent';
+  const send = $('#send');
+  send.textContent = !lastSent ? 'Send to hospital' : dirty ? 'Send update' : `✓ Sent to hospital · ${lastSent.slice(0, 5)}`;
+  send.classList.toggle('sent', !!lastSent && !dirty);
   return { a, dest, rec };
 }
 
@@ -701,18 +718,24 @@ function message() {
   };
 }
 
-function scheduleSend() {
-  clearTimeout(sendTimer);
-  sendTimer = setTimeout(() => {
-    const msg = message();
-    if (channel) { try { channel.postMessage(msg); } catch (_) { return; } }
-    lastSent = new Date().toTimeString().slice(0, 8);
-    render();
-  }, 800);
+let dirty = false;
+function scheduleSend() { dirty = true; render(); }
+
+function submit() {
+  if (lastSent && !dirty) return;
+  const msg = message();
+  if (channel) { try { channel.postMessage(msg); } catch (_) { return; } }
+  lastSent = new Date().toTimeString().slice(0, 8);
+  dirty = false;
+  render();
+  $('#sent-detail').textContent = `${msg.destination.hospital} · ETA ${msg.etaMin} min · ESI ${msg.priority.level}`;
+  $('#sent-ok').classList.add('on');
+  setTimeout(() => $('#sent-ok').classList.remove('on'), 1800);
 }
 
 /* ---------------- Wire ---------------- */
 $('#orb').onclick = scan;
+$('#send').onclick = submit;
 $('#start').onclick = startTriage;
 $('#not-them').onclick = goHome;
 $('#contact').onclick = () => { $('#contact span').textContent = PATIENT.contact; };
