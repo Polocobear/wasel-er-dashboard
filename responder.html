@@ -908,6 +908,11 @@ input::placeholder { color: var(--muted); }
         </div>
 
         <div class="sec">
+          <div class="sec-h"><h3 class="sub" id="complaintLab">Medical complaint</h3></div>
+          <div id="complaintChips" class="pills" role="group" aria-labelledby="complaintLab"></div>
+        </div>
+
+        <div class="sec">
           <div class="sec-h"><h3 class="sub" id="treatLab">Treatment given</h3><span class="fine">tap all that apply</span></div>
           <div id="treatChips" class="pills" role="group" aria-labelledby="treatLab"></div>
           <p id="conflict" class="note critical" role="alert" hidden></p>
@@ -1154,6 +1159,15 @@ const MECHANISMS = [
   { v: 'smoke', label: 'Smoke / fire', text: 'Smoke / fire exposure', trauma: false },
   { v: 'medical', label: 'Medical', text: 'Medical, no trauma', trauma: false },
 ];
+/* Medical complaints (non-trauma). Keys match the dashboard's WASEL_COMPLAINT_COND. */
+const COMPLAINTS = [
+  { v: 'chest-pain', label: 'Chest pain', text: 'Chest pain, possible heart attack' },
+  { v: 'stroke', label: 'Stroke signs', text: 'Stroke signs (face, arm, speech)' },
+  { v: 'seizure', label: 'Seizure', text: 'Seizure' },
+  { v: 'overdose', label: 'Overdose', text: 'Overdose / poisoning' },
+  { v: 'allergic', label: 'Allergic reaction', text: 'Allergic reaction' },
+  { v: 'diabetic', label: 'Diabetic', text: 'Diabetic emergency' },
+];
 const TREATMENTS = [
   { v: 'oxygen', label: 'Oxygen' }, { v: 'binder', label: 'Pelvic binder' }, { v: 'tourniquet', label: 'Tourniquet' },
   { v: 'iv', label: 'IV fluids' }, { v: 'dressing', label: 'Burns dressing' }, { v: 'analgesia', label: 'Analgesia' },
@@ -1198,15 +1212,15 @@ const VITAL_BASE = {
    `fit` = how well the hospital serves a need (1 = specialist centre). */
 const HOSPITALS = [
   { id: 'general', name: DEMO_GENERAL, kind: 'General ED · trauma bays · CT', etaBase: 12,
-    fit: { trauma: 0.8, burns: 0.35, stroke: 0.7 } },
-  { id: 'harbour', name: 'Harbour Point Trauma Centre (demo)', kind: 'Major trauma centre', etaBase: 17,
-    fit: { trauma: 1, burns: 0.45, stroke: 0.6 },
+    fit: { trauma: 0.8, burns: 0.35, stroke: 0.7, cardiac: 0.6 } },
+  { id: 'harbour', name: 'Harbour Point Trauma Centre (demo)', kind: 'Major trauma centre · 24/7 cath lab', etaBase: 17,
+    fit: { trauma: 1, burns: 0.45, stroke: 0.6, cardiac: 1 },
     cap: { edBedsFree: 5, resusFree: 2, traumaFree: 2, burnsFree: 0, icuFree: 2, oNeg: 26, ctOnline: 2, diversion: false } },
   { id: 'dunecrest', name: 'Dune Crest Burns Unit (demo)', kind: 'Regional burns unit', etaBase: 23,
-    fit: { trauma: 0.35, burns: 1, stroke: 0.25 },
+    fit: { trauma: 0.35, burns: 1, stroke: 0.25, cardiac: 0.3 },
     cap: { edBedsFree: 3, resusFree: 1, traumaFree: 0, burnsFree: 3, icuFree: 1, oNeg: 9, ctOnline: 1, diversion: false } },
   { id: 'palmridge', name: 'Palm Ridge General (demo)', kind: 'Stroke-capable general hospital', etaBase: 9,
-    fit: { trauma: 0.45, burns: 0.3, stroke: 1 },
+    fit: { trauma: 0.45, burns: 0.3, stroke: 1, cardiac: 0.7 },
     cap: { edBedsFree: 7, resusFree: 1, traumaFree: 0, burnsFree: 0, icuFree: 1, oNeg: 7, ctOnline: 2, diversion: false } },
 ];
 const CAP_FIELDS = ['edBedsFree', 'resusFree', 'traumaFree', 'icuFree', 'oNeg', 'ctOnline'];
@@ -1319,7 +1333,7 @@ document.querySelectorAll('[id]').forEach(n => { el[n.id] = n; });
 const TEMPORARY = () => ({ status: 'temporary', method: 'none' });
 const DEFAULT_TRIAGE = () => ({
   avpu: 'A', breathing: 'normal', bleeding: 'none', perfusion: 'normal', pain: 0, ageBand: 'adult',
-  regions: [], burnsPct: 0, mechanism: null, treatments: [], airwayOpened: false,
+  regions: [], burnsPct: 0, mechanism: null, complaints: [], treatments: [], airwayOpened: false,
 });
 const state = {
   encounter: null,
@@ -2043,6 +2057,7 @@ function buildInputs() {
   const chip = (attr, item) => h('button', { type: 'button', class: 'pill', 'aria-pressed': 'false', [attr]: item.v }, item.label);
   el.regionChips.replaceChildren(...REGIONS.map(r => chip('data-region', r)));
   el.mechChips.replaceChildren(...MECHANISMS.map(m => chip('data-mech', m)));
+  el.complaintChips.replaceChildren(...COMPLAINTS.map(c => chip('data-complaint', c)));
   el.treatChips.replaceChildren(...TREATMENTS.map(t => chip('data-treat', t)));
 }
 
@@ -2100,6 +2115,7 @@ function renderTriage() {
 
   for (const b of el.regionChips.children) b.setAttribute('aria-pressed', String(t.regions.includes(b.dataset.region)));
   for (const b of el.mechChips.children) b.setAttribute('aria-pressed', String(t.mechanism === b.dataset.mech));
+  for (const b of el.complaintChips.children) b.setAttribute('aria-pressed', String(t.complaints.includes(b.dataset.complaint)));
   for (const b of el.treatChips.children) b.setAttribute('aria-pressed', String(t.treatments.includes(b.dataset.treat)));
 
   renderDispatch();
@@ -2288,6 +2304,15 @@ function assess(t, s) {
   const mech = MECHANISMS.find(m => m.v === t.mechanism);
 
   if (apnoeic) add(1, 'Not breathing: BLACK under START unless breathing returns once the airway is opened', 'black');
+  const has = c => t.complaints.includes(c);
+  const altered = t.avpu !== 'A';
+  if (has('allergic') && (t.breathing === 'laboured' || t.perfusion === 'weak-fast')) add(1, 'Allergic reaction with breathing or circulation affected: anaphylaxis → RED');
+  else if (has('allergic')) add(3, 'Allergic reaction, breathing and circulation normal → at least YELLOW');
+  if (has('chest-pain')) add(2, 'Chest pain: possible heart attack → RED (ECG within 10 min)');
+  if (has('stroke')) add(2, 'Stroke signs: time-critical → RED (stroke team + CT)');
+  if (has('seizure')) add(2, 'Seizure → RED');
+  if (has('overdose')) add(2, 'Overdose / poisoning → RED');
+  if (has('diabetic')) add(altered ? 2 : 3, altered ? 'Diabetic emergency with reduced consciousness → RED' : 'Diabetic emergency, alert → at least YELLOW');
   if (t.airwayOpened && !apnoeic) add(1, 'Breathing started only after the airway was opened → RED (START)');
   if (t.avpu === 'U') add(1, 'Unresponsive (GCS 3) → RED');
   if (t.bleeding === 'uncontrolled') add(1, 'Uncontrolled bleeding → RED');
@@ -2401,12 +2426,13 @@ function needsFor(t, e) {
   const core = t.regions.some(r => r === 'head' || r === 'neck' || r === 'chest' || r === 'abdomen' || r === 'pelvis');
   const heavyBleed = t.bleeding === 'heavy-controlled' || t.bleeding === 'uncontrolled';
   const burns = t.burnsPct >= 10 || (t.mechanism === 'smoke' && t.burnsPct > 0);
-  const stroke = t.mechanism === 'medical' && t.avpu !== 'A' && !t.regions.length;
+  const stroke = t.complaints.includes('stroke') || (t.mechanism === 'medical' && t.avpu !== 'A' && !t.regions.length && !t.complaints.length);
   return {
     burns,
     burnsMajor: t.burnsPct >= 20 || (t.ageBand === 'child' && t.burnsPct >= 10),
     trauma: core || heavyBleed || (e.esi <= 2 && !!mech && mech.trauma && t.burnsPct < 20),
     stroke,
+    cardiac: t.complaints.includes('chest-pain'),
     ct: stroke || t.regions.includes('head'),
     blood: heavyBleed || t.perfusion === 'weak-fast',
     resus: e.esi <= 2,
@@ -2417,6 +2443,7 @@ function needLabels(n) {
   const out = [];
   if (n.trauma) out.push('Trauma bay');
   if (n.burns) out.push(n.burnsMajor ? 'Burns unit' : 'Burns care');
+  if (n.cardiac) out.push('Cath lab');
   if (n.stroke) out.push('Stroke team + CT');
   else if (n.ct) out.push('CT');
   if (n.blood) out.push('O-neg blood');
@@ -2437,7 +2464,7 @@ function capacityFor(hp) {
 function slotFor(hp, n) {
   if (n.burns && hp.fit.burns === 1) return 'burnsFree';
   if (n.trauma) return 'traumaFree';
-  if (n.resus || n.stroke) return 'resusFree';
+  if (n.resus || n.stroke || n.cardiac) return 'resusFree';
   return 'edBedsFree';
 }
 
@@ -2447,6 +2474,7 @@ function scoreHospital(hp, n, urgencyMin) {
   if (n.trauma) match *= hp.fit.trauma;
   if (n.burns) match *= n.burnsMajor ? hp.fit.burns : 0.6 + 0.4 * hp.fit.burns;
   if (n.stroke) match *= hp.fit.stroke;
+  if (n.cardiac) match *= hp.fit.cardiac;
   const slot = slotFor(hp, n);
   const free = cap ? (Number.isFinite(cap[slot]) ? cap[slot] : 0) : null;
   let capF = free == null ? 0.45 : free <= 0 ? 0.15 : free === 1 ? 0.6 : free === 2 ? 0.8 : 1;
@@ -2651,7 +2679,7 @@ function incidentTime() {
 
 function mechanismText() {
   const t = state.triage, m = MECHANISMS.find(x => x.v === t.mechanism), inc = state.incident;
-  const parts = [];
+  const parts = COMPLAINTS.filter(c => t.complaints.includes(c.v)).map(c => c.text);
   if (m) parts.push(m.text);
   if (inc) parts.push(inc.id + (inc.place ? ', ' + inc.place : '') + (inc.trapped ? ', trapped' : ''));
   return redact(parts.join(' · ')).slice(0, 160);
@@ -2707,7 +2735,7 @@ function buildMessage() {
     triage: {
       avpu: t.avpu, breathing: t.breathing, bleeding: t.bleeding, perfusion: t.perfusion,
       pain: t.pain, regions: t.regions.slice(), burnsPct: t.burnsPct, ageBand: t.ageBand,
-      start: e.start, mechanism: t.mechanism, airwayOpened: t.airwayOpened,
+      start: e.start, mechanism: t.mechanism, complaints: t.complaints.slice(), airwayOpened: t.airwayOpened,
     },
     destination: { hospital: d.name, reason: d.reason, etaMin: d.eta, chosenBy: state.dest.mode === 'crew' ? 'crew' : 'auto' },
   };
@@ -3086,6 +3114,10 @@ function wire() {
   el.regionChips.addEventListener('click', e => {
     const b = e.target.closest('[data-region]');
     if (b) commit('regions', toggleIn(state.triage.regions, REGIONS, b.dataset.region));
+  });
+  el.complaintChips.addEventListener('click', e => {
+    const b = e.target.closest('[data-complaint]');
+    if (b) commit('complaints', toggleIn(state.triage.complaints, COMPLAINTS, b.dataset.complaint));
   });
   el.mechChips.addEventListener('click', e => {
     const b = e.target.closest('[data-mech]');

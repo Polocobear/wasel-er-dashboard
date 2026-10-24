@@ -275,7 +275,7 @@ function receivePreAlert(msg) {
 
   const inc = S.incidents.slice().reverse().find(i => i.closedAt == null)
     || incident('Responder pre-alert', 'Field (responder app)', 'responder app pre-alert', 1, 'prealert');
-  const p = makePatient(PREALERT_RULES.esiCond[d.esi], 'EMS');
+  const p = makePatient(wslCondFor(d), 'EMS');
   wslMatchInitials(p, d.identity.display);
   Object.assign(p, { esi: d.esi, enc: d.encounter, incident: inc.id, fieldAt: S.t, preAlert: true,
     start: d.start || (S.mode === 'mci' ? wslStart(d.esi) : null),
@@ -529,6 +529,15 @@ const WASEL_SLIDER_URGENCY = {
   perfusion: { absent: 3, 'weak-fast': 2, weak: 2, 'weak-slow': 2, delayed: 2, 'delayed-refill': 2 },
 };
 const WASEL_SLIDER_NORMAL = ['normal', 'none', 'nil', 'ok', 'adult'];
+// Responder medical-complaint chips → dashboard condition (COND key) and why-line text
+const WASEL_COMPLAINT_COND = { 'chest-pain': 'chestPain', stroke: 'stroke', seizure: 'seizure', overdose: 'overdose', allergic: 'allergy', diabetic: 'hypo' };
+const WASEL_COMPLAINT_TEXT = { 'chest-pain': 'chest pain', stroke: 'stroke signs', seizure: 'seizure', overdose: 'overdose', allergic: 'allergic reaction', diabetic: 'diabetic emergency' };
+const wslIsComplaint = x => typeof x === 'string' && Object.prototype.hasOwnProperty.call(WASEL_COMPLAINT_COND, x);
+// A medical complaint picks the condition; otherwise a stand-in condition for the ESI level
+function wslCondFor(d) {
+  const c = d.triage && d.triage.complaints && d.triage.complaints[0];
+  return c ? WASEL_COMPLAINT_COND[c] : PREALERT_RULES.esiCond[d.esi];
+}
 
 // Whitelisted slider values only; an invalid value is left out and reported in `dropped`
 function wslParseTriage(tr, dropped) {
@@ -548,6 +557,10 @@ function wslParseTriage(tr, dropped) {
     if (ok) out.regions = Array.from(new Set(tr.regions)); else bad('regions');
   }
   if (tr.burnsPct != null) { if (num(tr.burnsPct, 100)) out.burnsPct = Math.round(tr.burnsPct); else bad('burnsPct'); }
+  if (tr.complaints != null) {
+    const ok = Array.isArray(tr.complaints) && tr.complaints.length <= 6 && tr.complaints.every(wslIsComplaint);
+    if (ok) { if (tr.complaints.length) out.complaints = Array.from(new Set(tr.complaints)); } else bad('complaints');
+  }
   if (tr.ageBand != null) { if (typeof tr.ageBand === 'string' && R.word.test(tr.ageBand)) out.ageBand = tr.ageBand; else bad('ageBand'); }
   return Object.keys(out).length ? out : null;
 }
@@ -573,6 +586,7 @@ function waselTriageWhy(tr) {
   const out = [];
   const add = (urgency, text) => out.push([urgency, out.length, text]);
   const words = w => w.replace(/-/g, ', ');
+  if (Array.isArray(tr.complaints)) for (const c of tr.complaints) if (wslIsComplaint(c)) add(c === 'stroke' || c === 'chest-pain' ? 3 : 2, WASEL_COMPLAINT_TEXT[c]);
   if (WASEL_AVPU_TEXT[tr.avpu]) add(tr.avpu === 'V' ? 2 : 3, WASEL_AVPU_TEXT[tr.avpu]);
   for (const k of ['breathing', 'bleeding', 'perfusion']) {
     const w = tr[k];

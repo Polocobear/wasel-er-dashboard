@@ -1434,6 +1434,10 @@ const COND = {
   dyspnea:    { label: 'Shortness of breath', icd: 'R06.00', esi: [3, 3], v: { hr: 102, sbp: 138, rr: 24, spo2: 93, temp: 37.1 }, det: 0.2, delay: [3, 12], drift: { hr: 0.6, sbp: 0, rr: 0.3, spo2: -0.2 }, needs: { o2: 1 }, treat: [60, 140], dispo: { ward: 0.5, discharge: 0.5 } },
   asthma:     { label: 'Asthma exacerbation', icd: 'J45.901', esi: [3, 3], v: { hr: 108, sbp: 130, rr: 26, spo2: 93, temp: 37.0 }, needs: { o2: 1 }, treat: [40, 90], dispo: { discharge: 0.8, ward: 0.2 } },
   sepsis:     { label: 'Sepsis', icd: 'A41.9', esi: [3, 3], v: { hr: 104, sbp: 112, rr: 22, spo2: 95, temp: 38.6 }, det: 0.8, delay: [4, 10], drift: { hr: 1.2, sbp: -1.2, rr: 0.3, spo2: -0.15 }, treat: [60, 120], dispo: { icu: 0.4, ward: 0.6 } },
+  seizure:    { label: 'Seizure', icd: 'R56.9', esi: [2, 2], v: { hr: 112, sbp: 138, rr: 20, spo2: 95, temp: 37.4 }, avpu: 0.5, treat: [40, 90], dispo: { ward: 0.5, discharge: 0.5 }, team: 'medical team' },
+  overdose:   { label: 'Drug overdose / poisoning', icd: 'T50.901A', esi: [2, 2], v: { hr: 62, sbp: 104, rr: 10, spo2: 92, temp: 36.4 }, avpu: 0.5, det: 0.3, delay: [2, 8], drift: { hr: -0.3, sbp: -0.5, rr: -0.2, spo2: -0.2 }, needs: { o2: 1 }, treat: [60, 150], dispo: { ward: 0.6, icu: 0.2, discharge: 0.2 }, team: 'medical team' },
+  allergy:    { label: 'Allergic reaction', icd: 'T78.40XA', esi: [2, 3], v: { hr: 116, sbp: 104, rr: 24, spo2: 94, temp: 37.0 }, det: 0.3, delay: [1, 5], drift: { hr: 0.6, sbp: -0.8, rr: 0.3, spo2: -0.2 }, needs: { o2: 1 }, treat: [40, 90], dispo: { discharge: 0.7, ward: 0.3 } },
+  hypo:       { label: 'Type 2 diabetes with hypoglycaemia', icd: 'E11.649', esi: [2, 3], v: { hr: 104, sbp: 132, rr: 18, spo2: 98, temp: 36.6 }, avpu: 0.4, treat: [30, 60], dispo: { discharge: 0.7, ward: 0.3 } },
   stroke:     { label: 'Acute ischaemic stroke', icd: 'I63.9', esi: [1, 2], v: { hr: 88, sbp: 178, rr: 18, spo2: 96, temp: 37.0 }, avpu: 0.5, needs: { ct: 1 }, treat: [40, 80], dispo: { icu: 0.5, ward: 0.5 }, team: 'stroke team' },
   fever:      { label: 'Fever', icd: 'R50.9', esi: [4, 4], v: { hr: 100, sbp: 124, rr: 18, spo2: 98, temp: 38.7 }, treat: [30, 60], dispo: { discharge: 1 } },
   ankle:      { label: 'Ankle sprain', icd: 'S93.409A', esi: [5, 5], v: { hr: 82, sbp: 126, rr: 15, spo2: 99, temp: 36.8 }, treat: [20, 40], dispo: { discharge: 1 } },
@@ -2513,7 +2517,7 @@ function receivePreAlert(msg) {
 
   const inc = S.incidents.slice().reverse().find(i => i.closedAt == null)
     || incident('Responder pre-alert', 'Field (responder app)', 'responder app pre-alert', 1, 'prealert');
-  const p = makePatient(PREALERT_RULES.esiCond[d.esi], 'EMS');
+  const p = makePatient(wslCondFor(d), 'EMS');
   wslMatchInitials(p, d.identity.display);
   Object.assign(p, { esi: d.esi, enc: d.encounter, incident: inc.id, fieldAt: S.t, preAlert: true,
     start: d.start || (S.mode === 'mci' ? wslStart(d.esi) : null),
@@ -2767,6 +2771,15 @@ const WASEL_SLIDER_URGENCY = {
   perfusion: { absent: 3, 'weak-fast': 2, weak: 2, 'weak-slow': 2, delayed: 2, 'delayed-refill': 2 },
 };
 const WASEL_SLIDER_NORMAL = ['normal', 'none', 'nil', 'ok', 'adult'];
+// Responder medical-complaint chips → dashboard condition (COND key) and why-line text
+const WASEL_COMPLAINT_COND = { 'chest-pain': 'chestPain', stroke: 'stroke', seizure: 'seizure', overdose: 'overdose', allergic: 'allergy', diabetic: 'hypo' };
+const WASEL_COMPLAINT_TEXT = { 'chest-pain': 'chest pain', stroke: 'stroke signs', seizure: 'seizure', overdose: 'overdose', allergic: 'allergic reaction', diabetic: 'diabetic emergency' };
+const wslIsComplaint = x => typeof x === 'string' && Object.prototype.hasOwnProperty.call(WASEL_COMPLAINT_COND, x);
+// A medical complaint picks the condition; otherwise a stand-in condition for the ESI level
+function wslCondFor(d) {
+  const c = d.triage && d.triage.complaints && d.triage.complaints[0];
+  return c ? WASEL_COMPLAINT_COND[c] : PREALERT_RULES.esiCond[d.esi];
+}
 
 // Whitelisted slider values only; an invalid value is left out and reported in `dropped`
 function wslParseTriage(tr, dropped) {
@@ -2786,6 +2799,10 @@ function wslParseTriage(tr, dropped) {
     if (ok) out.regions = Array.from(new Set(tr.regions)); else bad('regions');
   }
   if (tr.burnsPct != null) { if (num(tr.burnsPct, 100)) out.burnsPct = Math.round(tr.burnsPct); else bad('burnsPct'); }
+  if (tr.complaints != null) {
+    const ok = Array.isArray(tr.complaints) && tr.complaints.length <= 6 && tr.complaints.every(wslIsComplaint);
+    if (ok) { if (tr.complaints.length) out.complaints = Array.from(new Set(tr.complaints)); } else bad('complaints');
+  }
   if (tr.ageBand != null) { if (typeof tr.ageBand === 'string' && R.word.test(tr.ageBand)) out.ageBand = tr.ageBand; else bad('ageBand'); }
   return Object.keys(out).length ? out : null;
 }
@@ -2811,6 +2828,7 @@ function waselTriageWhy(tr) {
   const out = [];
   const add = (urgency, text) => out.push([urgency, out.length, text]);
   const words = w => w.replace(/-/g, ', ');
+  if (Array.isArray(tr.complaints)) for (const c of tr.complaints) if (wslIsComplaint(c)) add(c === 'stroke' || c === 'chest-pain' ? 3 : 2, WASEL_COMPLAINT_TEXT[c]);
   if (WASEL_AVPU_TEXT[tr.avpu]) add(tr.avpu === 'V' ? 2 : 3, WASEL_AVPU_TEXT[tr.avpu]);
   for (const k of ['breathing', 'bleeding', 'perfusion']) {
     const w = tr[k];
