@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="WASEL ER Command Dashboard: how 10 hospital systems and the responder app feed one role-filtered command view. Standards, data mapping, patient journey and human-in-the-loop controls.">
+<title>WASEL Architecture Map</title>
+<style>
+/* Tokens match src/shell.html (dark command-centre default). Print switches to the light set. */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --raised: #2a2a28;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --line: #8f8d86;
+  --border: rgba(255, 255, 255, .10);
+  --border-strong: rgba(255, 255, 255, .18);
+  --accent: #3987e5;
+  --accent-fg: #6aa6f0;
+  --accent-weak: rgba(57, 135, 229, .16);
+  --good-fg: #4cc44c;
+  --warning-fg: #fab219;
+  --critical-fg: #f47067;
+  --radius: 12px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text);
+  font: 14px/1.5 var(--font);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.wrap { max-width: 1320px; margin: 0 auto; padding: 28px 16px 48px; }
+header h1 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -.01em; }
+header .lede { color: var(--text-2); margin: 0; max-width: 90ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text-2);
+}
+.chip b { color: var(--text); font-variant-numeric: tabular-nums; }
+section.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 20px; margin-top: 18px;
+}
+h2 { font-size: 17px; margin: 0 0 2px; }
+.sub { color: var(--text-2); margin: 0 0 14px; font-size: 13px; max-width: 110ch; }
+code { font-family: var(--mono); font-size: 12px; background: var(--raised); padding: 1px 5px; border-radius: 5px; }
+.note { color: var(--text-2); font-size: 12.5px; margin: 12px 0 0; }
+.note b { color: var(--text); }
+
+/* ---------- Diagram ---------- */
+.figscroll { overflow-x: auto; }
+svg.diagram { display: block; width: 100%; min-width: 980px; height: auto; font-family: var(--font); }
+.bx   { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1; }
+.bx2  { fill: var(--raised); stroke: var(--border); stroke-width: 1; }
+.bxa  { fill: var(--accent-weak); stroke: var(--accent); stroke-width: 1.5; }
+.dash { stroke-dasharray: 6 4; }
+.tagr { fill: var(--raised); stroke: var(--border-strong); stroke-width: 1; }
+.ln   { stroke: var(--line); stroke-width: 1.5; fill: none; }
+.lna  { stroke: var(--accent); stroke-width: 2; fill: none; }
+.ah   { fill: var(--line); }
+.aha  { fill: var(--accent); }
+.t-col { fill: var(--text-2); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.t-grp { fill: var(--text-2); font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.t-big { fill: var(--text); font-size: 15px; font-weight: 700; }
+.t-h   { fill: var(--text); font-size: 12.5px; font-weight: 600; }
+.t-s   { fill: var(--text-2); font-size: 11px; }
+.t-s2  { fill: var(--text-2); font-size: 10.5px; }
+.t-std { fill: var(--accent-fg); font-size: 10.5px; font-weight: 700; }
+.t-res { fill: var(--text-2); font-size: 10.5px; font-weight: 600; }
+.t-note{ fill: var(--text-2); font-size: 10px; }
+.t-tag { fill: var(--text-2); font-size: 9.5px; font-weight: 700; letter-spacing: .06em; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.controls span { font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); }
+
+/* ---------- Tables ---------- */
+.tscroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 920px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--border); }
+thead th {
+  color: var(--text-2); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  border-bottom: 1px solid var(--border-strong); white-space: nowrap;
+}
+tbody th { font-weight: 600; color: var(--text); }
+td.std { color: var(--accent-fg); font-weight: 600; }
+td .m { color: var(--text-2); }
+tr.pre th, tr.pre td { background: var(--accent-weak); }
+.grp td, .grp th { border-top: 1px solid var(--border-strong); }
+
+/* ---------- Journey ---------- */
+ol.journey { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 14px; }
+ol.journey li {
+  position: relative; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 12px 14px;
+}
+ol.journey li:not(:last-child)::after {
+  content: "›"; position: absolute; right: -12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-2); font-size: 20px; line-height: 1;
+}
+.sn { font-size: 11px; font-weight: 700; color: var(--text-2); letter-spacing: .06em; text-transform: uppercase; }
+ol.journey h3 { font-size: 14.5px; margin: 2px 0 8px; }
+.fed { font-size: 11.5px; font-weight: 700; color: var(--accent-fg); margin: 0 0 6px; }
+ol.journey p { font-size: 12.5px; color: var(--text-2); margin: 0; }
+
+/* ---------- Human in the loop ---------- */
+.hitl table { min-width: 860px; }
+.hitl td.who { white-space: nowrap; color: var(--text); font-weight: 600; }
+.never {
+  margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--border-strong); background: var(--surface-2);
+}
+.never h3 { margin: 0 0 6px; font-size: 14px; }
+.never ul { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 13px; }
+.never li { margin: 3px 0; }
+.never li b { color: var(--text); }
+footer { color: var(--text-2); font-size: 12px; margin-top: 18px; }
+
+@media (max-width: 1100px) {
+  ol.journey { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  ol.journey li::after { display: none; }
+}
+@media (max-width: 560px) {
+  ol.journey { grid-template-columns: 1fr; }
+  header h1 { font-size: 22px; }
+  section.card { padding: 14px; }
+}
+
+/* ---------- Print: light tokens, everything visible, landscape ---------- */
+@page { size: A4 landscape; margin: 10mm; }
+@media print {
+  :root {
+    color-scheme: light;
+    --page: #ffffff; --surface: #ffffff; --surface-2: #f3f2ee; --raised: #ebeae5;
+    --text: #0b0b0b; --text-2: #3f3e3b; --muted: #6b6a65; --line: #5f5e5a;
+    --border: rgba(11, 11, 11, .14); --border-strong: rgba(11, 11, 11, .28);
+    --accent: #2a78d6; --accent-fg: #1f63b8; --accent-weak: rgba(42, 120, 214, .10);
+  }
+  .wrap { max-width: none; padding: 0; }
+  section.card { break-inside: avoid; page-break-inside: avoid; border-color: var(--border-strong); }
+  section.map { break-inside: auto; page-break-inside: auto; }
+  .figscroll, .tscroll { overflow: visible; }
+  svg.diagram, table, .hitl table { min-width: 0; }
+  table { font-size: 11px; }
+  th, td { padding: 6px 8px; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  ol.journey { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+  ol.journey li::after { display: block; right: -9px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>WASEL · Architecture &amp; data map</h1>
+  <p class="lede">ER Crisis Command Center for Nexus 26, Track 3 (Informatics). Ten hospital systems and the paramedic responder app feed one FHIR R4 gateway. An event engine and AI decision layer turn that data into suggestions, and each screen shows only what its role needs. AI does the watching, counting and matching. Humans do the judging, treating and deciding.</p>
+  <div class="chips">
+    <span class="chip"><b>10</b> source systems</span>
+    <span class="chip"><b>1</b> responder pre-alert feed</span>
+    <span class="chip"><b>5</b> role-filtered screens</span>
+    <span class="chip">HL7 FHIR R4 · HL7 v2.5 · IEEE 11073 · LOINC · ICD-10-CM</span>
+    <span class="chip">All patient data is fictional</span>
+  </div>
+</header>
+
+<section class="card" aria-labelledby="h-flow">
+  <h2 id="h-flow">Data flow</h2>
+  <p class="sub">Read left to right. The standard or message type sits on every feed. The responder path (blue) is the team's own addition.</p>
+  <div class="figscroll">
+<svg class="diagram" viewBox="0 0 1280 760" role="img" aria-labelledby="svgT svgD" xmlns="http://www.w3.org/2000/svg">
+  <title id="svgT">WASEL data-flow diagram</title>
+  <desc id="svgD">Ten source systems, grouped as pre-hospital dispatch, clinical records, devices and location, and operations, each send data in a named standard to a FHIR R4 integration gateway. The responder app and an on-device face-ID service, which only returns a candidate match, send an ATMIST pre-alert to the same gateway. The gateway passes FHIR resources to an event engine and AI decision layer (NEWS2, forecasting, matching, medication safety, decision queue, role filter, audit log). That layer feeds five role-filtered screens: wall board, charge tablet, clinician drawer, commander view (production design) and admin console. Approvals flow back from the charge tablet and clinician drawer.</desc>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,1 L9,5 L0,9 z" class="ah"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,1 L9,5 L0,9 z" class="aha"/></marker>
+  </defs>
+
+  <!-- Column headers -->
+  <text x="20" y="22" class="t-col">Responder (field)</text>
+  <text x="550" y="22" class="t-col" text-anchor="middle">Integration</text>
+  <text x="825" y="22" class="t-col" text-anchor="middle">Processing</text>
+  <text x="1050" y="22" class="t-col">Role-filtered screens</text>
+
+  <!-- Responder path: Face-ID (candidate only) -> Responder app -> ATMIST pre-alert -> gateway -->
+  <rect x="20" y="34" width="135" height="78" rx="8" class="bx"/>
+  <text x="30" y="54" class="t-h">Face-ID service</text>
+  <text x="30" y="71" class="t-s">on-device match</text>
+  <text x="30" y="86" class="t-s">candidate only</text>
+  <text x="30" y="101" class="t-s">no image is sent</text>
+  <line x1="155" y1="73" x2="183" y2="73" class="ln" marker-end="url(#ah)"/>
+  <rect x="185" y="34" width="145" height="78" rx="8" class="bx"/>
+  <text x="195" y="54" class="t-h">Responder app</text>
+  <text x="195" y="71" class="t-s">ATMIST + ESI or START</text>
+  <text x="195" y="86" class="t-s">no match → temp T-###</text>
+  <text x="195" y="101" class="t-s">never delays care</text>
+  <line x1="330" y1="73" x2="477" y2="73" class="lna" marker-end="url(#aha)"/>
+  <text x="405" y="66" class="t-std" text-anchor="middle">ATMIST pre-alert v1</text>
+  <text x="405" y="88" class="t-note" text-anchor="middle">initials only · no images</text>
+
+  <!-- Group + column labels -->
+  <text x="20" y="160" class="t-grp">Pre-hospital dispatch</text>
+  <text x="405" y="160" class="t-grp" text-anchor="middle">Standard / message</text>
+  <text x="20" y="226" class="t-grp">Clinical records</text>
+  <text x="20" y="430" class="t-grp">Devices &amp; location</text>
+  <text x="20" y="542" class="t-grp">Operations &amp; logistics</text>
+
+  <!-- Source rows (from SOURCES in src/00-core.js) -->
+  <rect x="20" y="166" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="183" class="t-h">Ambulance dispatch (EMS)</text>
+  <text x="32" y="198" class="t-s">Incidents, ambulance ETAs, field triage</text>
+  <line x1="330" y1="186" x2="478" y2="186" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="181" class="t-std" text-anchor="middle">FHIR · CAD feed</text>
+
+  <rect x="20" y="232" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="249" class="t-h">EHR</text>
+  <text x="32" y="264" class="t-s">Patient, Encounter, Condition (ICD-10-CM)</text>
+  <line x1="330" y1="252" x2="478" y2="252" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="247" class="t-std" text-anchor="middle">HL7 FHIR R4</text>
+
+  <rect x="20" y="278" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="295" class="t-h">Registration (ADT)</text>
+  <text x="32" y="310" class="t-s">Arrival A04 · transfer A02 · discharge A03</text>
+  <line x1="330" y1="298" x2="478" y2="298" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="293" class="t-std" text-anchor="middle">HL7 v2.5 ADT</text>
+
+  <rect x="20" y="324" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="341" class="t-h">Laboratory (LIS)</text>
+  <text x="32" y="356" class="t-s">Lab results and critical flags</text>
+  <line x1="330" y1="344" x2="478" y2="344" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="339" class="t-std" text-anchor="middle">HL7 v2 ORU · LOINC</text>
+
+  <rect x="20" y="370" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="387" class="t-h">Radiology (RIS/PACS)</text>
+  <text x="32" y="402" class="t-s">CT scanner status and scan queue</text>
+  <line x1="330" y1="390" x2="478" y2="390" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="385" class="t-std" text-anchor="middle">DICOM · HL7 v2 ORM</text>
+
+  <rect x="20" y="436" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="453" class="t-h">Monitors &amp; wearables</text>
+  <text x="32" y="468" class="t-s">HR, BP, RR, SpO₂, temp (LOINC-coded)</text>
+  <line x1="330" y1="456" x2="478" y2="456" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="451" class="t-std" text-anchor="middle">IEEE 11073 SDC</text>
+
+  <rect x="20" y="482" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="499" class="t-h">Asset tracking (RTLS)</text>
+  <text x="32" y="514" class="t-s">Equipment location · backup bed sensors</text>
+  <line x1="330" y1="502" x2="478" y2="502" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="497" class="t-std" text-anchor="middle">BLE / RFID tags</text>
+
+  <rect x="20" y="548" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="565" class="t-h">Bed management</text>
+  <text x="32" y="580" class="t-s">Bed status, cleaning, reservations</text>
+  <line x1="330" y1="568" x2="478" y2="568" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="563" class="t-std" text-anchor="middle">FHIR Location</text>
+
+  <rect x="20" y="594" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="611" class="t-h">Pharmacy &amp; blood bank</text>
+  <text x="32" y="626" class="t-s">Blood units, medication and supply stock</text>
+  <line x1="330" y1="614" x2="478" y2="614" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="609" class="t-std" text-anchor="middle">FHIR · GS1 barcodes</text>
+
+  <rect x="20" y="640" width="310" height="40" rx="8" class="bx"/>
+  <text x="32" y="657" class="t-h">Staff rostering</text>
+  <text x="32" y="672" class="t-s">Shifts, hours on duty, on-call list</text>
+  <line x1="330" y1="660" x2="478" y2="660" class="ln" marker-end="url(#ah)"/>
+  <text x="405" y="655" class="t-std" text-anchor="middle">REST API · OAuth 2.0</text>
+
+  <!-- FHIR R4 integration gateway -->
+  <rect x="480" y="34" width="140" height="646" rx="12" class="bxa"/>
+  <text x="550" y="62" class="t-big" text-anchor="middle">FHIR R4</text>
+  <text x="550" y="80" class="t-h" text-anchor="middle">integration</text>
+  <text x="550" y="96" class="t-h" text-anchor="middle">gateway</text>
+  <text x="550" y="300" class="t-s2" text-anchor="middle">Maps each feed to</text>
+  <text x="550" y="315" class="t-s2" text-anchor="middle">FHIR R4 resources</text>
+  <text x="550" y="345" class="t-s2" text-anchor="middle">Terminology:</text>
+  <text x="550" y="360" class="t-s2" text-anchor="middle">LOINC · ICD-10-CM · ATC</text>
+  <text x="550" y="390" class="t-s2" text-anchor="middle">Validates pre-alerts;</text>
+  <text x="550" y="405" class="t-s2" text-anchor="middle">drops unknown fields</text>
+  <text x="550" y="435" class="t-s2" text-anchor="middle">Heartbeat per feed:</text>
+  <text x="550" y="450" class="t-s2" text-anchor="middle">live · offline · STALE</text>
+
+  <!-- Gateway -> engine (FHIR resources) and requests back out -->
+  <line x1="620" y1="130" x2="708" y2="130" class="ln" marker-end="url(#ah)"/>
+  <text x="665" y="124" class="t-res" text-anchor="middle">Patient</text>
+  <line x1="620" y1="230" x2="708" y2="230" class="ln" marker-end="url(#ah)"/>
+  <text x="665" y="224" class="t-res" text-anchor="middle">Encounter</text>
+  <line x1="620" y1="330" x2="708" y2="330" class="ln" marker-end="url(#ah)"/>
+  <text x="665" y="324" class="t-res" text-anchor="middle">Condition</text>
+  <line x1="620" y1="430" x2="708" y2="430" class="ln" marker-end="url(#ah)"/>
+  <text x="665" y="424" class="t-res" text-anchor="middle">Observation</text>
+  <line x1="620" y1="530" x2="708" y2="530" class="ln" marker-end="url(#ah)"/>
+  <text x="665" y="524" class="t-res" text-anchor="middle">Location</text>
+  <line x1="708" y1="630" x2="622" y2="630" class="ln" marker-end="url(#ah)"/>
+  <text x="665" y="624" class="t-res" text-anchor="middle">Requests out</text>
+  <text x="665" y="644" class="t-note" text-anchor="middle">on approval</text>
+
+  <!-- Event engine + AI decision layer -->
+  <rect x="710" y="34" width="230" height="646" rx="12" class="bx"/>
+  <text x="825" y="58" class="t-big" text-anchor="middle">Event engine +</text>
+  <text x="825" y="76" class="t-big" text-anchor="middle">AI decision layer</text>
+
+  <rect x="722" y="92" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="112" class="t-h">Event engine</text>
+  <text x="734" y="129" class="t-s">ADT, CAD and device events</text>
+  <text x="734" y="144" class="t-s">mode: Steady · Strain · Surge · MCI</text>
+
+  <rect x="722" y="164" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="184" class="t-h">NEWS2 + 12-min trend</text>
+  <text x="734" y="201" class="t-s">every patient, every sim-minute</text>
+  <text x="734" y="216" class="t-s">flags deterioration early</text>
+
+  <rect x="722" y="236" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="256" class="t-h">Forecasting</text>
+  <text x="734" y="273" class="t-s">bed occupancy 30 min ahead</text>
+  <text x="734" y="288" class="t-s">supply run-out countdowns</text>
+
+  <rect x="722" y="308" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="328" class="t-h">Matching</text>
+  <text x="734" y="345" class="t-s">patient → bed zone (by ESI)</text>
+  <text x="734" y="360" class="t-s">→ nurse load → free equipment</text>
+
+  <rect x="722" y="380" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="400" class="t-h">Medication safety</text>
+  <text x="734" y="417" class="t-s">allergy class, anticoagulant</text>
+  <text x="734" y="432" class="t-s">hard stops (ATC-coded drugs)</text>
+
+  <rect x="722" y="452" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="472" class="t-h">Decision queue</text>
+  <text x="734" y="489" class="t-s">suggestion + why + owner</text>
+  <text x="734" y="504" class="t-s">escalates after 3 / 6 / 10 min</text>
+
+  <rect x="722" y="524" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="544" class="t-h">Role filter</text>
+  <text x="734" y="561" class="t-s">minimum-necessary masking</text>
+  <text x="734" y="576" class="t-s">applied before every render</text>
+
+  <rect x="722" y="596" width="206" height="62" rx="8" class="bx2"/>
+  <text x="734" y="616" class="t-h">Audit log</text>
+  <text x="734" y="633" class="t-s">views, approvals, overrides,</text>
+  <text x="734" y="648" class="t-s">blocked access, role switches</text>
+
+  <!-- Engine -> screens (and approvals back) -->
+  <line x1="940" y1="89" x2="1048" y2="89" class="ln" marker-end="url(#ah)"/>
+  <text x="994" y="83" class="t-res" text-anchor="middle">initials only</text>
+  <text x="994" y="103" class="t-note" text-anchor="middle">ESI · ETA · beds</text>
+
+  <line x1="940" y1="210" x2="1048" y2="210" class="ln" marker-end="url(#ah)"/>
+  <text x="994" y="204" class="t-res" text-anchor="middle">masked names</text>
+  <line x1="1048" y1="238" x2="942" y2="238" class="ln" marker-end="url(#ah)"/>
+  <text x="994" y="252" class="t-note" text-anchor="middle">accept / dismiss</text>
+
+  <line x1="940" y1="344" x2="1048" y2="344" class="ln" marker-end="url(#ah)"/>
+  <text x="994" y="338" class="t-res" text-anchor="middle">full record</text>
+  <line x1="1048" y1="372" x2="942" y2="372" class="ln" marker-end="url(#ah)"/>
+  <text x="994" y="386" class="t-note" text-anchor="middle">orders, confirm ID</text>
+
+  <line x1="940" y1="491" x2="1048" y2="491" class="ln dash" marker-end="url(#ah)"/>
+  <text x="994" y="485" class="t-res" text-anchor="middle">aggregates</text>
+  <text x="994" y="505" class="t-note" text-anchor="middle">mode · forecast</text>
+
+  <line x1="940" y1="625" x2="1048" y2="625" class="ln" marker-end="url(#ah)"/>
+  <text x="994" y="619" class="t-res" text-anchor="middle">audit log</text>
+  <text x="994" y="639" class="t-note" text-anchor="middle">feed health</text>
+
+  <!-- Screens -->
+  <rect x="1050" y="34" width="210" height="110" rx="10" class="bx"/>
+  <text x="1062" y="56" class="t-h">Wall board</text>
+  <rect x="1196" y="44" width="56" height="17" rx="4" class="tagr"/>
+  <text x="1224" y="56" class="t-tag" text-anchor="middle">IN DEMO</text>
+  <text x="1062" y="76" class="t-s">De-identified: initials only</text>
+  <text x="1062" y="92" class="t-s">ESI, ETA, beds, journey</text>
+  <text x="1062" y="108" class="t-s">Read-only: no clicks,</text>
+  <text x="1062" y="124" class="t-s">no record access</text>
+
+  <rect x="1050" y="168" width="210" height="110" rx="10" class="bx"/>
+  <text x="1062" y="190" class="t-h">Charge tablet</text>
+  <rect x="1196" y="178" width="56" height="17" rx="4" class="tagr"/>
+  <text x="1224" y="190" class="t-tag" text-anchor="middle">IN DEMO</text>
+  <text x="1062" y="210" class="t-s">Initial + surname, MRN shown</text>
+  <text x="1062" y="226" class="t-s">Approves placement, re-triage,</text>
+  <text x="1062" y="242" class="t-s">staffing, supply, surge</text>
+  <text x="1062" y="258" class="t-s">Every card shows why</text>
+
+  <rect x="1050" y="302" width="210" height="110" rx="10" class="bx"/>
+  <text x="1062" y="324" class="t-h">Clinician drawer</text>
+  <rect x="1196" y="312" width="56" height="17" rx="4" class="tagr"/>
+  <text x="1224" y="324" class="t-tag" text-anchor="middle">IN DEMO</text>
+  <text x="1062" y="344" class="t-s">Physician: full name + record</text>
+  <text x="1062" y="360" class="t-s">Nurse: assigned patients only;</text>
+  <text x="1062" y="376" class="t-s">others need break-glass (v2)</text>
+  <text x="1062" y="392" class="t-s">LOINC vitals · NEWS2 · FHIR</text>
+
+  <rect x="1050" y="436" width="210" height="110" rx="10" class="bx dash"/>
+  <text x="1062" y="458" class="t-h">Commander view</text>
+  <rect x="1196" y="446" width="56" height="17" rx="4" class="tagr dash"/>
+  <text x="1224" y="458" class="t-tag" text-anchor="middle">DESIGN</text>
+  <text x="1062" y="478" class="t-s">Incident-level overview:</text>
+  <text x="1062" y="494" class="t-s">mode, journey, 30-min forecast</text>
+  <text x="1062" y="510" class="t-s">family board: status only</text>
+  <text x="1062" y="526" class="t-s">Demo: journey strip + forecast</text>
+
+  <rect x="1050" y="570" width="210" height="110" rx="10" class="bx"/>
+  <text x="1062" y="592" class="t-h">Admin console</text>
+  <rect x="1196" y="580" width="56" height="17" rx="4" class="tagr"/>
+  <text x="1224" y="592" class="t-tag" text-anchor="middle">IN DEMO</text>
+  <text x="1062" y="612" class="t-s">IT / Admin: reads audit log</text>
+  <text x="1062" y="628" class="t-s">Feed health, outage fallback</text>
+  <text x="1062" y="644" class="t-s">Initials only, no chart rights</text>
+  <text x="1062" y="660" class="t-s">Prod.: SSO + MFA, SIEM stream</text>
+
+  <!-- Legend -->
+  <line x1="20" y1="718" x2="60" y2="718" class="ln" marker-end="url(#ah)"/>
+  <text x="68" y="722" class="t-s">data flow</text>
+  <text x="150" y="722" class="t-std">HL7 v2.5 ADT</text>
+  <text x="226" y="722" class="t-s">= standard / message on that feed</text>
+  <rect x="436" y="711" width="26" height="14" rx="3" class="bx dash"/>
+  <text x="470" y="722" class="t-s">production design (not in demo build)</text>
+  <rect x="700" y="710" width="56" height="17" rx="4" class="tagr"/>
+  <text x="728" y="722" class="t-tag" text-anchor="middle">IN DEMO</text>
+  <text x="764" y="722" class="t-s">working in the demo build</text>
+  <line x1="930" y1="718" x2="970" y2="718" class="lna" marker-end="url(#aha)"/>
+  <text x="978" y="722" class="t-s">team-built responder path</text>
+  <text x="20" y="748" class="t-note">Demo build: the 10 source feeds and the gateway are simulated in the browser (src/10-engine.js) with the same message types and codes. All patient data is fictional.</text>
+</svg>
+  </div>
+  <div class="controls" aria-label="Security controls on this data path">
+    <span>Pre-alert schema validation (invalid fields become Unknown)</span>
+    <span>No names, images or Emirates ID in pre-alerts</span>
+    <span>HTML-escaped rendering (XSS)</span>
+    <span>CSP blocks all network loads</span>
+    <span>Role-based masking</span>
+    <span>Audit log, IT / Admin only</span>
+    <span>5-min auto-lock for clinical roles</span>
+  </div>
+</section>
+
+<section class="card map" aria-labelledby="h-map">
+  <h2 id="h-map">Data mapping</h2>
+  <p class="sub">Every feed, the standard it speaks, what it carries and where it lands on screen. Rows come from <code>SOURCES</code> in <code>src/00-core.js</code>, plus the responder pre-alert from <code>src/15-wasel.js</code>.</p>
+  <div class="tscroll">
+  <table>
+    <thead>
+      <tr><th scope="col">Source system</th><th scope="col">Standard / message</th><th scope="col">Data elements</th><th scope="col">Dashboard panel</th><th scope="col">Refresh</th></tr>
+    </thead>
+    <tbody>
+      <tr class="pre">
+        <th scope="row">Responder app + Face-ID service</th>
+        <td class="std">WASEL pre-alert v1 (JSON) · ATMIST · ESI or START priority</td>
+        <td>Encounter <code>T-###</code>; identity status, method, confidence + initials; ATMIST (age, time, mechanism, injuries, HR, SBP, RR, SpO₂, GCS, treatment); ETA; safety summary (allergies, anticoagulant, blood type, HIE source + date)</td>
+        <td>Inbound pre-alert cards, decision queue (confirm identity), patient record</td>
+        <td>Per message. Resending the same encounter id updates vitals and ETA, with no duplicate.</td>
+      </tr>
+      <tr>
+        <th scope="row">Ambulance dispatch (EMS)</th>
+        <td class="std">FHIR · CAD feed</td>
+        <td>Incidents (detection channel, expected casualties), ambulance status and ETA, field triage</td>
+        <td>Journey strip, Inbound</td>
+        <td>Per CAD event: detected, on scene, en route, arrived</td>
+      </tr>
+      <tr class="grp">
+        <th scope="row">EHR</th>
+        <td class="std">HL7 FHIR R4</td>
+        <td>Patient, Encounter, Condition (ICD-10-CM, e.g. <code>R07.9</code>, <code>S72.90XA</code>); identity link; MedicationRequest (ATC); safety summary <span class="m">from Riayati, Malaffi or NABIDH</span></td>
+        <td>Patient list, patient record</td>
+        <td>Per event: encounter, priority change, identity confirmed, order</td>
+      </tr>
+      <tr>
+        <th scope="row">Registration (ADT)</th>
+        <td class="std">HL7 v2.5 ADT</td>
+        <td>Arrivals <code>A04</code>, transfers <code>A02</code>, discharges <code>A03</code></td>
+        <td>Journey strip, patient list</td>
+        <td>Per event</td>
+      </tr>
+      <tr>
+        <th scope="row">Laboratory (LIS)</th>
+        <td class="std">HL7 v2 ORU^R01 · LOINC</td>
+        <td>Results with LOINC code (e.g. <code>718-7</code> Hemoglobin) and OBX-8 flags L, H, LL, HH</td>
+        <td>Patient record, integration feed</td>
+        <td>Per result <span class="m">(demo: one every 150 sim-seconds)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Radiology (RIS/PACS)</th>
+        <td class="std">DICOM · HL7 v2 ORM</td>
+        <td>CT scanner online/offline, scan queue, repair work orders</td>
+        <td>Equipment &amp; supplies</td>
+        <td>On status or queue change</td>
+      </tr>
+      <tr class="grp">
+        <th scope="row">Monitors &amp; wearables</th>
+        <td class="std">IEEE 11073 SDC</td>
+        <td>HR <code>8867-4</code>, SBP <code>8480-6</code>, RR <code>9279-1</code>, SpO₂ <code>59408-5</code>, temp <code>8310-5</code> (LOINC)</td>
+        <td>Patient list, NEWS2, patient record</td>
+        <td>Continuous. NEWS2 sampled every sim-minute; one feed line every 20 sim-seconds.</td>
+      </tr>
+      <tr>
+        <th scope="row">Asset tracking (RTLS)</th>
+        <td class="std">BLE / RFID tags</td>
+        <td>Location of ventilators and monitors; backup bed sensors</td>
+        <td>Equipment, bed board</td>
+        <td>Per tag event</td>
+      </tr>
+      <tr class="grp">
+        <th scope="row">Bed management</th>
+        <td class="std">FHIR Location</td>
+        <td>Bed status: free, occupied, cleaning, reserved</td>
+        <td>Bed board</td>
+        <td>Per status change. On outage: STALE snapshot overlay, then backup RTLS sensors.</td>
+      </tr>
+      <tr>
+        <th scope="row">Pharmacy &amp; blood bank</th>
+        <td class="std">FHIR · GS1 barcodes</td>
+        <td>O-negative blood, burn kits, O₂ cylinders; SupplyRequest out, GS1 barcode receipt in</td>
+        <td>Equipment &amp; supplies</td>
+        <td>Per request or receipt <span class="m">(restock ETA 15 min)</span></td>
+      </tr>
+      <tr>
+        <th scope="row">Staff rostering</th>
+        <td class="std">REST API · OAuth 2.0</td>
+        <td>Shifts, hours on duty, on-call list; I-PASS handovers</td>
+        <td>Staff</td>
+        <td>Per shift event; hours on duty accrue live</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note"><b>Feed health:</b> every live source sends a heartbeat every 30 sim-seconds, and the footer shows each source as live or offline. <b>Unknown is not none:</b> <code>allergies: null</code> means Unknown, and <code>[]</code> means confirmed none.</p>
+</section>
+
+<section class="card" aria-labelledby="h-journey">
+  <h2 id="h-journey">Patient journey</h2>
+  <p class="sub">One patient, end to end, and the system that feeds each step.</p>
+  <ol class="journey">
+    <li>
+      <div class="sn">Step 1</div>
+      <h3>Detection</h3>
+      <p class="fed">EMS · CAD</p>
+      <p>998/997 call, smart traffic cameras or a building fire-alarm link opens an incident. Mode can step up to MCI.</p>
+    </li>
+    <li>
+      <div class="sn">Step 2</div>
+      <h3>Dispatch</h3>
+      <p class="fed">EMS · CAD</p>
+      <p>Ambulances on scene, field triage (ESI, or START colours in MCI), live ETAs.</p>
+    </li>
+    <li>
+      <div class="sn">Step 3</div>
+      <h3>Scene / ID</h3>
+      <p class="fed">Responder app + Face-ID</p>
+      <p>Face match returns a candidate only. With no match, care goes on under a temporary <code>T-###</code>.</p>
+    </li>
+    <li>
+      <div class="sn">Step 4</div>
+      <h3>Pre-alert</h3>
+      <p class="fed">Pre-alert v1 → gateway</p>
+      <p>ATMIST and safety summary (Riayati, Malaffi, NABIDH). AI proposes a bay and pages the team.</p>
+    </li>
+    <li>
+      <div class="sn">Step 5</div>
+      <h3>Arrival</h3>
+      <p class="fed">ADT A04 · FHIR Location</p>
+      <p>Registered; a reserved bed means door-to-bed 0 min. A nurse confirms identity at the door.</p>
+    </li>
+    <li>
+      <div class="sn">Step 6</div>
+      <h3>Treatment</h3>
+      <p class="fed">IEEE 11073 · LIS · RIS · Pharmacy · RTLS · Roster</p>
+      <p>NEWS2 watch, CT queue, blood and supplies, nurse load and hours.</p>
+    </li>
+    <li>
+      <div class="sn">Step 7</div>
+      <h3>Disposition</h3>
+      <p class="fed">ADT A03 / A02 · EHR</p>
+      <p>Home, ward, ICU or OR. The family board shows status only, never medical details.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="card hitl" aria-labelledby="h-hitl">
+  <h2 id="h-hitl">Human in the loop</h2>
+  <p class="sub">The AI only suggests. Each suggestion names who may approve it, explains why, and is written to the audit log when accepted or dismissed. Approval rights come from <code>ROLES[…].act</code> in <code>src/00-core.js</code>.</p>
+  <div class="tscroll">
+  <table>
+    <thead>
+      <tr><th scope="col">AI suggests</th><th scope="col">Human approves</th><th scope="col">Safeguard</th></tr>
+    </thead>
+    <tbody>
+      <tr><th scope="row">Bed placement: zone by ESI, lightest-load nurse, nearest free monitor</th><td class="who">Charge nurse, Physician, Nurse</td><td>The bed is held, not taken, until someone accepts. Auto-accept is opt-in, covers bed placements only, and is logged as "Auto-accepted (policy)".</td></tr>
+      <tr><th scope="row">Pre-arrival prep: reserve a bay and page the team (ESI 1–2, ETA ≤ 15 min)</th><td class="who">Charge nurse, Physician, Nurse</td><td>Bed and team are ready before the doors open; nothing is reserved until a person accepts.</td></tr>
+      <tr><th scope="row">Re-triage when NEWS2 and its 12-min trend worsen</th><td class="who">Charge nurse, Physician</td><td>The card shows the vital-sign changes and the likely pattern behind them.</td></tr>
+      <tr><th scope="row">Confirm identity of a face match</th><td class="who">Charge nurse, Physician, Nurse</td><td>A candidate never merges charts. The nurse checks with the patient, a relative or documents.</td></tr>
+      <tr><th scope="row">Lobby risk: offer fast-track or the partner clinic</th><td class="who">Charge nurse, Nurse</td><td>Applies to ESI 4–5 patients waiting more than 60 min.</td></tr>
+      <tr><th scope="row">Supplies, staffing (fatigue relief, call-in, reassignment), diversion, equipment loans, silent surge</th><td class="who">Charge nurse</td><td>An unanswered task escalates to the next owner after 3, 6 or 10 min, depending on its level.</td></tr>
+      <tr><th scope="row">Interface outage: switch to backup bed sensors</th><td class="who">Charge nurse, IT / Admin</td><td>Stale bed data is overlaid as STALE and never shown as current.</td></tr>
+      <tr><th scope="row">Medication check: allergy-class or anticoagulant hard stop</th><td class="who">Ordering clinician</td><td>The clinician can override only with a reason of 10+ characters, and every override is audited.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="never">
+    <h3>Never automated</h3>
+    <ul>
+      <li><b>Diagnosis, treatment and orders</b> stay with clinicians.</li>
+      <li><b>Chart merging:</b> a biometric match is only a candidate until a nurse confirms it.</li>
+      <li><b>Mode changes</b> (Steady → Strain → Surge → MCI) follow published thresholds, but the actions they trigger, such as a silent surge, still need approval.</li>
+      <li><b>Dismissed</b> suggestions stay suppressed for 10 min, and the dismissal is audited.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Built from <code>src/00-core.js</code> (SOURCES, ROLES, LOINC, COND), <code>src/15-wasel.js</code> (pre-alert parser, medication checks), <code>src/20-ai.js</code> (aiPlan, accept) and <code>src/30-ui.js</code> (masking, audit, auto-lock). Simulated data only.
+</footer>
+
+</div>
+</body>
+</html>

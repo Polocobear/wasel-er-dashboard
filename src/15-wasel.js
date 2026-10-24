@@ -57,6 +57,7 @@ const WASEL_MECHANISM = {
     'Driver, rear-ended in stationary traffic', 'Motorcyclist thrown ~15 m', 'Pedestrian struck at ~40 km/h'],
   fire: ['Trapped on 9th floor, smoke exposure 20 min', 'Evacuated via smoke-filled stairwell, ~10 min exposure',
     'Burned escaping apartment fire, 6th floor', 'Rescued from 12th-floor balcony, smoke exposure 25 min'],
+  medical: ['998 call from home', 'Collapsed at work, bystander 998 call', 'Called by family from home'],
 };
 
 /* ---------- Small helpers ---------- */
@@ -114,6 +115,13 @@ function waselFieldReport(p, inc) {
   wslLinkRecord(p);
   p.atmist = wslAtmist(p, inc);
   if (S.mode === 'mci') p.start = wslStart(p.esi);
+}
+
+// Called by init() for baseline patients who came by ambulance before the session started:
+// a temporary encounter id and the field report; identity was confirmed at the door long ago.
+function waselSeedEms(p) {
+  p.enc = wslNextEncounter();
+  p.atmist = wslAtmist(p, { startedAt: p.arrivedAt - rint(15, 40) * 60, kind: 'medical' });
 }
 
 // T-101, T-102, … never reusing an id that is still on the board
@@ -252,7 +260,8 @@ function receivePreAlert(msg) {
     || incident('Responder pre-alert', 'Field (responder app)', 'responder app pre-alert', 1, 'prealert');
   const p = makePatient(PREALERT_RULES.esiCond[d.esi], 'EMS');
   wslMatchInitials(p, d.identity.display);
-  Object.assign(p, { esi: d.esi, enc: d.encounter, incident: inc.id, fieldAt: S.t, preAlert: true, start: d.start,
+  Object.assign(p, { esi: d.esi, enc: d.encounter, incident: inc.id, fieldAt: S.t, preAlert: true,
+    start: d.start || (S.mode === 'mci' ? wslStart(d.esi) : null),
     identity: d.identity, safety: d.safety, history: [], meds: d.safety.allergies === null ? null : [] });
   if (d.atmist) {
     wslApplySigns(p, d.atmist.signs);
@@ -292,7 +301,7 @@ function waselSamplePreAlert() {
     identity: { status: 'candidate', method: 'face', confidence: 0.94, display: 'F.K.' },
     atmist: {
       age: '45', time: fmtClock(S.t - 9 * 60), mechanism: 'Driver, frontal collision at ~100 km/h',
-      injuries: 'Chest wall tenderness, open left femur fracture',
+      injuries: 'Chest wall tenderness, closed left femur fracture',
       signs: { hr: 124, sbp: 96, rr: 26, spo2: 92, gcs: 14 },
       treatment: 'Pelvic binder, 1 L saline, 10 mg morphine IV',
     },
@@ -487,7 +496,7 @@ function waselStillValid(s) {
   const p = s.pid ? P(s.pid) : null;
   switch (s.type) {
     case 'identity': return !!p && p.stage !== 'inbound' && p.stage !== 'done' && !!p.identity && p.identity.status === 'candidate';
-    case 'lwbs': return !!p && p.stage === 'waiting' && !p.clinicOffer;
+    case 'lwbs': return !!p && p.stage === 'waiting' && p.esi >= 4 && !p.clinicOffer;
     case 'surge': return wslModeRank(S.mode) >= wslModeRank('surge');
     default: return false;
   }

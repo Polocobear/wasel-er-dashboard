@@ -72,6 +72,7 @@ function init() {
     if (!b) continue;
     p.stage = 'waiting';
     p.arrivedAt = -rnd(20, 200) * 60;
+    if (p.src === 'EMS') waselSeedEms(p);   // WASEL: T- encounter + ATMIST for ambulance arrivals
     S.patients.push(p);
     place(p, b, bestNurse(p), 'baseline', true);
     p.bedAt = p.arrivedAt + rnd(4, 20) * 60;
@@ -605,7 +606,8 @@ function resolveBanners() {
   for (const inc of S.incidents) {
     if (inc.closedAt != null || S.t - inc.startedAt < 20 * 60) continue;
     const inField = S.ambulances.some(a => a.incident === inc.id && (a.status === 'onscene' || a.status === 'enroute'));
-    const acuteWaiting = S.patients.some(p => p.stage === 'waiting' && p.esi <= 2);
+    // this incident's own casualties: an unrelated walk-in must not hold the MCI open (WASEL mode)
+    const acuteWaiting = S.patients.some(p => p.stage === 'waiting' && p.esi <= 2 && p.incident === inc.id);
     if (inField || acuteWaiting) continue;
     inc.closedAt = S.t;
     emit('ems', 'CAD', `${inc.id} stand-down: scene cleared, all casualties transported`);

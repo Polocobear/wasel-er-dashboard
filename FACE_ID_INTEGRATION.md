@@ -30,7 +30,7 @@ If the two pages can't share an origin, the dashboard also exposes `window.WASEL
     "age": "45",
     "time": "19:12",
     "mechanism": "Driver, frontal collision at ~100 km/h",
-    "injuries": "Chest wall tenderness, open left femur fracture",
+    "injuries": "Chest wall tenderness, closed left femur fracture",
     "signs": { "hr": 124, "sbp": 96, "rr": 26, "spo2": 92, "gcs": 14 },
     "treatment": "Pelvic binder, 1 L saline, 10 mg morphine IV"
   },

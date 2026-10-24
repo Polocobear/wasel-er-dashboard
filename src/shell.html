@@ -8,19 +8,24 @@
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<meta name="description" content="ER Crisis Command Center: one live view of beds, patients, staff, equipment and inbound ambulances during a mass-casualty event. Simulated data.">
-<title>ER Command Center</title>
+<meta name="description" content="WASEL ER Command Dashboard: one live view of beds, patients, staff, equipment and inbound pre-alerts during a mass-casualty event. Simulated data.">
+<title>WASEL · ER Command Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d03b3b'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
 <style>
 /* =========================================================================
- * ER Crisis Command Center · shell styles
+ * WASEL ER Command Dashboard · shell styles
  * Dark command-centre wall display by default; light theme via
  * :root[data-theme="light"]. Status colour is reserved for things that need
  * action and is always paired with text or a glyph (WCAG 1.4.1).
  *
+ * Arabic (dir="rtl") is supported by using logical properties throughout
+ * (margin-inline, padding-inline, inset-inline, border-inline, text-align:
+ * start/end); the few direction-dependent gradients have RTL overrides.
+ *
  * Visibility protocol used by 30-ui.js:
  *   #modal, #acceptAll, .xh, .tip  -> `hidden` attribute
  *   #toast                         -> `hidden` attribute or `.show` class
+ *   #modal.drawer / .narrow        -> patient drawer / small dialog layout
  *   journey › separators are drawn by CSS (UI renders only the 6 .jt tiles)
  * ========================================================================= */
 
@@ -145,6 +150,14 @@ button, select, input { font: inherit; color: inherit; }
 .btn.sm { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 6px; }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; transform: none; }
 .btn.icon { width: 32px; padding: 0; font-size: 16px; }
+/* Incident-command actions (Declare MCI, override a hard stop): red outline, filled while active */
+.btn.danger { border-color: rgba(208, 59, 59, .6); color: var(--critical-fg); }
+.btn.danger:hover { background: var(--critical-weak); }
+.btn.danger[aria-pressed="true"] { background: var(--critical); border-color: var(--critical); color: #fff; }
+.txt {
+  flex: 1 1 16em; min-width: 0; height: 30px; padding: 0 10px; border-radius: 7px;
+  border: 1px solid var(--border-strong); background: var(--page); color: var(--text); font-size: 12.5px;
+}
 
 select {
   appearance: none; -webkit-appearance: none;
@@ -158,6 +171,7 @@ select {
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
 }
+:root[dir="rtl"] select { padding: 0 10px 0 28px; background-position: 10px 52%, 15px 52%; }
 select:hover { background-color: var(--hover); }
 option { background: var(--surface); color: var(--text); }
 input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
@@ -175,10 +189,11 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   background: var(--critical); color: #fff;
   font-size: 30px; font-weight: 800; line-height: 1; padding-bottom: 3px;
 }
+.brand > div { min-width: 0; }
 .brand h1 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; line-height: 1.15; white-space: nowrap; }
-.brand p { margin-top: 2px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.brand p { margin-top: 2px; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .simtag {
-  display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 4px;
+  display: inline-block; margin-inline-start: 8px; padding: 1px 6px; border-radius: 4px;
   border: 1px solid var(--border-strong); color: var(--muted);
   font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px;
 }
@@ -191,7 +206,13 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 .controls { grid-area: controls; display: flex; align-items: center; gap: 10px; }
-.clockbox { text-align: right; margin-right: 6px; }
+/* Operating mode (STEADY / STRAIN / SURGE / MCI): colour + shape glyph + word */
+.chip.mode {
+  height: 30px; padding: 0 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 800; letter-spacing: .08em; cursor: help;
+}
+.chip.mode.good { color: var(--good-fg); }
+.clockbox { text-align: end; margin-inline-end: 6px; }
 #clock {
   font-size: 30px; font-weight: 650; line-height: 1; letter-spacing: -.01em;
   font-variant-numeric: tabular-nums;
@@ -208,11 +229,11 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 
 /* ---------- Scenario toolbar ---------- */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 36px; }
-.tlabel { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+.tlabel { font-size: 12px; font-weight: 600; color: var(--muted); margin-inline-end: 2px; }
 .scn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .tsep { width: 1px; height: 20px; background: var(--border-strong); margin: 0 4px; }
 .auto {
-  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  margin-inline-start: auto; display: inline-flex; align-items: center; gap: 8px;
   font-size: 12.5px; color: var(--text-2); cursor: pointer; white-space: nowrap;
 }
 
@@ -230,6 +251,11 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 .chip.warning { background: var(--warning-weak); border-color: rgba(250, 178, 25, .5); color: var(--warning-fg); }
 .chip.good { background: var(--good-weak); border-color: rgba(12, 163, 12, .5); color: var(--good-fg); }
 .chip.info { background: var(--accent-weak); border-color: rgba(57, 135, 229, .5); color: var(--accent-fg); }
+/* START field-triage colours (MCI mode): the colour word is always printed in the chip */
+.chip.st-red { background: var(--critical); border-color: var(--critical); color: #fff; }
+.chip.st-yellow { background: var(--warning); border-color: var(--warning); color: #0b0b0b; }
+.chip.st-green { background: var(--good); border-color: var(--good); color: #0b0b0b; }
+.chip.st-black { background: #0b0b0b; border-color: var(--border-strong); color: #fff; }
 
 /* ---------- ESI v4 triage badges ---------- */
 .esi {
@@ -259,10 +285,11 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   background: var(--surface); border: 1px solid var(--border);
 }
 .jt + .jt::before {           /* › separator centred in the 22px gap */
-  content: "›"; position: absolute; left: -23px; top: 50%; width: 22px;
+  content: "›"; position: absolute; inset-inline-start: -23px; top: 50%; width: 22px;
   transform: translateY(-52%); text-align: center;
   font-size: 22px; line-height: 1; color: var(--muted); pointer-events: none;
 }
+:root[dir="rtl"] .jt + .jt::before { content: "‹"; }
 .jl {
   font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; line-height: 1.3;
   color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -271,7 +298,7 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   margin: 2px 0 1px; font-size: 26px; font-weight: 700; line-height: 1.05; letter-spacing: -.01em;
   font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.jv span { margin-left: 4px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--text-2); }
+.jv span { margin-inline-start: 4px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--text-2); }
 .js {
   font-size: 11.5px; line-height: 1.3; color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -312,7 +339,7 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2);
 }
 .meta {
-  margin-left: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-inline-start: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
 }
 .ph .btn { flex: none; height: 24px; }
@@ -350,7 +377,7 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 .amb-top > :first-child { font-weight: 700; white-space: nowrap; }
 .amb-top .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
 .eta {
-  margin-left: auto; flex: none; font-size: 15px; font-weight: 700; white-space: nowrap;
+  margin-inline-start: auto; flex: none; font-size: 15px; font-weight: 700; white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .amb .bar { height: 4px; }
@@ -363,6 +390,21 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 .amb-prep.info { color: var(--accent-fg); }
 .amb.diverted { background: transparent; border-style: dashed; opacity: .7; }
 .amb.diverted .eta { color: var(--muted); font-size: 12px; }
+/* Pre-alert rows (one per patient on board): encounter, priority, identity, ATMIST, safety */
+.pas { display: flex; flex-direction: column; gap: 4px; }
+.pas.brief { flex-direction: row; flex-wrap: wrap; gap: 4px 8px; }
+.pa {
+  appearance: none; display: flex; flex-direction: column; gap: 3px; width: 100%; min-width: 0; margin: 0;
+  padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font-size: 12px; line-height: 1.3; text-align: start;
+}
+button.pa { cursor: pointer; }
+button.pa:hover { background: var(--hover); }
+.pas.brief .pa { flex-direction: row; align-items: center; gap: 6px; width: auto; }
+.pa-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.pa-top > b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.pa-line { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pa-flags { display: flex; flex-wrap: wrap; gap: 4px; }
 
 /* ---------- Nursing staff ---------- */
 .nurse {
@@ -371,21 +413,21 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 }
 .nurse:last-child { border-bottom: 0; }
 .nn { flex: 1 1 auto; min-width: 5.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.nn .chip { margin-left: 6px; }
-.nh { flex: none; width: 4.4em; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nn .chip { margin-inline-start: 6px; }
+.nh { flex: none; width: 4.4em; text-align: end; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .nbar { flex: 0 1 76px; min-width: 28px; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }
 .nbar > i { display: block; height: 100%; border-radius: inherit; background: var(--text-2); }
 .nbar > i.good, .nbar.good > i { background: var(--good); }
 .nbar > i.warning, .nbar.warning > i { background: var(--warning); }
 .nbar > i.critical, .nbar.critical > i { background: var(--critical); }
-.nl { flex: none; min-width: 3.4em; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nl { flex: none; min-width: 3.4em; text-align: end; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .nurse.off, .nurse.incoming { color: var(--muted); }
 .nurse.off .nn, .nurse.incoming .nn { font-weight: 500; }
 
 /* ---------- Patients (rows are buttons that open the record) ---------- */
 #patients { display: flex; flex-direction: column; gap: 4px; }
 .prow {
-  appearance: none; width: 100%; margin: 0; text-align: left; cursor: pointer;
+  appearance: none; width: 100%; margin: 0; text-align: start; cursor: pointer;
   display: grid; align-items: center; column-gap: 10px; row-gap: 3px;
   grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.95fr) 78px minmax(0, .95fr);
   padding: 6px 10px; border-radius: 8px; border: 1px solid transparent;
@@ -399,6 +441,11 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   border-color: rgba(208, 59, 59, .45); box-shadow: inset 3px 0 0 var(--critical);
 }
 .prow.f-serious { box-shadow: inset 3px 0 0 var(--serious); }
+:root[dir="rtl"] .prow.f-critical {
+  background: linear-gradient(270deg, var(--critical-weak), transparent 75%), var(--surface-2);
+  box-shadow: inset -3px 0 0 var(--critical);
+}
+:root[dir="rtl"] .prow.f-serious { box-shadow: inset -3px 0 0 var(--serious); }
 .pid, .pcond, .ploc { min-width: 0; overflow: hidden; }
 .pid { font-weight: 600; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
 .pid > b, .pid > strong { font-weight: 650; }
@@ -456,17 +503,17 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 .bed.s-cleaning > :first-child { color: var(--text-2); }
 .bed.s-reserved { background: var(--accent-weak); border: 1.5px dashed var(--accent); color: var(--accent-fg); }
 .bed.held { border: 1.5px dashed var(--warning); background: var(--warning-weak); color: var(--warning-fg); }
-.bed.e1, .bed.e2, .bed.e3, .bed.e4, .bed.e5 { border-left-width: 4px; border-left-style: solid; }
-.bed.e1 { border-left-color: var(--critical); }
-.bed.e2 { border-left-color: var(--serious); }
-.bed.e3 { border-left-color: var(--warning); }
-.bed.e4 { border-left-color: var(--good); }
-.bed.e5 { border-left-color: #898781; }
+.bed.e1, .bed.e2, .bed.e3, .bed.e4, .bed.e5 { border-inline-start-width: 4px; border-inline-start-style: solid; }
+.bed.e1 { border-inline-start-color: var(--critical); }
+.bed.e2 { border-inline-start-color: var(--serious); }
+.bed.e3 { border-inline-start-color: var(--warning); }
+.bed.e4 { border-inline-start-color: var(--good); }
+.bed.e5 { border-inline-start-color: #898781; }
 .legend { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 8px; font-size: 11px; color: var(--muted); }
 .legend > * { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .sw { flex: none; display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); background: var(--surface-2); }
 .sw.s-free, .sw.free { background: transparent; border-color: rgba(12, 163, 12, .7); }
-.sw.s-occupied, .sw.occupied { background: var(--raised); border-left: 3px solid var(--serious); }
+.sw.s-occupied, .sw.occupied { background: var(--raised); border-inline-start: 3px solid var(--serious); }
 .sw.s-cleaning, .sw.cleaning { background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 4px), var(--surface-2); border-color: var(--axis); }
 .sw.s-reserved, .sw.reserved { background: var(--accent-weak); border: 1.5px dashed var(--accent); }
 .sw.held, .sw.hold { background: var(--warning-weak); border: 1.5px dashed var(--warning); }
@@ -516,12 +563,16 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 .card {
   min-width: 0; display: flex; flex-direction: column; gap: 4px;
   padding: 8px 12px 10px; border-radius: 8px;
-  background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--muted);
+  background: var(--surface-2); border: 1px solid var(--border); border-inline-start: 4px solid var(--muted);
 }
-.card.l1 { border-left-color: var(--critical); background: linear-gradient(90deg, var(--critical-weak), transparent 70%), var(--surface-2); }
-.card.l2 { border-left-color: var(--serious); }
-.card.l3 { border-left-color: var(--accent); }
+.card.l1 { border-inline-start-color: var(--critical); background: linear-gradient(90deg, var(--critical-weak), transparent 70%), var(--surface-2); }
+:root[dir="rtl"] .card.l1 { background: linear-gradient(270deg, var(--critical-weak), transparent 70%), var(--surface-2); }
+.card.l2 { border-inline-start-color: var(--serious); }
+.card.l3 { border-inline-start-color: var(--accent); }
 .ctype { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
+/* Owner, open clock and escalation countdown share the type row, pushed to the end */
+.cclock { margin-inline-start: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cclock.soon { color: var(--warning-fg); }
 .card h3 { font-size: 13.5px; font-weight: 700; line-height: 1.3; }
 .card p { font-size: 12px; line-height: 1.4; color: var(--text-2); }
 .cact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding-top: 4px; font-size: 11.5px; }
@@ -529,7 +580,7 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 
 /* ---------- Feed / audit tabs ---------- */
 #p-feed .ph { padding-top: 0; padding-bottom: 0; }
-.tabs { display: flex; align-self: stretch; gap: 4px; margin-left: -4px; min-height: 35px; }
+.tabs { display: flex; align-self: stretch; gap: 4px; margin-inline-start: -4px; min-height: 35px; }
 .tab {
   appearance: none; display: flex; align-items: center; height: 100%; padding: 2px 6px 0;
   background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
@@ -556,6 +607,7 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 .chartbox {
   position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden;
   margin: 6px 10px 8px; /* no padding: UI sizes the SVG from clientWidth/Height */
+  direction: ltr;       /* time runs left to right in both languages; crosshair uses px offsets */
 }
 .chartbox > svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; }
 /* Fallback styling only where the UI did not set an attribute itself */
@@ -600,7 +652,14 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   width: min(980px, 100%); max-height: calc(100vh - 48px);
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: var(--shadow);
 }
-.mhead { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--border); }
+/* Patient record opens as a full-height drawer on the inline-end side (left in Arabic) */
+.modal.drawer { justify-content: flex-end; padding: 0; }
+.modal.drawer .mbox {
+  width: min(820px, 100%); height: 100%; max-height: 100vh;
+  border-radius: 0; border-block: 0; border-inline-end: 0;
+}
+.modal.narrow .mbox { width: min(600px, 100%); }
+.mhead { flex: none; display: flex; align-items: center; gap: 12px; padding-block: 12px; padding-inline: 20px 16px; border-bottom: 1px solid var(--border); }
 #mtitle { flex: 1 1 auto; min-width: 0; font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 #mbody { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px 20px; font-size: 13px; }
 #mbody > * + * { margin-top: 12px; }
@@ -609,13 +668,13 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 }
 #mbody > h3:first-child, #mbody > h4:first-child, .mgrid > * > h3:first-child, .mgrid > * > h4:first-child { margin-top: 0; }
 #mbody p { line-height: 1.5; color: var(--text-2); }
-#mbody ul { margin: 6px 0; padding-left: 18px; color: var(--text-2); line-height: 1.5; }
+#mbody ul { margin: 6px 0; padding-inline-start: 18px; color: var(--text-2); line-height: 1.5; }
 #mbody a { color: var(--accent-fg); }
 .mgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
 .mgrid > * { min-width: 0; }
 #mbody table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 #mbody th {
-  padding: 6px 8px; text-align: left; vertical-align: bottom; border-bottom: 1px solid var(--border-strong);
+  padding: 6px 8px; text-align: start; vertical-align: bottom; border-bottom: 1px solid var(--border-strong);
   font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
 }
 #mbody td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid var(--border); color: var(--text); }
@@ -634,6 +693,41 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 .spark:not([height]) { height: 36px; }
 .spark path:not([fill]), .spark polyline:not([fill]) { fill: none; }
 .spark path:not([stroke]), .spark polyline:not([stroke]) { stroke: var(--accent); stroke-width: 1.5; }
+
+/* ---------- Patient drawer: safety banner, order check, break-glass, SBAR ---------- */
+.allergy {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--text-2); font-size: 14px; font-weight: 700; line-height: 1.35;
+}
+.allergy.critical { background: var(--critical); border-color: var(--critical); color: #fff; }
+.allergy.warning { background: var(--warning-weak); border-color: var(--warning); color: var(--warning-fg); }
+.allergy .chip { font-size: 11.5px; }
+.allergy.critical .chip { background: rgba(0, 0, 0, .25); border-color: rgba(255, 255, 255, .5); color: #fff; }
+.idnote { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.order { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.order select { min-width: 12em; }
+.ordres { margin-top: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); }
+.ordres > p + * { margin-top: 8px; }
+.ordres label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.ordres.critical { border: 2px solid var(--critical); background: var(--critical-weak); }
+.ordres.critical > p:first-child b { color: var(--critical-fg); }
+.ordres.warning { border-color: var(--warning); background: var(--warning-weak); }
+.ordres.warning > p:first-child b { color: var(--warning-fg); }
+.ordres.good { border-color: rgba(12, 163, 12, .6); background: var(--good-weak); }
+.ordres.good > p:first-child b { color: var(--good-fg); }
+.glass { padding: 12px 14px; border-radius: 8px; border: 2px dashed var(--critical); background: var(--critical-weak); }
+.glass > * + * { margin-top: 8px; }
+.glass > p:first-child b { color: var(--critical-fg); font-size: 14px; }
+.glass label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.sbar { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+.sbar dt { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.sbar dt b { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-inline-end: 6px; border-radius: 5px; background: var(--raised); color: var(--text); }
+.sbar dd { margin: 0; color: var(--text); line-height: 1.45; }
+.hist { list-style: none; padding-inline-start: 0 !important; }
+.hist li + li { margin-top: 3px; }
+.alog .fr time { min-width: 4.6em; }
+.fam-cap { font-weight: 600; }
 
 /* ---------- Toast ---------- */
 .toast {
@@ -656,6 +750,14 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- Arabic ----------
+ * Letter-spacing breaks the joining of Arabic letters, so it is removed
+ * everywhere (ids like #mbody h3 would otherwise out-rank a class rule);
+ * small uppercase labels get a size bump because Arabic has no capitals.  */
+:root[lang="ar"] body * { letter-spacing: normal !important; }
+:root[lang="ar"] .jl, :root[lang="ar"] .ph h2, :root[lang="ar"] .sect, :root[lang="ar"] .tab,
+:root[lang="ar"] .zh, :root[lang="ar"] .field > span, :root[lang="ar"] #mbody h3 { font-size: 12.5px; }
 
 /* ---------- Windows high contrast ---------- */
 @media (forced-colors: active) {
@@ -681,6 +783,13 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   #p-chart { height: 280px; }
 }
 
+/* ---------- ≤1000px: header controls get their own row (mode chip + clock + selectors) ---------- */
+@media (max-width: 1000px) {
+  .hdr { grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "controls" "banner"; }
+  .controls { flex-wrap: wrap; gap: 8px; }
+  .clockbox { text-align: start; margin-inline-end: auto; }
+}
+
 /* ---------- ≤640px: phone ---------- */
 @media (max-width: 640px) {
   .app { padding: 8px 10px; }
@@ -688,11 +797,11 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   .brand h1 { font-size: 17px; white-space: normal; }
   .brand p { white-space: normal; }
   .controls { flex-wrap: wrap; gap: 8px; }
-  .clockbox { text-align: left; margin-right: auto; }
+  .clockbox { text-align: start; margin-inline-end: auto; }
   #banner .chip { white-space: normal; height: auto; line-height: 1.3; padding: 5px 12px; border-radius: 12px; }
   .toolbar .tlabel { width: 100%; }
   .tsep { display: none; }
-  .auto { margin-left: 0; white-space: normal; }
+  .auto { margin-inline-start: 0; white-space: normal; }
   .journey { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; }
   .journey .jt::before { content: none !important; }
   .jv { font-size: 22px; }
@@ -725,18 +834,19 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
     <div class="brand">
       <div class="logo" aria-hidden="true">+</div>
       <div>
-        <h1>ER Crisis Command Center</h1>
-        <p>Demo General Hospital · Emergency Department <span class="simtag">Simulated data</span></p>
+        <h1 id="appName">WASEL</h1>
+        <p><span data-i18n="app.sub">ER Command Dashboard · Demo General Hospital</span> <span class="simtag" data-i18n="app.sim">Simulated data</span></p>
       </div>
     </div>
     <div id="banner" role="status"></div>
     <div class="controls">
+      <span id="mode" class="chip mode good" role="status" aria-label="Operating mode: STEADY">● STEADY</span>
       <div class="clockbox">
-        <span class="sr-only">Simulated time</span>
+        <span class="sr-only" data-i18n="hdr.simTime">Simulated time</span>
         <div id="clock">--:--</div>
         <div id="clockSub">SIM 30×</div>
       </div>
-      <label class="field"><span>Speed</span>
+      <label class="field"><span data-i18n="hdr.speed">Speed</span>
         <select id="speed">
           <option value="1">1×</option>
           <option value="10">10×</option>
@@ -745,30 +855,37 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
         </select>
       </label>
       <button type="button" id="pause" class="btn">Pause</button>
-      <label class="field"><span>Role</span>
+      <label class="field"><span data-i18n="hdr.role">Role</span>
         <select id="role">
-          <option value="wall">Wall display</option>
-          <option value="charge" selected>Charge nurse</option>
-          <option value="physician">Physician</option>
-          <option value="admin">IT / Admin</option>
+          <option value="wall" data-i18n="role.wall">Wall display</option>
+          <option value="charge" selected data-i18n="role.charge">Charge nurse</option>
+          <option value="nurse" data-i18n="role.nurse">Nurse (A. Haddad)</option>
+          <option value="physician" data-i18n="role.physician">Physician</option>
+          <option value="admin" data-i18n="role.admin">IT / Admin</option>
         </select>
       </label>
+      <button type="button" id="lang" class="btn icon" data-act="lang" lang="ar" aria-label="العربية" title="العربية">ع</button>
       <button type="button" id="theme" class="btn icon" aria-label="Switch to light theme" title="Switch theme"><span aria-hidden="true">◐</span></button>
     </div>
   </header>
 
   <div class="toolbar">
-    <span class="tlabel" id="scnLabel">Run a scenario:</span>
+    <span class="tlabel" id="scnLabel" data-i18n="tb.label">Run a scenario:</span>
     <div class="scn" role="group" aria-labelledby="scnLabel">
-      <button type="button" class="btn" data-act="scenario" data-id="pileup">Highway pile-up</button>
-      <button type="button" class="btn" data-act="scenario" data-id="fire">Building fire</button>
-      <button type="button" class="btn" data-act="scenario" data-id="staff">Staff shortage</button>
-      <button type="button" class="btn" data-act="scenario" data-id="equipment">Equipment failure</button>
-      <button type="button" class="btn" data-act="scenario" data-id="outage">System outage</button>
+      <button type="button" class="btn" data-act="scenario" data-id="pileup" data-i18n="tb.pileup">Highway pile-up</button>
+      <button type="button" class="btn" data-act="scenario" data-id="fire" data-i18n="tb.fire">Building fire</button>
+      <button type="button" class="btn" data-act="scenario" data-id="staff" data-i18n="tb.staff">Staff shortage</button>
+      <button type="button" class="btn" data-act="scenario" data-id="equipment" data-i18n="tb.equipment">Equipment failure</button>
+      <button type="button" class="btn" data-act="scenario" data-id="outage" data-i18n="tb.outage">System outage</button>
       <span class="tsep" aria-hidden="true"></span>
-      <button type="button" class="btn ghost" data-act="reset">Reset</button>
+      <button type="button" class="btn ghost" data-act="reset" data-i18n="tb.reset">Reset</button>
     </div>
-    <label class="auto"><input type="checkbox" id="auto"><span>Auto-accept bed placements</span></label>
+    <span class="tsep" aria-hidden="true"></span>
+    <div class="scn" role="group" aria-label="Incident command">
+      <button type="button" class="btn danger" data-act="mci" aria-pressed="false">Declare MCI</button>
+      <button type="button" class="btn" data-act="demoPrealert" data-i18n="tb.prealert">Simulate responder pre-alert</button>
+    </div>
+    <label class="auto"><input type="checkbox" id="auto"><span data-i18n="tb.auto">Auto-accept bed placements</span></label>
   </div>
 
   <main class="stack">
@@ -777,27 +894,27 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
     <div class="grid-main">
       <div class="col left">
         <section class="panel" id="p-inbound" aria-labelledby="h-inbound">
-          <header class="ph"><h2 id="h-inbound">Inbound · first responders</h2><span id="inboundMeta" class="meta"></span></header>
+          <header class="ph"><h2 id="h-inbound" data-i18n="p.inbound">Inbound · pre-alerts</h2><span id="inboundMeta" class="meta"></span></header>
           <div id="inbound" class="pb" role="group" aria-labelledby="h-inbound" tabindex="0"></div>
         </section>
         <section class="panel" id="p-staff" aria-labelledby="h-staff">
-          <header class="ph"><h2 id="h-staff">Nursing staff</h2><span id="staffMeta" class="meta"></span></header>
+          <header class="ph"><h2 id="h-staff" data-i18n="p.staff">Nursing staff</h2><span id="staffMeta" class="meta"></span></header>
           <div id="staff" class="pb" role="group" aria-labelledby="h-staff" tabindex="0"></div>
         </section>
       </div>
 
       <section class="panel" id="p-patients" aria-labelledby="h-patients">
-        <header class="ph"><h2 id="h-patients">Patients · sorted by AI priority</h2><span id="patientsMeta" class="meta"></span></header>
+        <header class="ph"><h2 id="h-patients" data-i18n="p.patients">Patients · sorted by AI priority</h2><span id="patientsMeta" class="meta"></span></header>
         <div id="patients" class="pb"></div>
       </section>
 
       <div class="col right">
         <section class="panel" id="p-beds" aria-labelledby="h-beds">
-          <header class="ph"><h2 id="h-beds">Bed board</h2><span id="bedsMeta" class="meta"></span></header>
+          <header class="ph"><h2 id="h-beds" data-i18n="p.beds">Bed board</h2><span id="bedsMeta" class="meta"></span></header>
           <div id="beds" class="pb" role="group" aria-labelledby="h-beds" tabindex="0"></div>
         </section>
         <section class="panel" id="p-equip" aria-labelledby="h-equip">
-          <header class="ph"><h2 id="h-equip">Equipment &amp; supplies</h2><span id="equipMeta" class="meta"></span></header>
+          <header class="ph"><h2 id="h-equip" data-i18n="p.equip">Equipment &amp; supplies</h2><span id="equipMeta" class="meta"></span></header>
           <div id="equipment" class="pb" role="group" aria-labelledby="h-equip" tabindex="0"></div>
         </section>
       </div>
@@ -806,7 +923,7 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
     <div class="bottom">
       <section class="panel" id="p-dec" aria-labelledby="h-dec">
         <header class="ph">
-          <h2 id="h-dec">AI decision queue</h2><span id="decMeta" class="meta"></span>
+          <h2 id="h-dec" data-i18n="p.dec">AI decision queue</h2><span id="decMeta" class="meta"></span>
           <button type="button" id="acceptAll" class="btn primary sm" data-act="acceptAll" hidden>Accept all placements</button>
         </header>
         <div id="decisions" class="pb"></div>
@@ -815,15 +932,15 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
       <section class="panel" id="p-feed" aria-label="Live data feed and audit log">
         <header class="ph">
           <div id="feedTabs" class="tabs" role="tablist" aria-label="Feed view">
-            <button type="button" class="tab" role="tab" id="tab-feed" data-act="tab" data-id="feed" aria-selected="true" aria-controls="feed">Live data feed</button>
-            <button type="button" class="tab" role="tab" id="tab-audit" data-act="tab" data-id="audit" aria-selected="false" aria-controls="feed">Audit log</button>
+            <button type="button" class="tab" role="tab" id="tab-feed" data-act="tab" data-id="feed" aria-selected="true" aria-controls="feed" data-i18n="p.feed">Live data feed</button>
+            <button type="button" class="tab" role="tab" id="tab-audit" data-act="tab" data-id="audit" aria-selected="false" aria-controls="feed" data-i18n="p.audit">Audit log</button>
           </div>
         </header>
         <div id="feed" class="pb" role="tabpanel" aria-label="Messages" tabindex="0"></div>
       </section>
 
       <section class="panel" id="p-chart" aria-labelledby="h-chart">
-        <header class="ph"><h2 id="h-chart">ED bed occupancy · last 60 min + forecast</h2><span id="chartMeta" class="meta"></span></header>
+        <header class="ph"><h2 id="h-chart" data-i18n="p.chart">ED bed occupancy · last 60 min + forecast</h2><span id="chartMeta" class="meta"></span></header>
         <div id="chart" class="chartbox" role="img" aria-label="ED bed occupancy over the last 60 minutes with a 30-minute forecast" aria-describedby="chartMeta"></div>
       </section>
     </div>
@@ -832,8 +949,9 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   <footer class="foot">
     <div id="sources" class="sources" role="group" aria-label="Source system status"></div>
     <div class="foot-act">
-      <button type="button" class="btn ghost sm" data-act="standards">Standards &amp; security</button>
-      <button type="button" class="btn ghost sm" data-act="datamap">Data map</button>
+      <button type="button" class="btn ghost sm" data-act="family" data-i18n="ft.family">Family desk</button>
+      <button type="button" class="btn ghost sm" data-act="standards" data-i18n="ft.standards">Standards &amp; security</button>
+      <button type="button" class="btn ghost sm" data-act="datamap" data-i18n="ft.datamap">Data map</button>
     </div>
   </footer>
 </div>
@@ -843,7 +961,7 @@ input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var
   <div class="mbox">
     <div class="mhead">
       <h2 id="mtitle"></h2>
-      <button type="button" class="btn ghost sm" data-act="close" aria-label="Close dialog">✕ Close</button>
+      <button type="button" class="btn ghost sm" data-act="close" aria-label="Close dialog"><span aria-hidden="true">✕</span> <span data-i18n="m.close">Close</span></button>
     </div>
     <div id="mbody"></div>
   </div>
