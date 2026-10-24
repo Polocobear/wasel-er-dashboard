@@ -105,6 +105,25 @@
   .soft .ring { padding: 20px; }
   @keyframes spin { to { --angle: 360deg; } }
 
+  /* Face ID style scan: no photo until the match is made */
+  .scan { background: var(--bg); }
+  .faceid { position: relative; width: 132px; height: 132px; color: var(--label); }
+  .faceid svg { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity .3s, transform .4s var(--ease); }
+  .faceid .check { opacity: 0; transform: scale(.6); color: var(--green); }
+  .scanning .faceid .glyph { animation: pulse 1s ease-in-out infinite; }
+  .scan.done .faceid .glyph { opacity: 0; transform: scale(.8); }
+  .scan.done .faceid .check { opacity: 1; transform: none; }
+  @keyframes pulse { 50% { opacity: .45; transform: scale(.94); } }
+  .scan .scan-label { background-image: linear-gradient(90deg, rgba(255, 255, 255, .3) 0%, #fff 50%, rgba(255, 255, 255, .3) 100%); }
+
+  /* Profile page */
+  .profile { justify-content: flex-start; align-items: stretch; overflow-y: auto; padding: calc(env(safe-area-inset-top) + 36px) 16px calc(env(safe-area-inset-bottom) + 24px); }
+  .p-head { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .p-photo { width: 132px; height: 132px; border-radius: 50%; object-fit: cover; }
+  .profile .status { margin-top: 16px; }
+  .profile .name { margin-top: 6px; }
+  .profile .group { margin-top: 26px; }
+
   /* Profile sheet */
   .sheet {
     position: absolute; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 10;
@@ -224,10 +243,12 @@
 </section>
 
 <section id="scan" class="screen scan off">
-  <div class="photo">
-    <img src="demo-patient.jpg" alt="">
-    <div class="shimmer"></div>
-    <div id="face-box" class="face-box"></div>
+  <div class="faceid" aria-hidden="true">
+    <svg class="glyph" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 18v-8a6 6 0 0 1 6-6h8M46 4h8a6 6 0 0 1 6 6v8M60 46v8a6 6 0 0 1-6 6h-8M18 60h-8a6 6 0 0 1-6-6v-8"/>
+      <path d="M22 24v5M42 24v5M32 24v11h-3M23 44c5 4 13 4 18 0"/>
+    </svg>
+    <svg class="check" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 33l11 11 21-24"/></svg>
   </div>
   <p class="scan-label">Identifying</p>
 </section>
@@ -267,11 +288,12 @@
   </div>
 </section>
 
-<div id="sheet" class="sheet" role="dialog" aria-label="Patient profile">
-  <div class="status"><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M5.8 10.4l2.7 2.7 5.7-6.1" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="status"></span></div>
-  <div class="who">
-    <img class="avatar" src="demo-patient.jpg" alt="Photo on file">
-    <div><h1 class="name" id="name"></h1><p class="sub" id="sub"></p></div>
+<section id="profile" class="screen profile off" aria-label="Patient profile">
+  <div class="p-head">
+    <img class="p-photo" src="demo-patient.jpg" alt="Photo on file">
+    <div class="status"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M5.8 10.4l2.7 2.7 5.7-6.1" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="status"></span></div>
+    <h1 class="name" id="name"></h1>
+    <p class="sub" id="sub"></p>
   </div>
   <div id="facts" class="group"></div>
   <p class="fine" id="source"></p>
@@ -279,7 +301,7 @@
     <button id="start" class="primary">Start Triage</button>
     <button id="not-them" class="secondary">Not this person</button>
   </div>
-</div>
+</section>
 
 <div id="glow" class="glow" aria-hidden="true"><div class="soft"><div class="ring"></div></div><div class="ring"></div></div>
 </div>
@@ -292,7 +314,7 @@ const SCAN_MS = 1100;
 
 /* One enrolled demo patient: the scan is simulated, the record is a simulated Riayati lookup. */
 const PATIENT = {
-  name: 'Adam Joseph', initials: 'A.J.', age: 21, sex: 'Male', dob: '14 Mar 2005', similarity: 0.94,
+  name: 'Githu Jacob', initials: 'G.J.', age: 21, sex: 'Male', dob: '14 Mar 2005', similarity: 0.94,
   allergies: ['Morphine', 'Penicillin'], conditions: ['Asthma'], medications: 'None', bloodType: 'O+',
   contact: 'Father · +971 50 ••• 4412', source: 'Riayati', asOf: '2026-09-02', asOfText: '2 Sep 2026',
 };
@@ -337,18 +359,17 @@ let t = fresh(), touched = false, destChoice = null, encounter = null, sendTimer
 
 /* ---------------- Scan → profile ---------------- */
 async function scan() {
-  $('#face-box').classList.remove('on', 'confirmed');
   $('#scan').classList.remove('done');
   $('#scan').classList.add('scanning');
+  $('.scan-label').textContent = 'Identifying';
   showScreen('scan');
   $('#glow').classList.add('on');
-  await sleep(250);
-  $('#face-box').classList.add('on');
-  await sleep(SCAN_MS - 250);
+  await sleep(SCAN_MS);
   $('#glow').classList.remove('on');
   $('#scan').classList.remove('scanning');
   $('#scan').classList.add('done');
-  $('#face-box').classList.add('confirmed');
+  $('.scan-label').textContent = 'Identified';
+  await sleep(550);
   openProfile();
 }
 
@@ -373,10 +394,11 @@ function openProfile() {
     fact(ICON.drop, p.bloodType, 'Blood type'),
     fact(ICON.phone, p.contact, 'Emergency contact'));
   $('#source').textContent = `${p.source} · updated ${p.asOfText} · DOB ${p.dob} · confirm identity at the ED door`;
-  $('#sheet').classList.add('on');
+  $('#profile').scrollTop = 0;
+  showScreen('profile');
 }
 
-function closeProfile() { $('#sheet').classList.remove('on'); }
+function closeProfile() {}
 
 function startTriage() {
   closeProfile();
@@ -567,7 +589,7 @@ function scheduleSend() {
 $('#orb').onclick = scan;
 $('#start').onclick = startTriage;
 $('#not-them').onclick = goHome;
-$('#t-back').onclick = () => { showScreen('scan'); openProfile(); };
+$('#t-back').onclick = openProfile;
 $('#pain').oninput = e => set('pain', Number(e.target.value));
 buildInputs();
 </script>
