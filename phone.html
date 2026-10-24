@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Patient ID">
+<meta name="theme-color" content="#000000">
+<title>Patient ID</title>
+<!-- WASEL paramedic phone app. Same look as the face-service "Patient ID" app; the face scan is
+     simulated with one demo patient so it runs anywhere. Pre-alerts go to the dashboard on
+     BroadcastChannel('wasel-prealert'), contract v1 (CHANNELS.md §2). -->
+<style>
+  @property --angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+
+  :root {
+    color-scheme: dark;
+    --bg: #000; --elevated: #1c1c1e; --grouped: #1c1c1e; --fill: #2c2c2e; --separator: rgba(84, 84, 88, .65);
+    --label: #fff; --secondary: rgba(235, 235, 245, .6); --tertiary: rgba(235, 235, 245, .3);
+    --green: #30d158; --orange: #ff9f0a; --red: #ff453a; --yellow: #ffd60a;
+    --ease: cubic-bezier(.32, .72, 0, 1);
+    --siri: #ff375f, #ff9f0a, #bf5af2, #0a84ff, #64d2ff, #ff375f;
+  }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: var(--bg); color: var(--label); }
+  body {
+    font: 17px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    letter-spacing: -.01em; -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  .app { position: relative; height: 100%; max-width: 440px; margin: 0 auto; overflow: hidden; }
+
+  .screen {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom);
+    transition: opacity .45s var(--ease), transform .45s var(--ease);
+  }
+  .screen.off { opacity: 0; pointer-events: none; transform: scale(.96); }
+
+  /* Home: the orb */
+  .orb {
+    position: relative; width: 184px; height: 184px; border-radius: 50%; overflow: hidden; isolation: isolate;
+    background: #06060a; -webkit-mask-image: -webkit-radial-gradient(white, black);
+    box-shadow: 0 0 90px -14px rgba(150, 100, 255, .6), inset 0 0 0 1px rgba(255, 255, 255, .06);
+    animation: breathe 4.5s ease-in-out infinite; transition: transform .3s var(--ease);
+  }
+  .orb:active { transform: scale(.9); }
+  .orb::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle at 32% 25%, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 30%),
+      radial-gradient(circle, transparent 58%, rgba(0, 0, 0, .4));
+  }
+  .blob {
+    position: absolute; left: 22%; top: 22%; width: 56%; height: 56%; border-radius: 50%;
+    filter: blur(18px); mix-blend-mode: screen; opacity: .9; animation: orbit 8s linear infinite;
+  }
+  .b1 { background: #ff2d55; }
+  .b2 { background: #0a84ff; animation-duration: 10s; animation-direction: reverse; animation-delay: -5s; }
+  .b3 { background: #bf5af2; animation-duration: 12s; animation-delay: -8s; }
+  .b4 { background: #ff9f0a; left: 32%; top: 32%; width: 36%; height: 36%; animation-duration: 7s; animation-direction: reverse; animation-delay: -2s; }
+  @keyframes orbit { from { transform: rotate(0deg) translateX(34%) rotate(0deg); } to { transform: rotate(360deg) translateX(34%) rotate(-360deg); } }
+  @keyframes breathe { 50% { scale: 1.04; } }
+  .home-title { margin-top: 44px; font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+  .home-sub { margin-top: 6px; font-size: 15px; color: var(--secondary); }
+
+  /* Scan */
+  .scan { background: #fff; }
+  .photo { position: relative; width: min(78vw, 320px); aspect-ratio: 626 / 675; border-radius: 28px; overflow: hidden; }
+  .photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 42px 6px #fff; opacity: .6; }
+  .shimmer { position: absolute; inset: 0; opacity: 0; transition: opacity .4s; }
+  .shimmer::before {
+    content: ""; position: absolute; left: 0; right: 0; top: -40%; height: 40%;
+    background: linear-gradient(transparent, rgba(255, 255, 255, .35), transparent); animation: sweep 1s ease-in-out infinite;
+  }
+  .scanning .shimmer { opacity: 1; }
+  @keyframes sweep { to { transform: translateY(350%); } }
+  .face-box {
+    position: absolute; left: 25%; top: 17%; width: 50%; height: 50%; z-index: 2; border-radius: 22px;
+    border: 2px solid rgba(255, 255, 255, .95); box-shadow: 0 0 28px rgba(255, 255, 255, .35);
+    opacity: 0; transform: scale(1.2); transition: opacity .35s ease, transform .6s var(--ease), border-color .3s;
+  }
+  .face-box.on { opacity: 1; transform: none; }
+  .face-box.confirmed { border-color: var(--green); box-shadow: 0 0 32px rgba(48, 209, 88, .6); }
+  .scan-label {
+    margin-top: 30px; font-size: 17px; font-weight: 600; color: transparent;
+    background: linear-gradient(90deg, rgba(0, 0, 0, .25) 0%, #000 50%, rgba(0, 0, 0, .25) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; animation: shine 1.2s linear infinite;
+  }
+  .scan.done .scan-label { visibility: hidden; }
+  @keyframes shine { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+  /* Siri-style edge glow while "working" */
+  .glow { position: fixed; inset: 0; z-index: 30; pointer-events: none; opacity: 0; transition: opacity .6s ease; }
+  .glow.on { opacity: 1; }
+  .ring {
+    position: absolute; inset: 0; padding: 3px; background: conic-gradient(from var(--angle), var(--siri));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+    animation: spin 2.6s linear infinite;
+  }
+  .soft { position: absolute; inset: 0; filter: blur(22px); }
+  .soft .ring { padding: 20px; }
+  @keyframes spin { to { --angle: 360deg; } }
+
+  /* Profile sheet */
+  .sheet {
+    position: absolute; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 10;
+    max-height: calc(100% - 24px - env(safe-area-inset-top)); overflow-y: auto;
+    padding: 22px 18px 12px; border-radius: 34px;
+    background: rgba(28, 28, 30, .86); -webkit-backdrop-filter: blur(40px) saturate(180%); backdrop-filter: blur(40px) saturate(180%);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .55), inset 0 0 0 .5px rgba(255, 255, 255, .1);
+    transform: translateY(calc(100% + 40px)); transition: transform .6s var(--ease);
+  }
+  .sheet.on { transform: none; }
+  .status { display: flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 600; color: var(--secondary); }
+  .status svg { color: var(--green); }
+  .who { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+  .avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; flex: none; }
+  .name { font-size: 28px; font-weight: 700; letter-spacing: -.025em; line-height: 1.1; }
+  .sub { margin-top: 3px; font-size: 15px; color: var(--secondary); }
+
+  .group { margin-top: 18px; background: var(--fill); border-radius: 14px; overflow: hidden; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
+  .item + .item { box-shadow: inset 44px 0 0 var(--fill), inset 0 .5px 0 var(--separator); }
+  .ico { width: 18px; height: 18px; flex: none; color: var(--tertiary); }
+  .ico.red { color: var(--red); }
+  .ico.orange { color: var(--orange); }
+  .v { font-size: 17px; }
+  .l { margin-top: 1px; font-size: 12px; color: var(--secondary); }
+  .fine { margin: 10px 4px 0; font-size: 12px; color: var(--tertiary); }
+  .actions { margin-top: 16px; display: grid; gap: 4px; }
+  .primary {
+    height: 52px; border-radius: 26px; background: #fff; color: #000; font-weight: 600;
+    transition: transform .2s var(--ease), opacity .2s;
+  }
+  .primary:active { transform: scale(.97); opacity: .85; }
+  .secondary { height: 44px; color: var(--secondary); }
+
+  /* Triage */
+  .triage { justify-content: flex-start; align-items: stretch; padding: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .t-head {
+    position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 12px;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px 12px;
+    background: rgba(0, 0, 0, .72); -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px);
+    box-shadow: inset 0 -.5px 0 var(--separator);
+  }
+  .t-head .avatar { width: 40px; height: 40px; }
+  .t-head .n { font-size: 17px; font-weight: 600; }
+  .t-head .s { font-size: 13px; color: var(--secondary); }
+  .t-head .back { margin-left: auto; font-size: 15px; color: var(--secondary); }
+  .t-body { padding: 4px 16px calc(env(safe-area-inset-bottom) + 190px); }
+  .sec-label { margin: 22px 4px 8px; font-size: 13px; color: var(--secondary); text-transform: uppercase; letter-spacing: .02em; }
+  .card { background: var(--grouped); border-radius: 14px; padding: 12px; }
+  .card + .card { margin-top: 10px; }
+  .row-label { display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 9px; }
+  .row-label span:last-child { color: var(--secondary); font-variant-numeric: tabular-nums; }
+
+  /* iOS segmented control */
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 2px; border-radius: 9px; background: rgba(118, 118, 128, .24); }
+  .seg button { height: 34px; border-radius: 7px; font-size: 14px; font-weight: 500; color: var(--label); transition: background-color .2s, color .2s; }
+  .seg button[aria-checked="true"] { background: #636366; font-weight: 600; box-shadow: 0 3px 8px rgba(0, 0, 0, .12); }
+
+  .range { width: 100%; height: 30px; -webkit-appearance: none; appearance: none; background: transparent; }
+  .range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, #fff var(--p, 0%), rgba(120, 120, 128, .36) var(--p, 0%)); }
+  .range::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; margin-top: -12px; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
+  .range::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(120, 120, 128, .36); }
+  .range::-moz-range-progress { height: 4px; border-radius: 2px; background: #fff; }
+  .range::-moz-range-thumb { width: 28px; height: 28px; border: 0; border-radius: 50%; background: #fff; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { height: 36px; padding: 0 14px; border-radius: 18px; font-size: 15px; background: rgba(118, 118, 128, .24); }
+  .chip[aria-pressed="true"] { background: #fff; color: #000; font-weight: 600; }
+
+  .alert { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; padding: 12px; border-radius: 14px; background: var(--grouped); font-size: 15px; }
+  .alert[hidden] { display: none; }
+
+  .dests { background: var(--grouped); border-radius: 14px; overflow: hidden; }
+  .dest { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; }
+  .dest + .dest { box-shadow: inset 0 .5px 0 var(--separator); }
+  .dest .dn { font-size: 16px; }
+  .dest .dk { font-size: 12px; color: var(--secondary); margin-top: 1px; }
+  .dest .eta { margin-left: auto; font-size: 15px; color: var(--secondary); font-variant-numeric: tabular-nums; }
+  .dest .tick { width: 18px; color: var(--label); visibility: hidden; flex: none; }
+  .dest[aria-checked="true"] .tick { visibility: visible; }
+
+  /* Result bar */
+  .bar {
+    position: absolute; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); z-index: 5;
+    padding: 14px 16px; border-radius: 26px;
+    background: rgba(28, 28, 30, .86); -webkit-backdrop-filter: blur(40px) saturate(180%); backdrop-filter: blur(40px) saturate(180%);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .5), inset 0 0 0 .5px rgba(255, 255, 255, .1);
+    transition: transform .5s var(--ease), opacity .3s;
+  }
+  .bar.off { transform: translateY(140%); opacity: 0; }
+  .prio { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--tertiary); }
+  .dot.e1, .dot.e2 { background: var(--red); }
+  .dot.e3 { background: var(--yellow); }
+  .dot.e4, .dot.e5 { background: var(--green); }
+  .prio .p { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+  .prio .ps { font-size: 15px; color: var(--secondary); }
+  .why { margin-top: 4px; font-size: 14px; color: var(--secondary); }
+  .to { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; box-shadow: inset 0 .5px 0 var(--separator); font-size: 15px; }
+  .to b { font-weight: 600; }
+  .to .live { margin-left: auto; font-size: 12px; color: var(--secondary); white-space: nowrap; }
+  .to .live::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--green); vertical-align: 1px; }
+  .to .live.idle::before { background: var(--tertiary); }
+
+  @media (prefers-reduced-motion: reduce) { .blob, .orb, .ring, .shimmer::before, .scan-label { animation: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+<section id="home" class="screen">
+  <button id="orb" class="orb" aria-label="Identify patient">
+    <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><span class="blob b4"></span>
+  </button>
+  <p class="home-title">Tap to identify</p>
+  <p class="home-sub">AMB-07 · 1 person enrolled</p>
+</section>
+
+<section id="scan" class="screen scan off">
+  <div class="photo">
+    <img src="demo-patient.jpg" alt="">
+    <div class="shimmer"></div>
+    <div id="face-box" class="face-box"></div>
+  </div>
+  <p class="scan-label">Identifying</p>
+</section>
+
+<section id="triage" class="screen triage off" aria-label="Triage">
+  <header class="t-head">
+    <img class="avatar" src="demo-patient.jpg" alt="">
+    <div><div class="n" id="t-name"></div><div class="s" id="t-sub"></div></div>
+    <button id="t-back" class="back">Profile</button>
+  </header>
+  <div class="t-body">
+    <p class="sec-label">Vital signs</p>
+    <div id="segs"></div>
+    <div class="card">
+      <div class="row-label"><span>Pain</span><span id="pain-v">0 / 10</span></div>
+      <input id="pain" class="range" type="range" min="0" max="10" step="1" value="0" aria-label="Pain, 0 to 10">
+    </div>
+
+    <p class="sec-label">Complaint</p>
+    <div class="card"><div id="complaints" class="chips" role="group" aria-label="Complaint"></div></div>
+
+    <p class="sec-label">Injuries</p>
+    <div class="card"><div id="regions" class="chips" role="group" aria-label="Injuries"></div></div>
+
+    <p class="sec-label">Treatment given</p>
+    <div class="card"><div id="treatments" class="chips" role="group" aria-label="Treatment given"></div></div>
+    <div id="allergy-alert" class="alert" role="alert" hidden></div>
+
+    <p class="sec-label">Destination</p>
+    <div id="dests" class="dests" role="radiogroup" aria-label="Destination"></div>
+  </div>
+
+  <div id="bar" class="bar off" aria-live="polite">
+    <div class="prio"><span id="dot" class="dot"></span><span id="p" class="p"></span><span id="ps" class="ps"></span></div>
+    <p id="why" class="why"></p>
+    <div class="to"><span>To <b id="to"></b></span><span id="live" class="live idle">Not sent</span></div>
+  </div>
+</section>
+
+<div id="sheet" class="sheet" role="dialog" aria-label="Patient profile">
+  <div class="status"><svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="currentColor"/><path d="M5.8 10.4l2.7 2.7 5.7-6.1" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="status"></span></div>
+  <div class="who">
+    <img class="avatar" src="demo-patient.jpg" alt="Photo on file">
+    <div><h1 class="name" id="name"></h1><p class="sub" id="sub"></p></div>
+  </div>
+  <div id="facts" class="group"></div>
+  <p class="fine" id="source"></p>
+  <div class="actions">
+    <button id="start" class="primary">Start Triage</button>
+    <button id="not-them" class="secondary">Not this person</button>
+  </div>
+</div>
+
+<div id="glow" class="glow" aria-hidden="true"><div class="soft"><div class="ring"></div></div><div class="ring"></div></div>
+</div>
+
+<script>
+'use strict';
+const UNIT = 'AMB-07';
+const HOME_HOSPITAL = 'Demo General Hospital';   // the dashboard's hospital (WASEL_HOSPITAL)
+const SCAN_MS = 1100;
+
+/* One enrolled demo patient: the scan is simulated, the record is a simulated Riayati lookup. */
+const PATIENT = {
+  name: 'Adam Joseph', initials: 'A.J.', age: 21, sex: 'Male', dob: '14 Mar 2005', similarity: 0.94,
+  allergies: ['Morphine', 'Penicillin'], conditions: ['Asthma'], medications: 'None', bloodType: 'O+',
+  contact: 'Father · +971 50 ••• 4412', source: 'Riayati', asOf: '2026-09-02', asOfText: '2 Sep 2026',
+};
+
+const SEGS = [
+  { key: 'avpu', label: 'Responsiveness', stops: [['A', 'Alert'], ['V', 'Voice'], ['P', 'Pain'], ['U', 'None']] },
+  { key: 'breathing', label: 'Breathing', stops: [['normal', 'Normal'], ['fast', 'Fast'], ['laboured', 'Laboured'], ['not-breathing', 'None']] },
+  { key: 'bleeding', label: 'Bleeding', stops: [['none', 'None'], ['minor', 'Minor'], ['heavy-controlled', 'Heavy'], ['uncontrolled', 'Severe']] },
+  { key: 'perfusion', label: 'Circulation', stops: [['normal', 'Normal'], ['pale-sweaty', 'Pale'], ['weak-fast', 'Weak pulse']] },
+];
+const COMPLAINTS = [
+  ['chest-pain', 'Chest pain'], ['stroke', 'Stroke signs'], ['seizure', 'Seizure'],
+  ['overdose', 'Overdose'], ['allergic', 'Allergic reaction'], ['diabetic', 'Diabetic'],
+];
+const REGIONS = [['head', 'Head'], ['neck', 'Neck'], ['chest', 'Chest'], ['abdomen', 'Abdomen'], ['pelvis', 'Pelvis'], ['arms', 'Arms'], ['legs', 'Legs']];
+const TREATMENTS = [['oxygen', 'Oxygen'], ['tourniquet', 'Tourniquet'], ['iv', 'IV fluids'], ['analgesia', 'Pain relief']];
+const TREATMENT_ALLERGENS = { analgesia: ['Morphine', 'NSAIDs'], iv: ['Latex'] };
+const ESI_WORD = { 1: 'Resuscitation', 2: 'Emergent', 3: 'Urgent', 4: 'Less urgent', 5: 'Non-urgent' };
+const HOSPITALS = [
+  { id: 'general', name: HOME_HOSPITAL, kind: 'Emergency department · trauma bays · CT', eta: 12 },
+  { id: 'harbour', name: 'Harbour Point Trauma Centre', kind: 'Major trauma · 24/7 cath lab', eta: 17 },
+  { id: 'palmridge', name: 'Palm Ridge General', kind: 'Stroke centre', eta: 9 },
+];
+
+const ICON = {
+  warn: '<svg class="ico red" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M8.6 2.6a1.6 1.6 0 0 1 2.8 0l7.2 12.8A1.6 1.6 0 0 1 17.2 18H2.8a1.6 1.6 0 0 1-1.4-2.6z"/><path d="M10 7v4.6" stroke="#000" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="14.4" r="1.1" fill="#000"/></svg>',
+  heart: '<svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 17.5s-7-4.3-7-9.2A3.9 3.9 0 0 1 10 5.9a3.9 3.9 0 0 1 7 2.4c0 4.9-7 9.2-7 9.2z"/></svg>',
+  drop: '<svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2.2s5.6 6.2 5.6 10a5.6 5.6 0 0 1-11.2 0c0-3.8 5.6-10 5.6-10z"/></svg>',
+  pill: '<svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="7" width="15" height="6" rx="3" fill="currentColor" transform="rotate(-35 10 10)"/></svg>',
+  phone: '<svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M6.2 2.5l2 3.6-1.5 1.6a10 10 0 0 0 5.6 5.6l1.6-1.5 3.6 2-.8 3a1.5 1.5 0 0 1-1.6 1C7.9 17.4 2.6 12.1 2.2 4.9a1.5 1.5 0 0 1 1-1.6z"/></svg>',
+  tick: '<svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+function showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.toggle('off', s.id !== id)); }
+
+/* ---------------- State ---------------- */
+const fresh = () => ({ avpu: 'A', breathing: 'normal', bleeding: 'none', perfusion: 'normal', pain: 0, complaints: [], regions: [], treatments: [] });
+let t = fresh(), touched = false, destChoice = null, encounter = null, sendTimer = null, lastSent = null;
+
+/* ---------------- Scan → profile ---------------- */
+async function scan() {
+  $('#face-box').classList.remove('on', 'confirmed');
+  $('#scan').classList.remove('done');
+  $('#scan').classList.add('scanning');
+  showScreen('scan');
+  $('#glow').classList.add('on');
+  await sleep(250);
+  $('#face-box').classList.add('on');
+  await sleep(SCAN_MS - 250);
+  $('#glow').classList.remove('on');
+  $('#scan').classList.remove('scanning');
+  $('#scan').classList.add('done');
+  $('#face-box').classList.add('confirmed');
+  openProfile();
+}
+
+function fact(icon, value, label) {
+  const row = el('div', 'item');
+  row.insertAdjacentHTML('afterbegin', icon);
+  const txt = el('div');
+  txt.append(el('div', 'v', value), el('div', 'l', label));
+  row.append(txt);
+  return row;
+}
+
+function openProfile() {
+  const p = PATIENT;
+  $('#status').textContent = `Identified · face match ${Math.round(p.similarity * 100)}%`;
+  $('#name').textContent = p.name;
+  $('#sub').textContent = `${p.age} · ${p.sex} · ${p.bloodType}`;
+  $('#facts').replaceChildren(
+    fact(p.allergies.length ? ICON.warn : ICON.drop, p.allergies.join(', ') || 'None', 'Allergies'),
+    fact(ICON.heart, p.conditions.join(', ') || 'None', 'Conditions'),
+    fact(ICON.pill, p.medications, 'Medications'),
+    fact(ICON.drop, p.bloodType, 'Blood type'),
+    fact(ICON.phone, p.contact, 'Emergency contact'));
+  $('#source').textContent = `${p.source} · updated ${p.asOfText} · DOB ${p.dob} · confirm identity at the ED door`;
+  $('#sheet').classList.add('on');
+}
+
+function closeProfile() { $('#sheet').classList.remove('on'); }
+
+function startTriage() {
+  closeProfile();
+  if (!encounter) encounter = 'T-' + (500 + Math.floor(Math.random() * 400));
+  $('#t-name').textContent = PATIENT.name;
+  $('#t-sub').textContent = `${encounter} · ⚠ ${PATIENT.allergies.join(', ')}`;
+  showScreen('triage');
+  render();
+}
+
+function goHome() {
+  closeProfile();
+  t = fresh(); touched = false; destChoice = null; encounter = null; lastSent = null;
+  buildInputs();
+  showScreen('home');
+}
+
+/* ---------------- Triage inputs ---------------- */
+function buildInputs() {
+  $('#segs').replaceChildren(...SEGS.map(s => {
+    const card = el('div', 'card');
+    const lab = el('div', 'row-label');
+    lab.append(el('span', '', s.label));
+    const seg = el('div', 'seg');
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', s.label);
+    for (const [v, text] of s.stops) {
+      const b = el('button', '', text);
+      b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.key = s.key; b.dataset.v = v;
+      b.onclick = () => set(s.key, v);
+      seg.append(b);
+    }
+    card.append(lab, seg);
+    return card;
+  }));
+  const chips = (host, list, key) => $(host).replaceChildren(...list.map(([v, text]) => {
+    const b = el('button', 'chip', text);
+    b.type = 'button'; b.dataset.key = key; b.dataset.v = v;
+    b.onclick = () => set(key, t[key].includes(v) ? t[key].filter(x => x !== v) : list.map(x => x[0]).filter(x => x === v || t[key].includes(x)));
+    return b;
+  }));
+  chips('#complaints', COMPLAINTS, 'complaints');
+  chips('#regions', REGIONS, 'regions');
+  chips('#treatments', TREATMENTS, 'treatments');
+  $('#pain').value = '0';
+}
+
+function set(key, v) {
+  t[key] = v;
+  touched = true;
+  render();
+  scheduleSend();
+}
+
+/* ---------------- Priority: rule-based, ESI v4 / START (same rules as the responder web app) ---------------- */
+function assess() {
+  const r = [], add = (esi, why) => r.push({ esi, why });
+  const has = c => t.complaints.includes(c);
+  if (t.breathing === 'not-breathing') add(1, 'Not breathing');
+  if (t.avpu === 'U') add(1, 'Unresponsive');
+  if (t.bleeding === 'uncontrolled') add(1, 'Severe bleeding');
+  if (has('allergic') && (t.breathing === 'laboured' || t.perfusion === 'weak-fast')) add(1, 'Anaphylaxis');
+  if (t.perfusion === 'weak-fast') add(2, 'Weak pulse: signs of shock');
+  if (t.breathing === 'laboured') add(2, 'Laboured breathing');
+  if (t.avpu === 'P') add(2, 'Responds to pain only');
+  if (has('chest-pain')) add(2, 'Chest pain: possible heart attack');
+  if (has('stroke')) add(2, 'Stroke signs: time-critical');
+  if (has('seizure')) add(2, 'Seizure');
+  if (has('overdose')) add(2, 'Overdose');
+  if (has('diabetic')) add(t.avpu !== 'A' ? 2 : 3, t.avpu !== 'A' ? 'Diabetic, reduced consciousness' : 'Diabetic emergency');
+  if (has('allergic')) add(3, 'Allergic reaction');
+  if (t.avpu === 'V') add(3, 'Responds to voice only');
+  if (t.bleeding === 'heavy-controlled') add(3, 'Heavy bleeding');
+  if (t.perfusion === 'pale-sweaty') add(3, 'Pale and sweaty');
+  if (t.breathing === 'fast') add(3, 'Fast breathing');
+  if (t.pain >= 7) add(3, `Pain ${t.pain}/10`);
+  const core = REGIONS.filter(([v]) => ['head', 'neck', 'chest', 'abdomen', 'pelvis'].includes(v) && t.regions.includes(v)).map(x => x[1]);
+  if (core.length) add(3, `${core.join(', ')} injury`);
+  if (!r.length) {
+    const minor = t.regions.length || t.pain || t.bleeding === 'minor';
+    add(minor ? 4 : 5, minor ? 'Minor injury, vital signs normal' : 'No abnormal findings');
+  }
+  r.sort((a, b) => a.esi - b.esi);
+  return { esi: r[0].esi, why: r.filter(x => x.esi === r[0].esi).map(x => x.why) };
+}
+
+function recommend(a) {
+  const has = c => t.complaints.includes(c);
+  const core = t.regions.some(v => ['chest', 'abdomen', 'pelvis'].includes(v));
+  if (has('stroke')) return { id: 'palmridge', reason: 'Stroke team + CT' };
+  if (has('chest-pain')) return { id: 'harbour', reason: 'Cath lab' };
+  if (a.esi <= 2 && (core || t.bleeding === 'uncontrolled' || t.bleeding === 'heavy-controlled')) return { id: 'harbour', reason: 'Major trauma centre' };
+  return { id: 'general', reason: 'Nearest ED with beds' };
+}
+
+/* ---------------- Render ---------------- */
+function render() {
+  for (const b of document.querySelectorAll('.seg button')) b.setAttribute('aria-checked', String(t[b.dataset.key] === b.dataset.v));
+  for (const b of document.querySelectorAll('.chip')) b.setAttribute('aria-pressed', String(t[b.dataset.key].includes(b.dataset.v)));
+  $('#pain').style.setProperty('--p', (t.pain * 10) + '%');
+  $('#pain-v').textContent = `${t.pain} / 10`;
+
+  const hits = [];
+  for (const tr of t.treatments) for (const a of TREATMENT_ALLERGENS[tr] || []) if (PATIENT.allergies.includes(a)) hits.push(a);
+  const alert = $('#allergy-alert');
+  alert.hidden = !hits.length;
+  if (hits.length) {
+    alert.innerHTML = ICON.warn;
+    alert.append(el('span', '', `Allergic to ${hits.join(', ')}. Check before giving pain relief.`));
+  }
+
+  const a = assess(), rec = recommend(a);
+  const dest = HOSPITALS.find(h => h.id === (destChoice || rec.id));
+  $('#dests').replaceChildren(...HOSPITALS.map(h => {
+    const b = el('button', 'dest');
+    b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(h === dest));
+    b.insertAdjacentHTML('afterbegin', ICON.tick);
+    const txt = el('div');
+    txt.append(el('div', 'dn', h.name), el('div', 'dk', h.id === rec.id ? `Recommended · ${rec.reason}` : h.kind));
+    b.append(txt, el('span', 'eta', `${h.eta} min`));
+    b.onclick = () => { destChoice = h.id === rec.id ? null : h.id; touched = true; render(); scheduleSend(); };
+    return b;
+  }));
+
+  $('#bar').classList.toggle('off', !touched);
+  $('#dot').className = 'dot e' + a.esi;
+  $('#p').textContent = `ESI ${a.esi}`;
+  $('#ps').textContent = ESI_WORD[a.esi];
+  $('#why').textContent = a.why.join(' · ');
+  $('#to').textContent = `${dest.name} · ${dest.eta} min`;
+  const live = $('#live');
+  live.classList.toggle('idle', !lastSent);
+  live.textContent = lastSent ? `Sent ${lastSent}` : 'Sending…';
+  return { a, dest, rec };
+}
+
+/* ---------------- Pre-alert to the dashboard (contract v1) ---------------- */
+const channel = (() => { try { return new BroadcastChannel('wasel-prealert'); } catch (_) { return null; } })();
+
+function signs() {
+  const breathing = t.breathing;
+  return {
+    hr: t.perfusion === 'weak-fast' ? 128 : t.perfusion === 'pale-sweaty' ? 104 : 84,
+    sbp: t.perfusion === 'weak-fast' ? 86 : 128,
+    rr: breathing === 'not-breathing' ? null : breathing === 'laboured' ? 32 : breathing === 'fast' ? 26 : 16,
+    spo2: breathing === 'laboured' ? 89 : breathing === 'not-breathing' ? null : 97,
+    gcs: { A: 15, V: 13, P: 8, U: 3 }[t.avpu],
+  };
+}
+
+function message() {
+  const { a, dest, rec } = render();
+  const hhmm = new Date().toTimeString().slice(0, 5);
+  const label = (list, vals) => list.filter(x => vals.includes(x[0])).map(x => x[1]);
+  const injuries = label(REGIONS, t.regions);
+  return {
+    type: 'prealert', v: 1, encounter,
+    identity: { status: 'candidate', method: 'face', confidence: PATIENT.similarity, display: PATIENT.initials },
+    atmist: {
+      age: String(PATIENT.age), time: hhmm,
+      mechanism: label(COMPLAINTS, t.complaints).join(', ') || 'Not reported',
+      injuries: injuries.length ? 'Injured: ' + injuries.join(', ').toLowerCase() : 'No injuries found on survey',
+      signs: signs(),
+      treatment: label(TREATMENTS, t.treatments).join(', '),
+    },
+    priority: { system: 'ESI', level: a.esi },
+    etaMin: dest.eta,
+    safety: { allergies: PATIENT.allergies.slice(), anticoagulant: false, bloodType: PATIENT.bloodType, source: PATIENT.source, asOf: PATIENT.asOf },
+    triage: {
+      avpu: t.avpu, breathing: t.breathing, bleeding: t.bleeding, perfusion: t.perfusion, pain: t.pain,
+      regions: t.regions.slice(), complaints: t.complaints.slice(), burnsPct: 0, ageBand: 'adult',
+    },
+    destination: { hospital: dest.name, reason: destChoice ? 'Crew choice' : rec.reason, etaMin: dest.eta, chosenBy: destChoice ? 'crew' : 'auto' },
+  };
+}
+
+function scheduleSend() {
+  clearTimeout(sendTimer);
+  sendTimer = setTimeout(() => {
+    const msg = message();
+    if (channel) { try { channel.postMessage(msg); } catch (_) { return; } }
+    lastSent = new Date().toTimeString().slice(0, 8);
+    render();
+  }, 800);
+}
+
+/* ---------------- Wire ---------------- */
+$('#orb').onclick = scan;
+$('#start').onclick = startTriage;
+$('#not-them').onclick = goHome;
+$('#t-back').onclick = () => { showScreen('scan'); openProfile(); };
+$('#pain').oninput = e => set('pain', Number(e.target.value));
+buildInputs();
+</script>
+</body>
+</html>
