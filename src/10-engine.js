@@ -172,6 +172,7 @@ function arrive(p) {
   p.arrivedAt = S.t;
   sample(p);
   emit('adt', 'HL7 v2', `ADT^A04 registered ${p.id} · triage ESI ${p.esi} · ${c.label} (ICD-10-CM ${c.icd})`);
+  if (typeof readinessOnArrive === 'function') readinessOnArrive(p);   // NFC wristband tap at the bay (16-readiness.js)
   if (!p.reservedBed) return;
   const b = bed(p.reservedBed);
   if (b && b.status === 'reserved' && b.pid === p.id) place(p, b, bestNurse(p), 'pre-arrival');

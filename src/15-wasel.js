@@ -7,14 +7,18 @@
  *   ATMIST field reports and live pre-alerts from the responder app
  *   task owners, clocks and escalation · lobby leave-without-being-seen risk
  *   medication safety checks · SBAR handover · family reunification board
+ *   v3 low-friction flow (CHANNELS.md): dispatch incidents from the call-taker,
+ *   responder triage sliders + destination on pre-alerts, capacity broadcast
  *
  * Privacy (UAE PDPL, biometrics are sensitive data): identities arrive as a
  * match result plus initials only, never names, images or ID numbers;
  * records the patient restricted are never loaded; the family board shows
- * status only, no medical details.
- * Naming: spec'd API is unprefixed (updateMode, receivePreAlert, checkOrder,
- * overrideOrder, sbar, familyBoard, DRUGS, ESC_MIN); engine/AI hooks and
- * extra helpers are wasel*, internals wsl*. No DOM access (runs headless).
+ * status only, no medical details; dispatch calls carry no caller identity;
+ * only capacity (never patient data) leaves the hospital.
+ * Naming: spec'd API is unprefixed (updateMode, receivePreAlert, receiveIncident,
+ * capacitySnapshot, checkOrder, overrideOrder, sbar, familyBoard, DRUGS, ESC_MIN);
+ * engine/AI hooks and extra helpers are wasel*, internals wsl*. No DOM access
+ * (runs headless).
  * ========================================================================= */
 
 /* ---------- Tuning ---------- */
@@ -25,7 +29,11 @@ const WASEL_CFG = {
   oncallEtaMin: 25,
   reunifyMax: 300,         // family board entries kept for patients who have left
   maxReasonLen: 200,       // free-text override / break-glass reasons
+  routedMax: 20,           // routed-elsewhere pre-alerts kept on the inbound board
+  routedKeepSec: 180,      // ... and for how long after their ETA
 };
+// This dashboard's hospital: pre-alerts with another destination reserve nothing here
+const WASEL_HOSPITAL = 'Demo General Hospital';
 
 /* ---------- Synthetic record data (fictional) ---------- */
 const WASEL_ALLERGENS = ['Penicillin', 'Sulfonamides', 'NSAIDs', 'Latex', 'Contrast media', 'Morphine'];
@@ -58,7 +66,11 @@ const WASEL_MECHANISM = {
   fire: ['Trapped on 9th floor, smoke exposure 20 min', 'Evacuated via smoke-filled stairwell, ~10 min exposure',
     'Burned escaping apartment fire, 6th floor', 'Rescued from 12th-floor balcony, smoke exposure 25 min'],
   medical: ['998 call from home', 'Collapsed at work, bystander 998 call', 'Called by family from home'],
+  chemical: ['Exposed to chemical fumes at an industrial site', 'Chemical splash at work, decontaminated on scene',
+    'Inhaled fumes from a chemical spill'],
+  other: ['Injured in a crowd surge at an event', 'Found at scene by first responders'],
 };
+WASEL_MECHANISM.rtc = WASEL_MECHANISM.pileup;   // dispatch kind 'rtc' (CHANNELS.md §1) is a road collision
 
 /* ---------- Small helpers ---------- */
 const wslObj = x => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -99,6 +111,7 @@ function waselEnrich(p) {
   p.identity = { status: 'confirmed', method: 'emirates-id', confidence: null };
   p.incident = null; p.fieldAt = null; p.atmist = null; p.start = null;
   p.preAlert = false; p.clinicOffer = false; p.orders = [];
+  p.triage = null; p.destination = null; p.fieldPriority = null;   // responder sliders (CHANNELS.md §2)
   wslLinkRecord(p);
   return p;
 }
@@ -246,15 +259,19 @@ const PREALERT_RULES = {
   maxText: 160, maxAllergies: 10, maxEtaMin: 240,
 };
 
-// Live pre-alert from the responder app. Same encounter again = update vitals and ETA only.
-// Returns {ok: true, encounter, updated?} or {ok: false, error}.
+// Live pre-alert from the responder app. Same encounter again = update vitals, ETA and the
+// responder's sliders; a destination other than this hospital is shown as routed elsewhere
+// and reserves nothing here. Returns {ok: true, encounter, updated?, routed?} or {ok: false, error}.
 function receivePreAlert(msg) {
   if (!S) return { ok: false, error: 'Dashboard not started' };
   const parsed = wslParsePreAlert(msg);
   if (!parsed.ok) return parsed;
   const d = parsed.data, note = parsed.dropped.length ? ` · ignored invalid ${parsed.dropped.join(', ')}` : '';
+  const away = !wslComingHere(d.destination);
   const known = S.patients.find(p => p.enc === d.encounter && p.stage !== 'done');
-  if (known) return wslUpdatePreAlert(known, d, note);
+  if (known) return away && known.stage === 'inbound' ? wslRouteAway(known, d, note) : wslUpdatePreAlert(known, d, note);
+  if (away) return wslRecordRouted(d, note, false);
+  wslDropRouted(d.encounter);          // was routed elsewhere, now coming here: a normal pre-alert from here on
 
   const inc = S.incidents.slice().reverse().find(i => i.closedAt == null)
     || incident('Responder pre-alert', 'Field (responder app)', 'responder app pre-alert', 1, 'prealert');
@@ -262,7 +279,8 @@ function receivePreAlert(msg) {
   wslMatchInitials(p, d.identity.display);
   Object.assign(p, { esi: d.esi, enc: d.encounter, incident: inc.id, fieldAt: S.t, preAlert: true,
     start: d.start || (S.mode === 'mci' ? wslStart(d.esi) : null),
-    identity: d.identity, safety: d.safety, history: [], meds: d.safety.allergies === null ? null : [] });
+    identity: d.identity, safety: d.safety, history: [], meds: d.safety.allergies === null ? null : [],
+    triage: d.triage, destination: d.destination, fieldPriority: d.priority });
   if (d.atmist) {
     wslApplySigns(p, d.atmist.signs);
     if (d.atmist.age !== null) p.age = d.atmist.age;
@@ -311,6 +329,8 @@ function waselSamplePreAlert() {
   };
 }
 
+// ESI triage, identity and safety stay as first received: a more urgent field priority becomes a
+// one-tap re-triage card for the ED to confirm, never a silent change.
 function wslUpdatePreAlert(p, d, note) {
   // Already handed over: ED monitoring is now the source of truth, nothing to update
   if (p.stage !== 'inbound') return { ok: true, encounter: p.enc, updated: false };
@@ -320,9 +340,81 @@ function wslUpdatePreAlert(p, d, note) {
     wslApplySigns(p, d.atmist.signs);
     if (p.atmist) p.atmist.signs = Object.assign({}, p.atmist.signs, d.atmist.signs);
   }
+  p.fieldPriority = d.priority;
+  if (d.triage) p.triage = d.triage;
+  if (d.destination) p.destination = d.destination;
+  if (d.esi < p.esi) wslProposeFieldRetriage(p, d);
   emit('ems', 'FHIR', `Pre-alert ${p.enc} updated · ETA ${Math.round(d.etaMin)} min`);
   audit(`Pre-alert updated: ${p.enc}${note}`);
   return { ok: true, encounter: p.enc, updated: true };
+}
+
+function wslProposeFieldRetriage(p, d) {
+  const key = 'retriage:' + p.id;
+  if (blocked(key)) return;
+  const why = waselTriageWhy(p.triage).slice(0, 3);
+  addSugg({ key, type: 'retriage', level: d.esi <= 2 ? 1 : 2, pid: p.id, to: d.esi,
+    title: `Re-triage ${p.enc} from ESI ${p.esi} to ESI ${d.esi}`,
+    why: `Responder raised the field priority to ${wslPriorityText(d.priority)}${why.length ? ': ' + why.join(', ') : ''}. Confirm before arrival.` });
+}
+
+// 'RED' for START, 'ESI 2' for ESI
+function wslPriorityText(pr) {
+  return pr && pr.system === 'START' ? String(pr.level).toUpperCase() : 'ESI ' + (pr ? pr.level : '?');
+}
+
+/* ---------- Routed elsewhere: the responder chose another hospital ---------- */
+// No destination (older responder app) means this hospital.
+function wslComingHere(dest) {
+  const norm = s => String(s).toLowerCase().replace(/\s+/g, ' ').trim();
+  return !dest || norm(dest.hospital) === norm(WASEL_HOSPITAL);
+}
+
+// Routed-elsewhere pre-alerts, oldest first: [{encounter, priority, triage, destination, eta, updatedAt}].
+// Minimum necessary (UAE PDPL): no identity, safety or ATMIST is kept for a patient treated elsewhere.
+function waselRoutedAway() {
+  if (!Array.isArray(S.routedAway)) S.routedAway = [];
+  return S.routedAway;
+}
+
+function wslDropRouted(enc) {
+  const list = waselRoutedAway(), i = list.findIndex(r => r.encounter === enc);
+  if (i >= 0) list.splice(i, 1);
+}
+
+// New or repeated routed-elsewhere pre-alert (no patient, ambulance or bed here)
+function wslRecordRouted(d, note, rerouted) {
+  const list = waselRoutedAway(), where = d.destination.hospital;
+  const row = { encounter: d.encounter, priority: d.priority, triage: d.triage, destination: d.destination,
+    eta: S.t + d.etaMin * 60, updatedAt: S.t };
+  S.nextEnc = Math.max(S.nextEnc, wslEncNum(d.encounter) + 1);
+  const known = list.find(r => r.encounter === d.encounter);
+  if (known) {
+    Object.assign(known, row, { triage: d.triage || known.triage });
+    emit('ems', 'FHIR', `Pre-alert ${d.encounter} updated · routed to ${where} · ETA ${Math.round(d.etaMin)} min`);
+    audit(`Pre-alert updated: ${d.encounter} · routed elsewhere${note}`);
+    return { ok: true, encounter: d.encounter, updated: true, routed: true };
+  }
+  list.push(row);
+  if (list.length > WASEL_CFG.routedMax) list.shift();
+  emit('ems', 'FHIR', `Pre-alert ${d.encounter} routed to ${where} by responder · no bed reserved here`);
+  audit(`Pre-alert ${rerouted ? 'rerouted' : 'received'}: ${d.encounter} · routed elsewhere${note}`);
+  return rerouted ? { ok: true, encounter: d.encounter, updated: true, routed: true } : { ok: true, encounter: d.encounter, routed: true };
+}
+
+// An inbound pre-alert patient the responder now takes elsewhere: the bed held here is released
+// and the board keeps only the routed-elsewhere note.
+function wslRouteAway(p, d, note) {
+  const rb = p.reservedBed ? bed(p.reservedBed) : null;
+  if (rb && rb.status === 'reserved' && rb.pid === p.id) { rb.status = 'free'; rb.pid = null; }
+  p.reservedBed = null;
+  p.stage = 'done';
+  p.diverted = true;
+  const a = amb(p.amb);
+  if (a && a.pts.every(id => { const q = P(id); return !q || q.stage === 'done'; })) {
+    a.status = 'diverted'; a.divertedAt = S.t; a.routedTo = d.destination.hospital;
+  }
+  return wslRecordRouted(d, note, true);
 }
 
 function wslApplySigns(p, signs) {
@@ -359,9 +451,12 @@ function wslParsePreAlert(msg) {
   const dropped = [];
   return { ok: true, dropped, data: {
     encounter: msg.encounter, esi, start, etaMin: msg.etaMin,
+    priority: start ? { system: 'START', level: start } : { system: 'ESI', level: esi },
     identity: wslParseIdentity(msg.identity, dropped),
     atmist: wslParseAtmist(msg.atmist, dropped),
     safety: wslParseSafety(msg.safety, dropped),
+    triage: wslParseTriage(msg.triage, dropped),
+    destination: wslParseDestination(msg.destination, dropped),
   } };
 }
 
@@ -420,6 +515,201 @@ function wslParseSafety(sf, dropped) {
   return out;
 }
 
+/* ---------- Responder triage sliders and destination (CHANNELS.md §2, optional fields) ---------- */
+const TRIAGE_RULES = {
+  avpu: ['A', 'V', 'P', 'U'],
+  word: /^[a-z][a-z0-9-]{0,23}$/,     // slider positions are short lowercase words, e.g. 'heavy-controlled'
+  maxRegions: 10, maxHospital: 80, maxReason: 160,
+};
+const WASEL_AVPU_TEXT = { V: 'responds to voice only', P: 'responds to pain only', U: 'unresponsive' };
+// Urgency of known slider positions (3 = immediate threat to life); any other non-normal position counts 1
+const WASEL_SLIDER_URGENCY = {
+  breathing: { absent: 3, agonal: 3, laboured: 2, fast: 2, slow: 2, noisy: 2, shallow: 2 },
+  bleeding: { catastrophic: 3, uncontrolled: 3, heavy: 3, 'heavy-controlled': 2, controlled: 1, minor: 1 },
+  perfusion: { absent: 3, 'weak-fast': 2, weak: 2, 'weak-slow': 2, delayed: 2, 'delayed-refill': 2 },
+};
+const WASEL_SLIDER_NORMAL = ['normal', 'none', 'nil', 'ok', 'adult'];
+
+// Whitelisted slider values only; an invalid value is left out and reported in `dropped`
+function wslParseTriage(tr, dropped) {
+  const R = TRIAGE_RULES;
+  if (tr == null) return null;
+  if (!wslObj(tr)) { dropped.push('triage'); return null; }
+  const out = {}, bad = k => dropped.push('triage.' + k);
+  const num = (x, hi) => typeof x === 'number' && x >= 0 && x <= hi;
+  if (tr.avpu != null) { if (R.avpu.includes(tr.avpu)) out.avpu = tr.avpu; else bad('avpu'); }
+  for (const k of ['breathing', 'bleeding', 'perfusion']) {
+    if (tr[k] == null) continue;
+    if (typeof tr[k] === 'string' && R.word.test(tr[k])) out[k] = tr[k]; else bad(k);
+  }
+  if (tr.pain != null) { if (num(tr.pain, 10)) out.pain = Math.round(tr.pain); else bad('pain'); }
+  if (tr.regions != null) {
+    const ok = Array.isArray(tr.regions) && tr.regions.length <= R.maxRegions && tr.regions.every(x => typeof x === 'string' && R.word.test(x));
+    if (ok) out.regions = Array.from(new Set(tr.regions)); else bad('regions');
+  }
+  if (tr.burnsPct != null) { if (num(tr.burnsPct, 100)) out.burnsPct = Math.round(tr.burnsPct); else bad('burnsPct'); }
+  if (tr.ageBand != null) { if (typeof tr.ageBand === 'string' && R.word.test(tr.ageBand)) out.ageBand = tr.ageBand; else bad('ageBand'); }
+  return Object.keys(out).length ? out : null;
+}
+
+// {hospital, reason, etaMin|null}; without a hospital name the destination is ignored (= this hospital)
+function wslParseDestination(x, dropped) {
+  const R = TRIAGE_RULES;
+  if (x == null) return null;
+  const hospital = wslObj(x) ? wslText(x.hospital, R.maxHospital).replace(/\s+/g, ' ') : '';
+  if (!hospital) { dropped.push('destination'); return null; }
+  let etaMin = null;
+  if (x.etaMin != null) {
+    if (typeof x.etaMin === 'number' && x.etaMin >= 0 && x.etaMin <= PREALERT_RULES.maxEtaMin) etaMin = Math.round(x.etaMin);
+    else dropped.push('destination.etaMin');
+  }
+  return { hospital, reason: wslText(x.reason, R.maxReason).replace(/\s+/g, ' '), etaMin };
+}
+
+// Pure, for the inbound card: why the sliders give this priority, most urgent first.
+// e.g. ['responds to voice only', 'breathing laboured', 'bleeding heavy, controlled', 'chest, pelvis']
+function waselTriageWhy(tr) {
+  if (!wslObj(tr)) return [];
+  const out = [];
+  const add = (urgency, text) => out.push([urgency, out.length, text]);
+  const words = w => w.replace(/-/g, ', ');
+  if (WASEL_AVPU_TEXT[tr.avpu]) add(tr.avpu === 'V' ? 2 : 3, WASEL_AVPU_TEXT[tr.avpu]);
+  for (const k of ['breathing', 'bleeding', 'perfusion']) {
+    const w = tr[k];
+    if (typeof w === 'string' && !WASEL_SLIDER_NORMAL.includes(w)) add(WASEL_SLIDER_URGENCY[k][w] || 1, `${k} ${words(w)}`);
+  }
+  if (tr.burnsPct > 0) add(tr.burnsPct >= 20 ? 3 : tr.burnsPct >= 10 ? 2 : 1, `burns ${tr.burnsPct}% body surface`);
+  if (tr.pain >= 7) add(1, `pain ${tr.pain}/10`);
+  if (Array.isArray(tr.regions) && tr.regions.length) add(1, tr.regions.map(r => r.replace(/-/g, ' ')).join(', '));
+  if (typeof tr.ageBand === 'string' && !WASEL_SLIDER_NORMAL.includes(tr.ageBand)) add(1, tr.ageBand.replace(/-/g, ' '));
+  return out.sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(x => x[2]);
+}
+
+/* ---------- Dispatch incidents (call-taker app, CHANNELS.md §1) ---------- */
+const INCIDENT_RULES = {
+  id: /^CALL-\d{1,8}$/,
+  // kind → [incident name, MIX key the casualties are drawn from]
+  kinds: {
+    rtc: ['Road traffic collision', 'pileup'], fire: ['Building fire', 'fire'], medical: ['Medical emergency', 'walkin'],
+    chemical: ['Chemical exposure', 'walkin'], other: ['Major incident', 'walkin'],
+  },
+  severity: ['minor', 'serious', 'major'],
+  hazards: ['fire', 'fuel', 'chemical', 'electrical', 'crowd'],
+  via: '998 call · WASEL Dispatch',
+  maxCasualties: 200, maxUnits: 30, maxPlace: 120,
+  staggerSec: 60,                     // dispatched crews reach the scene about a minute apart
+};
+const wslCount = (x, max) => Number.isInteger(x) && x >= 0 && x <= max;
+const wslAmbText = n => n + (n === 1 ? ' ambulance' : ' ambulances');
+
+// The call-taker confirmed a dispatch: an unconfirmed incident (journey tile 1) whose ambulances
+// reach the scene one by one; the first crew on scene confirms it. The same id again updates the
+// incident and sends any extra ambulances, never a duplicate.
+// Returns {ok: true, id, dispatched, updated?} or {ok: false, error}.
+function receiveIncident(msg) {
+  if (!S) return { ok: false, error: 'Dashboard not started' };
+  const parsed = wslParseIncident(msg);
+  if (!parsed.ok) return parsed;
+  const d = parsed.data, note = parsed.dropped.length ? ` · ignored invalid ${parsed.dropped.join(', ')}` : '';
+  const known = S.incidents.find(i => i.id === d.id);
+  if (known) return wslUpdateIncident(known, d, note);
+
+  const inc = {
+    id: d.id, name: INCIDENT_RULES.kinds[d.kind][0], place: d.place || 'Location not given', via: INCIDENT_RULES.via,
+    est: d.casualties, startedAt: S.t, kind: d.kind, unconfirmed: true,
+    severity: d.severity, trapped: d.trapped === true, hazards: d.hazards || [], units: d.units,
+    unitsSent: 0, casualtiesSent: 0,
+  };
+  S.incidents.push(inc);
+  const n = wslDispatchUnits(inc, d.units.ambulances, d.casualties);
+  emit('ems', 'CAD', `${inc.id} from WASEL Dispatch: ${inc.name}, ${inc.place} · est. ${inc.est} casualties${wslIncidentFlags(inc)} · ${wslAmbText(n)} dispatched`);
+  audit(`Incident received from dispatch: ${inc.id}${note}`);
+  updateMode();                        // a large incident changes the mode now, not at the next sim minute
+  return { ok: true, id: inc.id, dispatched: n };
+}
+
+function wslUpdateIncident(inc, d, note) {
+  if (inc.closedAt != null) return { ok: true, id: inc.id, dispatched: 0, updated: false };   // already stood down
+  Object.assign(inc, {
+    name: INCIDENT_RULES.kinds[d.kind][0], kind: d.kind, place: d.place || inc.place, est: d.casualties, units: d.units,
+    severity: d.severity || inc.severity, trapped: d.trapped == null ? inc.trapped : d.trapped, hazards: d.hazards || inc.hazards,
+  });
+  const n = wslDispatchUnits(inc, Math.max(0, d.units.ambulances - inc.unitsSent), Math.max(0, d.casualties - inc.casualtiesSent));
+  emit('ems', 'CAD', `${inc.id} updated by WASEL Dispatch: est. ${inc.est} casualties${wslIncidentFlags(inc)}${n ? ' · ' + wslAmbText(n) + ' more dispatched' : ''}`);
+  audit(`Incident updated from dispatch: ${inc.id}${note}`);
+  updateMode();
+  return { ok: true, id: inc.id, dispatched: n, updated: true };
+}
+
+// Splits the casualties across `count` ambulances (larger shares first, no empty ambulance) and
+// schedules each crew on scene INCIDENT_RULES.staggerSec after the previous one. Returns how many.
+function wslDispatchUnits(inc, count, casualties) {
+  const n = Math.min(count, casualties), mix = INCIDENT_RULES.kinds[inc.kind][1];
+  for (let i = 0; i < n; i++) {
+    const k = Math.floor(casualties / n) + (i < casualties % n ? 1 : 0);
+    schedule((i + 1) * INCIDENT_RULES.staggerSec, () => {
+      if (inc.closedAt != null) return;   // incident stood down before this crew reached the scene
+      const a = dispatchAmb(inc, mix, k);
+      if (!inc.unconfirmed) return;
+      inc.unconfirmed = false;
+      emit('ems', 'CAD', `${inc.id} confirmed on scene by ${a.id}`);
+    });
+  }
+  if (n > 0) { inc.unitsSent += n; inc.casualtiesSent += casualties; }
+  return n;
+}
+
+function wslIncidentFlags(inc) {
+  return (inc.severity ? ' · ' + inc.severity : '') + (inc.trapped ? ' · persons trapped' : '')
+    + (inc.hazards && inc.hazards.length ? ' · hazards: ' + inc.hazards.join(', ') : '');
+}
+
+// Envelope (type, v, id, kind, casualties, units.ambulances) must be valid; an invalid optional field
+// is ignored and reported. Undocumented fields (caller name, phone) are never read.
+function wslParseIncident(msg) {
+  const R = INCIDENT_RULES, fail = error => ({ ok: false, error });
+  if (!wslObj(msg) || msg.type !== 'incident' || msg.v !== 1) return fail('Not a v1 incident message');
+  if (typeof msg.id !== 'string' || !R.id.test(msg.id)) return fail('id must look like CALL-4821');
+  if (typeof msg.kind !== 'string' || !wslHas(R.kinds, msg.kind)) return fail('kind must be rtc|fire|medical|chemical|other');
+  if (!wslCount(msg.casualties, R.maxCasualties)) return fail(`casualties must be a whole number 0–${R.maxCasualties}`);
+  if (!wslObj(msg.units) || !wslCount(msg.units.ambulances, R.maxUnits)) return fail(`units.ambulances must be a whole number 0–${R.maxUnits}`);
+
+  const dropped = [];
+  const place = wslText(msg.place, R.maxPlace).replace(/\s+/g, ' ');
+  if (!place) dropped.push('place');
+  let severity = null, trapped = null, hazards = null;
+  if (msg.severity != null) { if (R.severity.includes(msg.severity)) severity = msg.severity; else dropped.push('severity'); }
+  if (msg.trapped != null) { if (typeof msg.trapped === 'boolean') trapped = msg.trapped; else dropped.push('trapped'); }
+  if (msg.hazards != null) {
+    if (Array.isArray(msg.hazards)) {
+      hazards = R.hazards.filter(h => msg.hazards.includes(h));
+      if (msg.hazards.some(h => !R.hazards.includes(h))) dropped.push('hazards');
+    } else dropped.push('hazards');
+  }
+  const units = { ambulances: msg.units.ambulances, rescue: 0, fire: 0 };
+  for (const k of ['rescue', 'fire']) {
+    if (msg.units[k] == null) continue;
+    if (wslCount(msg.units[k], R.maxUnits)) units[k] = msg.units[k]; else dropped.push('units.' + k);
+  }
+  return { ok: true, dropped, data: { id: msg.id, kind: msg.kind, place: place || null, casualties: msg.casualties, severity, trapped, hazards, units } };
+}
+
+/* ---------- Capacity broadcast (CHANNELS.md §3): capacity only, never patient data ---------- */
+// Pure given `now` (ms timestamp for receivers; defaults to the wall clock). Beds count as free when
+// free and not held for a pending placement. During a bed-feed outage it reports the last snapshot
+// the hospital has, exactly what the bed board shows.
+function capacitySnapshot(now) {
+  const beds = S.bedsOffline && !S.bedsFallback && Array.isArray(S.bedsSnapshot) ? S.bedsSnapshot : S.beds;
+  const free = zone => beds.filter(b => b.status === 'free' && !b.hold && (!zone || b.zone === zone)).length;
+  return {
+    type: 'capacity', v: 1, hospital: WASEL_HOSPITAL, mode: S.mode,
+    edBedsFree: free(), resusFree: free('R'), traumaFree: free('T'),
+    icuFree: Math.max(0, S.icu.cap - S.icu.used), oNeg: S.sup.blood.qty, ctOnline: ctOnline(),
+    diversion: S.diversionUntil > S.t,
+    ts: typeof now === 'number' && Number.isFinite(now) ? now : Date.now(),
+  };
+}
+
 /* ---------- Tasks: every suggestion has an owner and a clock ---------- */
 const ESC_MIN = { 1: 3, 2: 6, 3: 10 };   // minutes a task may stay open at each level before it escalates
 const WASEL_OWNER = {
@@ -461,6 +751,10 @@ function waselTaskClock(s) {
 /* ---------- WASEL suggestions: identity at the door, lobby LWBS risk ---------- */
 // Called by aiPlan() after the v1 steps
 function waselPlan() {
+  // Routed-elsewhere notes leave the inbound board a few minutes after their ETA
+  if (Array.isArray(S.routedAway) && S.routedAway.length) {
+    S.routedAway = S.routedAway.filter(r => S.t - r.eta < WASEL_CFG.routedKeepSec);
+  }
   for (const p of S.patients) {
     if (p.stage === 'inbound' || p.stage === 'done') continue;
     if (p.identity && p.identity.status === 'candidate') wslProposeIdentity(p);

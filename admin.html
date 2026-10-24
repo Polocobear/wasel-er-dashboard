@@ -1,0 +1,1306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: no third-party code and no network. This console talks to the
+     WASEL dashboard only over same-origin BroadcastChannel (CHANNELS.md sections 4 and 5). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="WASEL Privacy & Security Console: access log, break-glass review, explainable anomaly alerts, device status and the downtime kill switch. Never shows patient charts. Simulated data.">
+<title>WASEL · Privacy &amp; Security Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d70015'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * WASEL Privacy & Security Console (admin.html · team doc screen 8)
+ * Same design tokens as the ER Command Dashboard (src/shell.html) so every
+ * WASEL screen reads as one product. Dark command-centre theme. Status colour
+ * is always paired with a word and a glyph (WCAG 1.4.1). Every control is a
+ * tap target of at least 44px. The only text input is the access-log search.
+ * ========================================================================= */
+
+/* ---------- Tokens (shared with the dashboard) ---------- */
+:root {
+  color-scheme: dark;
+  --page: #000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --raised: #3a3a3c;
+  --hover: #48484a;
+  --fill: rgba(120, 120, 128, .24);
+  --fill-strong: rgba(120, 120, 128, .36);
+  --text: #f5f5f7;
+  --text-2: #aeaeb2;
+  --muted: #98989f;
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .15);
+  --accent: #0a84ff;
+  --accent-strong: #0071e3;
+  --accent-strong-hover: #0064cf;
+  --accent-fg: #409cff;
+  --accent-weak: rgba(10, 132, 255, .18);
+  --critical: #d70015;
+  --serious: #ff9f0a;
+  --warning: #ffd60a;
+  --good: #30d158;
+  --neutral: #8e8e93;
+  --on-fill: #fff;
+  --on-light-fill: #1a1a1a;
+  --critical-weak: rgba(255, 69, 58, .17);
+  --serious-weak: rgba(255, 159, 10, .16);
+  --warning-weak: rgba(255, 214, 10, .14);
+  --good-weak: rgba(48, 209, 88, .15);
+  --critical-line: rgba(255, 69, 58, .5);
+  --good-line: rgba(48, 209, 88, .55);
+  --critical-fg: #ff7a72;
+  --serious-fg: #ffb340;
+  --warning-fg: #ffd426;
+  --good-fg: #30db5b;
+  --shadow-sm: none;
+  --shadow: 0 24px 60px rgba(0, 0, 0, .6);
+  --ring: 0 0 0 1px rgba(255, 255, 255, .08);
+  --material: rgba(44, 44, 46, .82);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --t-micro: 10.5px;
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-title: 15px;
+  --t-large: 22px;
+  --t-number: 28px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --gap: 10px;
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius: 16px;
+  --pill: 999px;
+  --h-tap: 44px;
+  --h-chip: 22px;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; min-width: 320px;
+  background: var(--page); color: var(--text);
+  font: var(--t-body)/1.4 var(--font); letter-spacing: -.006em;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, p { margin: 0; }
+button, input { font: inherit; color: inherit; letter-spacing: inherit; }
+::selection { background: var(--accent-weak); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--fill-strong) transparent; }
+mark { background: var(--warning-weak); color: var(--warning-fg); border-radius: 3px; padding: 0 1px; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--h-tap); padding: 0 18px; border: 0; border-radius: var(--pill);
+  background: var(--fill); color: var(--text);
+  font-size: var(--t-body); font-weight: 600; line-height: 1.15; text-align: center; cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, transform .1s ease;
+}
+.btn:hover { background: var(--fill-strong); }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--accent-strong); color: var(--on-fill); }
+.btn.primary:hover { background: var(--accent-strong-hover); }
+.btn.ghost { background: transparent; color: var(--accent-fg); }
+.btn.ghost:hover { background: var(--fill); }
+.btn.danger { background: var(--critical-weak); color: var(--critical-fg); }
+.btn.danger:hover { background: rgba(255, 69, 58, .28); }
+.btn.lg { min-height: 52px; padding: 0 22px; font-size: var(--t-title); }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+a.btn { text-decoration: none; }
+
+/* ---------- Chips (status = glyph + word + colour) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; min-height: var(--h-chip); padding: 3px 9px;
+  border-radius: var(--pill); background: var(--fill); color: var(--text-2);
+  font-size: var(--t-small); font-weight: 600; line-height: 1.2; white-space: nowrap;
+  font-variant-numeric: tabular-nums; vertical-align: middle;
+}
+.chip.critical { background: var(--critical); color: var(--on-fill); }
+.chip.serious { background: var(--serious-weak); color: var(--serious-fg); }
+.chip.warning { background: var(--warning-weak); color: var(--warning-fg); }
+.chip.good { background: var(--good-weak); color: var(--good-fg); }
+.chip.info { background: var(--accent-weak); color: var(--accent-fg); }
+
+/* ---------- Sticky header ---------- */
+.top {
+  position: sticky; top: 0; z-index: 30;
+  background: var(--page);
+  background: color-mix(in srgb, var(--page) 86%, transparent);
+  -webkit-backdrop-filter: saturate(1.5) blur(18px); backdrop-filter: saturate(1.5) blur(18px);
+  border-bottom: 1px solid var(--border);
+}
+.hdr {
+  max-width: 1920px; margin: 0 auto; padding: 10px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px;
+}
+.brand { flex: 1 1 18em; display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.logo {
+  flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(180deg, #ff5b50, var(--critical));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 1px 3px rgba(0, 0, 0, .25);
+  color: var(--on-fill); font-size: 28px; font-weight: 600; line-height: 1; padding-bottom: 3px;
+}
+.brand > div { min-width: 0; }
+.brand h1 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.022em; line-height: 1.1; }
+.brand p { margin-top: 2px; font-size: var(--t-small); color: var(--text-2); }
+.simtag {
+  display: inline-block; margin-inline-start: 6px; padding: 2px 8px; border-radius: var(--pill);
+  background: var(--fill); color: var(--text-2); font-size: var(--t-micro); font-weight: 600; vertical-align: 1px;
+}
+.hstat { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; margin-inline-start: auto; }
+#feedChip { white-space: normal; text-align: start; }
+.clockbox { text-align: end; }
+#clock { font-size: var(--t-number); font-weight: 600; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+#clockSub { margin-top: 4px; font-size: var(--t-micro); font-weight: 600; letter-spacing: .06em; color: var(--muted); }
+
+/* ---------- Page frame ---------- */
+.wrap { max-width: 1920px; margin: 0 auto; padding: 12px 16px 28px; display: flex; flex-direction: column; gap: var(--gap); }
+.rights {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px;
+  border-radius: var(--radius-md); background: var(--accent-weak); color: var(--text);
+  font-size: var(--t-body);
+}
+.rights svg { flex: none; width: 18px; height: 18px; margin-top: 1px; color: var(--accent-fg); }
+.rights b { font-weight: 650; color: var(--text); }
+.rights span { color: var(--text-2); }
+.down {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px;
+  border-radius: var(--radius-md); background: var(--critical); color: var(--on-fill);
+  font-size: var(--t-title); font-weight: 600;
+}
+.stale-note {
+  padding: 10px 14px; border-radius: var(--radius-md);
+  background: var(--warning-weak); color: var(--warning-fg); font-weight: 600;
+}
+#console.stale .dim { filter: grayscale(1); opacity: .6; }
+
+/* ---------- Summary tiles ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--gap); }
+.tile {
+  min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;
+  border-radius: var(--radius); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+}
+.tile .tl { font-size: var(--t-small); font-weight: 600; color: var(--muted); }
+.tile .tv { font-size: var(--t-number); font-weight: 600; line-height: 1.1; letter-spacing: -.022em; font-variant-numeric: tabular-nums; }
+.tile .ts { font-size: var(--t-small); color: var(--text-2); }
+.tile.critical { background: linear-gradient(var(--critical-weak), var(--critical-weak)), var(--surface); box-shadow: inset 0 0 0 1px var(--critical-line); }
+.tile.critical .tl, .tile.critical .tv { color: var(--critical-fg); }
+.tile.serious .tl, .tile.serious .tv { color: var(--serious-fg); }
+.tile.warning .tl { color: var(--warning-fg); }
+.tile.good .tl { color: var(--good-fg); }
+
+/* ---------- Layout ---------- */
+.cols { display: grid; gap: var(--gap); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1024px) {
+  .cols { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+}
+.stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+
+/* ---------- Panels ---------- */
+.panel {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden; scroll-margin-top: 96px;
+  background: var(--surface); border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--border);
+}
+.ph {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  min-height: 46px; padding: 12px 16px 8px;
+}
+.ph h2 { font-size: var(--t-title); font-weight: 600; letter-spacing: -.012em; }
+.ph h2:focus { outline: none; }
+.meta { margin-inline-start: auto; font-size: var(--t-small); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pb { padding: 2px 12px 12px; min-width: 0; }
+.empty { padding: 22px 12px; text-align: center; color: var(--muted); }
+.empty b { display: block; margin-bottom: 2px; color: var(--good-fg); font-size: var(--t-title); font-weight: 600; }
+
+/* ---------- Lists: alerts and break-glass ---------- */
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center;
+  padding: 10px 12px 10px 14px; border-radius: var(--radius-md); background: var(--surface-2);
+}
+.item.critical { background: linear-gradient(var(--critical-weak), var(--critical-weak)), var(--surface-2); box-shadow: inset 3px 0 0 var(--critical); }
+.item.serious { box-shadow: inset 3px 0 0 var(--serious); }
+.item.warning { box-shadow: inset 3px 0 0 var(--warning); }
+.item.good { box-shadow: inset 3px 0 0 var(--good); }
+.item-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.item h3 { font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.item p { margin-top: 3px; color: var(--text-2); overflow-wrap: anywhere; }
+.item .rule { font-size: var(--t-small); color: var(--muted); }
+.item time { font-size: var(--t-small); color: var(--muted); font-variant-numeric: tabular-nums; }
+.item-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.item-side .note { max-width: 16em; font-size: var(--t-small); color: var(--warning-fg); text-align: end; }
+.item.reviewed { background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.item.reviewed h3 { color: var(--text-2); }
+.rules { margin-top: 10px; color: var(--text-2); font-size: var(--t-small); }
+.rules summary {
+  display: inline-flex; align-items: center; min-height: var(--h-tap); padding: 0 6px;
+  cursor: pointer; color: var(--accent-fg); font-weight: 600; font-size: var(--t-body);
+}
+.rules ol { margin: 4px 0 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 4px; }
+
+/* ---------- Kill switch ---------- */
+.ks { box-shadow: inset 0 0 0 1px var(--critical-line); }
+.ks.on { background: linear-gradient(var(--critical-weak), var(--critical-weak)), var(--surface); }
+.ks-lead { font-size: var(--t-title); font-weight: 600; line-height: 1.35; }
+.ks-list { margin: 8px 0 14px; padding-inline-start: 20px; color: var(--text-2); display: flex; flex-direction: column; gap: 3px; }
+.ks-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ks-row .btn { flex: 1 1 14em; }
+.ks-step { margin-bottom: 8px; font-weight: 600; color: var(--warning-fg); }
+.hold {
+  position: relative; overflow: hidden; isolation: isolate;
+  background: var(--critical-weak); color: var(--text);
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.hold:hover { background: rgba(255, 69, 58, .28); }
+.hold:active { transform: none; }
+.hold-fill {
+  position: absolute; inset: 0; z-index: -1; background: var(--critical);
+  transform: scaleX(0); transform-origin: left center;
+}
+.ks-msg { min-height: 1.4em; margin-top: 10px; font-weight: 600; color: var(--text-2); }
+.ks-msg.good { color: var(--good-fg); }
+.ks-msg.warning { color: var(--warning-fg); }
+.ks-msg.critical { color: var(--critical-fg); }
+
+/* ---------- Devices ---------- */
+.dev {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center;
+  padding: 8px 4px; border-bottom: 1px solid var(--border);
+}
+.dev:last-child { border-bottom: 0; }
+.dev b { font-family: var(--mono); font-size: var(--t-body); font-weight: 600; }
+.dev .kind { color: var(--text-2); }
+.dev .seen { grid-column: 1 / -1; font-size: var(--t-small); color: var(--muted); }
+
+/* ---------- Access log ---------- */
+.logtools { display: flex; flex-direction: column; gap: 10px; padding: 0 12px 10px; }
+.search { display: flex; gap: 8px; }
+.search input {
+  flex: 1 1 auto; min-width: 0; min-height: var(--h-tap); padding: 0 14px;
+  border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--fill); color: var(--text);
+  font-size: var(--t-title);
+}
+.search input::placeholder { color: var(--muted); }
+.search input:focus-visible { outline-offset: 0; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button {
+  appearance: none; display: inline-flex; align-items: center; gap: 6px;
+  min-height: var(--h-tap); padding: 0 14px; border: 0; border-radius: var(--pill);
+  background: var(--fill); color: var(--text-2); font-weight: 600; cursor: pointer;
+}
+.seg button:hover { background: var(--fill-strong); color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--text); color: #000; }
+.seg button small { font-size: var(--t-small); font-weight: 600; opacity: .75; font-variant-numeric: tabular-nums; }
+.log { max-height: min(640px, 70vh); overflow: auto; overscroll-behavior: contain; padding: 0 12px 12px; }
+.log ol { list-style: none; margin: 0; padding: 0; }
+.lrow {
+  display: grid; grid-template-columns: 4.2em minmax(8em, 12em) minmax(0, 1fr) auto;
+  gap: 2px 12px; align-items: baseline; padding: 8px 4px; border-bottom: 1px solid var(--border);
+}
+.lrow:last-child { border-bottom: 0; }
+.lrow .t { font-family: var(--mono); color: var(--muted); font-size: var(--t-small); }
+.lrow .r { font-weight: 600; color: var(--text-2); overflow-wrap: anywhere; }
+.lrow .x { overflow-wrap: anywhere; }
+.lrow.c-breakglass .x { color: var(--critical-fg); font-weight: 600; }
+.lrow.c-blocked .x { color: var(--serious-fg); }
+
+/* ---------- Empty state (no dashboard running) ---------- */
+.emptystate {
+  max-width: 720px; margin: 24px auto 0; padding: 28px 24px;
+  border-radius: var(--radius); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.emptystate h2 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.02em; }
+.emptystate p { color: var(--text-2); font-size: var(--t-title); }
+.emptystate ol { margin: 0; padding-inline-start: 22px; color: var(--text-2); font-size: var(--t-title); display: flex; flex-direction: column; gap: 6px; }
+.listening { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-weight: 600; }
+.pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--warning); }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; inset-inline: 16px; bottom: 16px; z-index: 40; margin: 0 auto; max-width: 560px;
+  padding: 12px 16px; border-radius: var(--radius-md); background: var(--material); color: var(--text);
+  box-shadow: var(--shadow), var(--ring); font-weight: 600;
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+}
+
+footer { color: var(--muted); font-size: var(--t-small); text-align: center; padding-top: 8px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+}
+@media (max-width: 640px) {
+  .brand p .sub { display: none; }
+  .hstat { justify-content: flex-start; margin-inline-start: 0; width: 100%; }
+  .clockbox { margin-inline-start: auto; }
+  .item { grid-template-columns: minmax(0, 1fr); }
+  .item-side { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  .item-side .note { text-align: start; }
+  .lrow { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .panel { scroll-margin-top: 132px; }
+  .seg { flex-wrap: nowrap; overflow-x: auto; margin-inline: -12px; padding-inline: 12px; scrollbar-width: none; }
+  .seg button { flex: none; }
+  .lrow .x { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (forced-colors: active) {
+  .chip, .tile, .item, .panel, .btn, .seg button { border: 1px solid CanvasText; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="hdr">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">+</div>
+      <div>
+        <h1>Privacy &amp; Security Console</h1>
+        <p>WASEL · <span id="hospital">waiting for the dashboard</span><span class="sub"> · privacy &amp; security officer</span><span class="simtag">SIMULATED DATA</span></p>
+      </div>
+    </div>
+    <div class="hstat">
+      <span id="modeChip" class="chip" hidden></span>
+      <span id="feedChip" class="chip warning" role="status">&#9675; No feed (start the dashboard in another tab)</span>
+      <div class="clockbox" aria-label="Simulation clock">
+        <div id="clock">--:--</div>
+        <div id="clockSub">SIM CLOCK</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <p class="rights" role="note">
+    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M10 1.5a4.5 4.5 0 0 0-4.5 4.5v2.5H5A1.5 1.5 0 0 0 3.5 10v7A1.5 1.5 0 0 0 5 18.5h10a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 15 8.5h-.5V6A4.5 4.5 0 0 0 10 1.5Zm-2.5 7V6a2.5 2.5 0 0 1 5 0v2.5h-5Z"/></svg>
+    <span><b>Admin has no chart rights: this console never shows patient charts.</b> It shows who accessed what and when. Patients appear only as encounter references (for example T-104), never by name.</span>
+  </p>
+
+  <div id="downBanner" class="down" role="alert" hidden>
+    <span aria-hidden="true">&#9650;</span>
+    <span>Downtime mode is ON. Dashboards show a read-only snapshot; staff are working from paper triage tags and voice or radio procedures.</span>
+  </div>
+
+  <noscript><p class="stale-note">This console needs JavaScript to receive the live feed from the dashboard.</p></noscript>
+
+  <section id="empty" class="emptystate" aria-labelledby="h-empty">
+    <h2 id="h-empty">No dashboard running yet</h2>
+    <p id="emptyLead">This console mirrors the de-identified state of the WASEL ER dashboard. It runs no simulation of its own.</p>
+    <ol id="emptySteps">
+      <li>Open the WASEL dashboard in another tab of this browser, from the same address as this page.</li>
+      <li>Leave it running. This console fills in within 2 seconds and updates every 2 seconds.</li>
+      <li>Nothing is stored in this browser: closing this tab leaves no data behind.</li>
+    </ol>
+    <div class="ks-row">
+      <a class="btn primary lg" href="index.html" target="_blank" rel="noopener">Open the dashboard in a new tab</a>
+    </div>
+    <span class="listening"><span class="pulse" aria-hidden="true"></span><span id="listenText">Listening for the dashboard…</span></span>
+  </section>
+
+  <main id="console" class="stack" hidden>
+    <p id="staleNote" class="stale-note" role="status" hidden></p>
+
+    <section id="tiles" class="tiles dim" aria-label="Summary"></section>
+
+    <div class="cols">
+      <div class="stack">
+        <section class="panel dim" aria-labelledby="h-alerts">
+          <header class="ph"><h2 id="h-alerts">Anomaly alerts</h2><span id="alertsMeta" class="meta"></span></header>
+          <div class="pb">
+            <ul id="alerts" class="list"></ul>
+            <details class="rules">
+              <summary>How alerts are computed</summary>
+              <ol id="ruleList"></ol>
+              <p class="muted">Rules run in this browser on the audit trail the dashboard shares. Every alert names the rule and the evidence. No machine learning; a person decides what to do.</p>
+            </details>
+          </div>
+        </section>
+
+        <section id="bgPanel" class="panel dim" aria-labelledby="h-bg">
+          <header class="ph"><h2 id="h-bg">Break-glass access</h2><span id="bgMeta" class="meta"></span></header>
+          <div class="pb"><ul id="bg" class="list"></ul></div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section id="ksPanel" class="panel ks" aria-labelledby="h-ks">
+          <header class="ph"><h2 id="h-ks">Kill switch</h2><span id="ksState" class="chip good">&#10003; WASEL live</span></header>
+          <div class="pb">
+            <p class="ks-lead">Switch WASEL to downtime mode (read-only snapshot + paper/voice procedures)</p>
+            <ul class="ks-list">
+              <li>Every dashboard freezes into a read-only snapshot with a paper and voice banner.</li>
+              <li>Staff switch to paper triage tags and radio handovers; nothing new is entered in WASEL.</li>
+              <li>The simulation keeps running, and the switch and restore are both audited.</li>
+            </ul>
+
+            <div id="ksArm" class="ks-row">
+              <button id="ksStart" class="btn danger lg" type="button" aria-controls="ksConfirm" aria-expanded="false">Switch to downtime mode…</button>
+            </div>
+
+            <div id="ksConfirm" hidden>
+              <p id="ksHint" class="ks-step">Step 2 of 2: press and hold for 2 seconds. Let go to cancel. With a keyboard, hold Space or Enter.</p>
+              <div class="ks-row">
+                <button id="ksHold" class="btn hold lg" type="button" aria-describedby="ksHint"><span class="hold-fill" id="ksFill" aria-hidden="true"></span><span id="ksHoldLabel">Hold 2 s to confirm downtime</span></button>
+                <button id="ksCancel" class="btn lg" type="button">Cancel</button>
+              </div>
+            </div>
+
+            <div id="ksActive" class="ks-row" hidden>
+              <button id="ksRestore" class="btn primary lg" type="button">Restore WASEL (leave downtime)</button>
+            </div>
+
+            <p id="ksMsg" class="ks-msg" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="panel dim" aria-labelledby="h-dev">
+          <header class="ph"><h2 id="h-dev">Device status</h2><span id="devMeta" class="meta"></span></header>
+          <div class="pb" id="devices"></div>
+        </section>
+      </div>
+    </div>
+
+    <section id="logPanel" class="panel dim" aria-labelledby="h-log">
+      <header class="ph"><h2 id="h-log" tabindex="-1">Access log</h2><span id="logMeta" class="meta"></span></header>
+      <div class="logtools">
+        <div class="search">
+          <label class="sr-only" for="q">Search the access log</label>
+          <input id="q" type="search" maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Search role, action or reference, e.g. T-104">
+          <button id="qClear" class="btn" type="button" hidden>Clear</button>
+        </div>
+        <div id="seg" class="seg" role="group" aria-label="Filter the access log by type"></div>
+      </div>
+      <div class="log" tabindex="0" aria-labelledby="h-log"><ol id="log"></ol></div>
+    </section>
+
+    <footer>De-identified mirror of the WASEL dashboard · no names, no charts, nothing stored in this browser · HIPAA §164.312(b) audit controls, §164.312(a)(2)(ii) emergency access · ADHICS access control and audit logging</footer>
+  </main>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<div id="announce" class="sr-only" aria-live="assertive"></div>
+
+<script>
+/* =========================================================================
+ * WASEL Privacy & Security Console
+ *
+ * Data in:  BroadcastChannel('wasel-state')   (CHANNELS.md section 4)
+ *           Only state.audit, state.breakGlass, state.devices and header
+ *           fields are read. The snapshot is kept in memory only.
+ * Data out: BroadcastChannel('wasel-command') (CHANNELS.md section 5)
+ *           reviewBreakGlass {i} and killSwitch {on}, from 'admin'.
+ *
+ * Anomaly alerts are explainable rules over the audit trail (RULES below).
+ * Every value from the channel is validated and rendered with textContent.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  const CFG = {
+    STALE_MS: 6000,          // no state for 6 s = no feed (dashboard sends every 2 s)
+    CMD_TIMEOUT_MS: 8000,    // a command not reflected in state by then is reported
+    HOLD_MS: 2000,           // kill switch hold-to-confirm
+    ARM_TIMEOUT_MS: 15000,   // the armed kill switch disarms itself if left alone
+    VIEW_WINDOW_S: 120,      // rapid record access: window...
+    VIEW_LIMIT: 5,           // ...and more than this many views in it
+    BLOCK_WINDOW_S: 300,     // blocked attempts: window...
+    BLOCK_LIMIT: 3,          // ...and this many in it makes the alert high
+    DEVICE_SILENT_S: 60,     // a device silent longer than this is flagged
+    RECENT_S: 600,           // "last 10 min" summary tile
+    LOG_MAX_ROWS: 300,
+    AUDIT_MAX: 500,
+  };
+  const SOURCE = 'admin';
+  const ROLE_LABEL = 'Privacy & security officer';
+
+  const RULES = {
+    views: 'More than ' + CFG.VIEW_LIMIT + ' patient-record views by one role within 2 minutes (possible browsing outside care).',
+    breakglass: 'Every break-glass access is reviewed by the privacy officer (HIPAA §164.312(a)(2)(ii)).',
+    physician: 'Any switch to the Physician role, which sees full names and charts, is flagged for an identity check.',
+    rejected: 'Any command or message the dashboard rejected (unknown action, wrong screen or bad arguments).',
+    blocked: 'Blocked access attempts are flagged; ' + CFG.BLOCK_LIMIT + ' or more by one role within 5 minutes is high.',
+    device: 'A device that is offline or silent for more than ' + CFG.DEVICE_SILENT_S + ' seconds.',
+  };
+  const LEVELS = {
+    critical: { rank: 0, word: 'Critical', glyph: '▲' },
+    serious: { rank: 1, word: 'High', glyph: '●' },
+    warning: { rank: 2, word: 'Watch', glyph: '●' },
+  };
+  const MODES = {
+    steady: { word: 'Steady', tone: 'good', glyph: '✓' },
+    strain: { word: 'Strain', tone: 'warning', glyph: '●' },
+    surge: { word: 'Surge', tone: 'serious', glyph: '●' },
+    mci: { word: 'MCI', tone: 'critical', glyph: '▲' },
+  };
+  // Access-log categories, matched in order against the audit text.
+  const CATS = [
+    { key: 'view', label: 'Record views', tag: 'Record view', test: t => /^Viewed\b/i.test(t) },
+    { key: 'blocked', label: 'Blocked', tag: 'Blocked', test: t => /^Blocked\b|^Care-team check/i.test(t) },
+    { key: 'breakglass', label: 'Break-glass', tag: 'Break-glass', test: t => /^BREAK-GLASS\b/i.test(t) },
+    { key: 'session', label: 'Sign-in & roles', tag: 'Sign-in', test: t => /^Role switched|^Session\b|sign-in|auto-locked/i.test(t) },
+    { key: 'command', label: 'Commands', tag: 'Command', test: t => /\bcommand\b|\breject/i.test(t) },
+  ];
+  const OTHER_CAT = { key: 'other', label: 'System & other', tag: 'System' };
+  const RE_RECORD_VIEW = /^Viewed patient record\b/i;
+  const RE_PHYSICIAN = /^Role switched to Physician\b/i;
+  const RE_REJECTED = /\breject/i;
+  const RE_BREAKGLASS = /^BREAK-GLASS:\s*(.*?)\s*·\s*reason:\s*([\s\S]*)$/i;
+  const RE_REF = /\b[A-Z]{1,3}-\d{2,6}\b/g;
+
+  /* ---------- Small helpers ---------- */
+  const $ = id => document.getElementById(id);
+  const arr = x => (Array.isArray(x) ? x : []);
+  const isObj = x => x !== null && typeof x === 'object';
+  const num = x => (typeof x === 'number' && Number.isFinite(x) ? x : null);
+  function str(x, max) {
+    if (typeof x === 'string') return x.slice(0, max).trim();
+    if (typeof x === 'number' && Number.isFinite(x)) return String(x);
+    return '';
+  }
+
+  // Builds DOM nodes. Text always goes in as text nodes, never as markup.
+  function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(k => {
+        const v = props[k];
+        if (v === null || v === undefined || v === false) return;
+        if (k === 'className') el.className = v;
+        else if (k === 'text') el.textContent = v;
+        else el.setAttribute(k, v === true ? '' : String(v));
+      });
+    }
+    append(el, kids);
+    return el;
+  }
+  function append(el, kids) {
+    kids.forEach(k => {
+      if (k === null || k === undefined || k === false) return;
+      if (Array.isArray(k)) append(el, k);
+      else el.appendChild(typeof k === 'object' ? k : document.createTextNode(String(k)));
+    });
+  }
+  function chip(tone, glyph, word) {
+    return h('span', { className: 'chip' + (tone ? ' ' + tone : '') }, glyph ? glyph + ' ' + word : word);
+  }
+
+  // Replaces a container's children, keeping keyboard focus on the same control.
+  function rerender(container, nodes) {
+    const active = document.activeElement;
+    const key = active && container.contains(active) ? active.getAttribute('data-key') : null;
+    container.replaceChildren(...nodes);
+    if (key) {
+      const again = Array.from(container.querySelectorAll('[data-key]')).find(e => e.getAttribute('data-key') === key);
+      if (again && !again.disabled) again.focus();
+    }
+  }
+
+  // Sim times arrive as "HH:MM" / "HH:MM:SS" strings (or raw sim seconds).
+  function toSec(t) {
+    if (typeof t === 'number' && Number.isFinite(t)) return t;
+    if (typeof t !== 'string') return null;
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(t.trim());
+    return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (m[3] ? +m[3] : 0) : null;
+  }
+  function fmtT(t) {
+    if (typeof t === 'string') return str(t, 8) || '--:--';
+    if (typeof t === 'number' && Number.isFinite(t)) return 'T+' + Math.floor(t / 60) + ' min';
+    return '--:--';
+  }
+  function ago(sec) {
+    if (sec === null) return 'last seen: unknown';
+    if (sec < 60) return 'last seen ' + Math.round(sec) + ' s ago';
+    if (sec < 3600) return 'last seen ' + Math.round(sec / 60) + ' min ago';
+    return 'last seen ' + Math.round(sec / 3600) + ' h ago';
+  }
+  function refsIn(text) { return text.match(RE_REF) || []; }
+  function catOf(text) { return CATS.find(c => c.test(text)) || OTHER_CAT; }
+  function catByKey(key) { return CATS.find(c => c.key === key) || OTHER_CAT; }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+  function newCommandId() {
+    const bytes = new Uint8Array(6);
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') window.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    return 'cmd-' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /* ---------- Channels ---------- */
+  function openChannel(name) {
+    try { return typeof BroadcastChannel === 'function' ? new BroadcastChannel(name) : null; }
+    catch (e) { return null; }
+  }
+  const stateChannel = openChannel('wasel-state');
+  const commandChannel = openChannel('wasel-command');
+
+  /* ---------- App state (memory only: nothing is written to storage or the URL) ---------- */
+  const app = {
+    snap: null,            // last validated snapshot
+    lastTs: 0,             // ts of that snapshot (older messages are ignored)
+    lastAt: 0,             // Date.now() when it arrived
+    filter: 'all',
+    query: '',
+    reviews: new Map(),    // break-glass i -> { at, failed }
+    kill: null,            // { on, at } while a killSwitch command is unconfirmed
+    armedAt: 0,
+    downtimeSince: '',
+    sigs: {},
+    seenAlerts: null,      // alert keys already announced to screen readers
+    toastTimer: 0,
+  };
+  const isLive = () => app.lastAt > 0 && Date.now() - app.lastAt <= CFG.STALE_MS;
+  const canCommand = () => !!commandChannel && isLive();
+
+  function sendCommand(action, args) {
+    if (!commandChannel) return null;
+    const msg = { type: 'command', v: 1, id: newCommandId(), from: SOURCE, role: ROLE_LABEL, action, args };
+    try { commandChannel.postMessage(msg); } catch (e) { return null; }
+    return msg.id;
+  }
+
+  /* ---------- Validation: a malformed message changes nothing ---------- */
+  function normalize(m) {
+    if (!isObj(m) || m.type !== 'state' || m.v !== 1 || num(m.ts) === null) return null;
+
+    const audit = arr(m.audit).filter(isObj).slice(0, CFG.AUDIT_MAX).map((a, n) => {
+      const text = str(a.text, 400);
+      const cat = catOf(text);
+      return { n, raw: a.t, time: fmtT(a.t), sec: toSec(a.t), role: str(a.role, 60) || 'Unknown role', text, cat: cat.key, tag: cat.tag };
+    });
+    // The trail is newest first. Walk it oldest first so a midnight roll-over keeps times increasing.
+    let offset = 0, prev = null;
+    for (let k = audit.length - 1; k >= 0; k--) {
+      const r = audit[k];
+      if (r.sec === null) continue;
+      if (prev !== null && r.sec + offset < prev - 43200) offset += 86400;
+      r.sec += offset;
+      prev = r.sec;
+    }
+
+    let nowSec = toSec(m.simClock);
+    if (nowSec !== null && prev !== null && prev - nowSec > 43200) nowSec += 86400 * Math.round((prev - nowSec) / 86400);
+
+    const breakGlass = arr(m.breakGlass).filter(isObj).slice(0, 200).map((b, k) => {
+      const text = str(b.text, 500);
+      const parsed = RE_BREAKGLASS.exec(text);
+      return {
+        i: Number.isInteger(b.i) && b.i >= 0 ? b.i : k,
+        time: fmtT(b.t), sec: toSec(b.t),
+        role: str(b.role, 60) || 'Unknown role',
+        ref: parsed ? parsed[1].slice(0, 60) : (refsIn(text)[0] || ''),
+        reason: parsed ? parsed[2] : text,
+        reviewed: b.reviewed === true,
+      };
+    });
+
+    const devices = arr(m.devices).filter(isObj).slice(0, 100).map(d => ({
+      id: str(d.id, 40) || 'Unknown device',
+      kind: str(d.kind, 60) || 'Device',
+      status: (str(d.status, 24) || 'unknown').toLowerCase(),
+      lastSeenSec: num(d.lastSeenSec),
+    }));
+
+    return {
+      ts: m.ts,
+      simClock: str(m.simClock, 8),
+      nowSec,
+      hospital: str(m.hospital, 80),
+      mode: str(m.mode, 12).toLowerCase(),
+      modeReason: str(m.modeReason, 160),
+      downtime: m.downtime === true,
+      audit, breakGlass, devices,
+    };
+  }
+
+  /* ---------- Explainable anomaly rules ---------- */
+  function maxInWindow(list, windowSec) {
+    let best = null, lo = 0;
+    for (let hi = 0; hi < list.length; hi++) {
+      while (list[hi].sec - list[lo].sec > windowSec) lo++;
+      const n = hi - lo + 1;
+      if (!best || n > best.n) best = { n, from: list[lo], to: list[hi], rows: list.slice(lo, hi + 1) };
+    }
+    return best;
+  }
+  function groupByRole(rows) {
+    const map = new Map();
+    rows.forEach(r => {
+      if (!map.has(r.role)) map.set(r.role, []);
+      map.get(r.role).push(r);
+    });
+    map.forEach(list => list.sort((a, b) => a.sec - b.sec));
+    return map;
+  }
+
+  function detectAlerts(s) {
+    const out = [];
+    const timed = s.audit.filter(r => r.sec !== null);
+
+    // 1. Rapid record access by one role
+    groupByRole(timed.filter(r => RE_RECORD_VIEW.test(r.text))).forEach((list, role) => {
+      const w = maxInWindow(list, CFG.VIEW_WINDOW_S);
+      if (!w || w.n <= CFG.VIEW_LIMIT) return;
+      const refs = new Set();
+      w.rows.forEach(r => refsIn(r.text).forEach(x => refs.add(x)));
+      out.push({
+        key: 'views|' + role + '|' + w.from.sec, level: 'serious', sec: w.to.sec, time: w.to.time,
+        title: 'Rapid record access: ' + role,
+        detail: w.n + ' record views between ' + w.from.time + ' and ' + w.to.time + ', covering ' + plural(refs.size, 'patient', 'different patients') + '.',
+        rule: RULES.views, act: { kind: 'log', cat: 'view', q: role },
+      });
+    });
+
+    // 2. Break-glass access awaiting review
+    s.breakGlass.filter(b => !b.reviewed).forEach(b => {
+      out.push({
+        key: 'bg|' + b.i, level: 'critical', sec: b.sec, time: b.time,
+        title: 'Break-glass awaiting review' + (b.ref ? ': ' + b.ref : ''),
+        detail: b.role + ' used emergency access. Reason given: ' + (b.reason || 'none recorded') + '.',
+        rule: RULES.breakglass, act: { kind: 'review', i: b.i },
+      });
+    });
+
+    // 3. Role switched to Physician (full names and charts)
+    const toPhysician = timed.filter(r => RE_PHYSICIAN.test(r.text));
+    if (toPhysician.length) {
+      const last = toPhysician.reduce((a, b) => (b.sec > a.sec ? b : a));
+      out.push({
+        key: 'phys|' + toPhysician.length, level: 'warning', sec: last.sec, time: last.time,
+        title: 'Role switched to Physician' + (toPhysician.length > 1 ? ' (' + toPhysician.length + ' times)' : ''),
+        detail: 'Latest at ' + last.time + '. Confirm the signed-in person is a physician (production: SSO with MFA).',
+        rule: RULES.physician, act: { kind: 'log', cat: 'session', q: 'Physician' },
+      });
+    }
+
+    // 4. Rejected commands
+    const rejected = timed.filter(r => RE_REJECTED.test(r.text));
+    if (rejected.length) {
+      const last = rejected.reduce((a, b) => (b.sec > a.sec ? b : a));
+      out.push({
+        key: 'rej|' + rejected.length, level: 'serious', sec: last.sec, time: last.time,
+        title: 'Rejected requests: ' + rejected.length,
+        detail: 'Latest: ' + last.text,
+        rule: RULES.rejected, act: { kind: 'log', cat: 'all', q: 'reject' },
+      });
+    }
+
+    // 5. Blocked access attempts, per role
+    groupByRole(timed.filter(r => r.cat === 'blocked')).forEach((list, role) => {
+      const w = maxInWindow(list, CFG.BLOCK_WINDOW_S);
+      const last = list[list.length - 1];
+      const high = w && w.n >= CFG.BLOCK_LIMIT;
+      out.push({
+        key: 'blk|' + role + '|' + list.length, level: high ? 'serious' : 'warning', sec: last.sec, time: last.time,
+        title: 'Blocked attempts: ' + role,
+        detail: plural(list.length, 'blocked attempt', 'blocked attempts') + (high ? ', ' + w.n + ' within 5 minutes' : '') + '. Latest: ' + last.text,
+        rule: RULES.blocked, act: { kind: 'log', cat: 'blocked', q: role },
+      });
+    });
+
+    // 6. Devices offline or silent
+    s.devices.forEach(d => {
+      const st = deviceStatus(d);
+      if (st.tone === 'good') return;
+      out.push({
+        key: 'dev|' + d.id + '|' + st.word, level: st.tone === 'critical' ? 'serious' : 'warning', sec: null, time: '',
+        title: d.kind + ' ' + d.id + ': ' + st.word.toLowerCase(),
+        detail: ago(d.lastSeenSec) + '.',
+        rule: RULES.device, act: null,
+      });
+    });
+
+    return out.sort((a, b) => LEVELS[a.level].rank - LEVELS[b.level].rank || (b.sec || 0) - (a.sec || 0));
+  }
+
+  function deviceStatus(d) {
+    if (d.status === 'offline') return { tone: 'critical', glyph: '▲', word: 'Offline' };
+    if (d.status === 'online') {
+      return d.lastSeenSec !== null && d.lastSeenSec > CFG.DEVICE_SILENT_S
+        ? { tone: 'warning', glyph: '●', word: 'Silent' }
+        : { tone: 'good', glyph: '✓', word: 'Online' };
+    }
+    const word = d.status ? d.status.charAt(0).toUpperCase() + d.status.slice(1) : 'Unknown';
+    return { tone: 'warning', glyph: '●', word };
+  }
+
+  /* ---------- Rendering (each section redraws only when its content changed) ---------- */
+  function changed(name, vm) {
+    const sig = JSON.stringify(vm);
+    if (app.sigs[name] === sig) return false;
+    app.sigs[name] = sig;
+    return true;
+  }
+
+  function renderHeader(s) {
+    $('hospital').textContent = s ? (s.hospital || 'Hospital') : 'waiting for the dashboard';
+    $('clock').textContent = s && s.simClock ? s.simClock : '--:--';
+    const mc = $('modeChip');
+    const mode = s && MODES[s.mode];
+    mc.hidden = !mode;
+    if (mode) {
+      mc.className = 'chip ' + mode.tone;
+      mc.textContent = mode.glyph + ' Ops mode: ' + mode.word;
+      mc.title = s.modeReason || '';
+    }
+    const live = isLive();
+    const feed = $('feedChip');
+    feed.className = 'chip ' + (live ? 'good' : 'warning');
+    feed.textContent = live ? '● Live' : '○ No feed (start the dashboard in another tab)';
+    $('downBanner').hidden = !(s && s.downtime);
+  }
+
+  function renderFrame(s) {
+    $('empty').hidden = !!s;
+    $('console').hidden = !s;
+    if (!stateChannel) {
+      $('h-empty').textContent = 'This browser cannot receive the live feed';
+      $('emptyLead').textContent = 'The console needs BroadcastChannel, which this browser does not provide. Use a current version of Chrome, Edge, Firefox or Safari.';
+      $('listenText').textContent = 'Not listening';
+    }
+    if (!s) return;
+    const live = isLive();
+    $('console').classList.toggle('stale', !live);
+    const note = $('staleNote');
+    note.hidden = live;
+    if (!live) note.textContent = '○ No feed for more than 6 seconds. Showing the last snapshot (sim time ' + (s.simClock || 'unknown') + '). Commands are paused until the dashboard is back.';
+  }
+
+  function renderTiles(s, alerts) {
+    const crit = alerts.filter(a => a.level === 'critical').length;
+    const toReview = s.breakGlass.filter(b => !b.reviewed).length;
+    const recentViews = s.nowSec === null ? null
+      : s.audit.filter(r => r.sec !== null && RE_RECORD_VIEW.test(r.text) && r.sec >= s.nowSec - CFG.RECENT_S);
+    const viewRoles = recentViews ? new Set(recentViews.map(r => r.role)).size : 0;
+    const devOn = s.devices.filter(d => deviceStatus(d).tone === 'good').length;
+    const devOff = s.devices.length - devOn;
+    const vm = [
+      { label: 'Open alerts', value: String(alerts.length), tone: crit ? 'critical' : alerts.length ? 'serious' : 'good',
+        sub: crit ? '▲ ' + crit + ' critical' : alerts.length ? '● Needs a look' : '✓ Nothing unusual' },
+      { label: 'Break-glass to review', value: String(toReview), tone: toReview ? 'critical' : 'good',
+        sub: (toReview ? '▲ Review today' : '✓ All reviewed') + ' · ' + plural(s.breakGlass.length, 'event', 'events') },
+      { label: 'Record views · last 10 min', value: recentViews ? String(recentViews.length) : '–', tone: '',
+        sub: recentViews ? 'by ' + plural(viewRoles, 'role', 'roles') : 'Sim clock unavailable' },
+      { label: 'Devices online', value: s.devices.length ? devOn + '/' + s.devices.length : '–', tone: devOff ? 'warning' : s.devices.length ? 'good' : '',
+        sub: s.devices.length ? (devOff ? '● ' + devOff + ' need a check' : '✓ All reporting') : 'No devices reported' },
+      { label: 'WASEL status', value: s.downtime ? 'Downtime' : 'Live', tone: s.downtime ? 'critical' : 'good',
+        sub: s.downtime ? '▲ Paper and voice procedures' : '✓ Normal operation' },
+    ];
+    if (!changed('tiles', vm)) return;
+    rerender($('tiles'), vm.map(t => h('div', { className: 'tile' + (t.tone ? ' ' + t.tone : '') },
+      h('span', { className: 'tl' }, t.label),
+      h('span', { className: 'tv' }, t.value),
+      h('span', { className: 'ts' }, t.sub))));
+  }
+
+  function renderAlerts(alerts) {
+    const live = canCommand();
+    const vm = { live, alerts: alerts.map(a => ({ key: a.key, level: a.level, time: a.time, title: a.title, detail: a.detail, rule: a.rule, act: a.act })) };
+    $('alertsMeta').textContent = alerts.length ? plural(alerts.length, 'open alert', 'open alerts') : 'No open alerts';
+    if (!changed('alerts', vm)) return;
+    if (!alerts.length) {
+      rerender($('alerts'), [h('li', { className: 'empty' }, h('b', null, '✓ Nothing unusual'), 'No rule is triggered by the current audit trail, break-glass list or devices.')]);
+      return;
+    }
+    rerender($('alerts'), alerts.map(a => {
+      const lv = LEVELS[a.level];
+      let action = null;
+      if (a.act && a.act.kind === 'log') {
+        action = h('button', { className: 'btn', type: 'button', 'data-act': 'log', 'data-cat': a.act.cat, 'data-q': a.act.q, 'data-key': 'al-' + keySafe(a.key) }, 'Show in log');
+      } else if (a.act && a.act.kind === 'review') {
+        action = h('button', { className: 'btn', type: 'button', 'data-act': 'goto-bg', 'data-i': a.act.i, 'data-key': 'al-' + keySafe(a.key) }, 'Go to review');
+      }
+      return h('li', { className: 'item ' + a.level },
+        h('div', null,
+          h('div', { className: 'item-top' }, chip(a.level, lv.glyph, lv.word), h('h3', null, a.title)),
+          h('p', null, a.detail),
+          h('p', { className: 'rule' }, 'Rule: ' + a.rule)),
+        h('div', { className: 'item-side' }, a.time ? h('time', null, a.time) : null, action));
+    }));
+  }
+  function keySafe(k) { return String(k).toLowerCase().replace(/[^a-z0-9-]+/g, '-'); }
+
+  function renderBreakGlass(s) {
+    const live = canCommand();
+    const rows = s.breakGlass.slice().sort((a, b) => (a.reviewed - b.reviewed) || ((b.sec || 0) - (a.sec || 0)));
+    const toReview = rows.filter(b => !b.reviewed).length;
+    $('bgMeta').textContent = rows.length ? toReview + ' to review · ' + (rows.length - toReview) + ' reviewed' : 'None this session';
+    const vm = { live, rows: rows.map(b => {
+      const p = app.reviews.get(b.i);
+      return { ...b, pending: !!(p && !p.failed), failed: !!(p && p.failed) };
+    }) };
+    if (!changed('bg', vm)) return;
+    if (!rows.length) {
+      rerender($('bg'), [h('li', { className: 'empty' }, h('b', null, '✓ No break-glass access'), 'Emergency access to a chart outside the care team appears here with its reason.')]);
+      return;
+    }
+    rerender($('bg'), vm.rows.map(b => {
+      let side;
+      if (b.reviewed) {
+        side = [chip('good', '✓', 'Reviewed')];
+      } else {
+        const label = b.pending ? 'Marking…' : 'Mark reviewed';
+        side = [
+          chip('critical', '▲', 'To review'),
+          h('button', { className: 'btn primary', type: 'button', 'data-act': 'review', 'data-i': b.i, 'data-key': 'bg-' + b.i,
+            disabled: b.pending || !live, 'aria-describedby': 'bgr-' + b.i }, label),
+          b.failed ? h('span', { className: 'note' }, 'Not confirmed by the dashboard. Check it is open, then try again.') : null,
+          !live && !b.pending ? h('span', { className: 'note' }, 'Needs a live dashboard feed.') : null,
+        ];
+      }
+      return h('li', { className: 'item ' + (b.reviewed ? 'reviewed' : 'critical'), 'data-bg': b.i },
+        h('div', { id: 'bgr-' + b.i },
+          h('div', { className: 'item-top' },
+            h('h3', null, (b.ref ? b.ref + ' · ' : '') + b.role),
+            h('time', null, b.time)),
+          h('p', null, 'Reason: ' + (b.reason || 'none recorded'))),
+        h('div', { className: 'item-side' }, side));
+    }));
+  }
+
+  function renderDevices(s) {
+    const rows = s.devices.map(d => ({ ...d, st: deviceStatus(d) }))
+      .sort((a, b) => (a.st.tone === 'good') - (b.st.tone === 'good') || a.id.localeCompare(b.id));
+    const off = rows.filter(d => d.st.tone !== 'good').length;
+    $('devMeta').textContent = rows.length ? (rows.length - off) + ' of ' + rows.length + ' online' : '';
+    if (!changed('devices', rows)) return;
+    if (!rows.length) {
+      rerender($('devices'), [h('p', { className: 'empty' }, 'No devices reported by the dashboard yet.')]);
+      return;
+    }
+    rerender($('devices'), rows.map(d => h('div', { className: 'dev' },
+      h('div', null, h('b', null, d.id), ' ', h('span', { className: 'kind' }, d.kind)),
+      chip(d.st.tone, d.st.glyph, d.st.word),
+      h('span', { className: 'seen' }, ago(d.lastSeenSec)))));
+  }
+
+  function queryTerms() {
+    return app.query.toLowerCase().split(/\s+/).filter(Boolean);
+  }
+  function matches(r, terms) {
+    if (!terms.length) return true;
+    const hay = (r.time + ' ' + r.role + ' ' + r.text + ' ' + r.tag).toLowerCase();
+    return terms.every(t => hay.includes(t));
+  }
+  // Wraps search hits in <mark>; text is split into text nodes, never parsed as markup.
+  function highlight(text, terms) {
+    const lower = text.toLowerCase();
+    if (!terms.length || lower.length !== text.length) return [text];
+    const out = [];
+    let i = 0;
+    while (i < text.length) {
+      let best = -1, len = 0;
+      terms.forEach(t => {
+        const j = lower.indexOf(t, i);
+        if (j >= 0 && (best < 0 || j < best || (j === best && t.length > len))) { best = j; len = t.length; }
+      });
+      if (best < 0) break;
+      if (best > i) out.push(text.slice(i, best));
+      out.push(h('mark', null, text.slice(best, best + len)));
+      i = best + len;
+    }
+    if (i < text.length) out.push(text.slice(i));
+    return out;
+  }
+
+  function renderLog(s) {
+    const terms = queryTerms();
+    const hits = s.audit.filter(r => matches(r, terms));
+    const counts = { all: hits.length };
+    hits.forEach(r => { counts[r.cat] = (counts[r.cat] || 0) + 1; });
+    const shown = (app.filter === 'all' ? hits : hits.filter(r => r.cat === app.filter)).slice(0, CFG.LOG_MAX_ROWS);
+    const filters = [{ key: 'all', label: 'All' }].concat(CATS, [OTHER_CAT]);
+
+    $('qClear').hidden = !app.query;
+    $('logMeta').textContent = 'Showing ' + shown.length + ' of ' + plural(s.audit.length, 'entry', 'entries') + ' · newest first';
+
+    if (changed('seg', { counts, filter: app.filter })) {
+      rerender($('seg'), filters.map(f => h('button', {
+        type: 'button', 'data-act': 'filter', 'data-cat': f.key, 'data-key': 'f-' + f.key,
+        'aria-pressed': app.filter === f.key ? 'true' : 'false',
+      }, f.label, ' ', h('small', null, String(counts[f.key] || 0)))));
+    }
+    if (!changed('log', { q: terms, rows: shown.map(r => [r.n, r.time, r.role, r.text, r.cat]) })) return;
+    if (!shown.length) {
+      const why = s.audit.length ? 'No entries match this search and filter.' : 'The dashboard has not recorded any access yet.';
+      rerender($('log'), [h('li', { className: 'empty' }, why)]);
+      return;
+    }
+    rerender($('log'), shown.map(r => h('li', { className: 'lrow c-' + r.cat },
+      h('span', { className: 't' }, r.time),
+      h('span', { className: 'r' }, highlight(r.role, terms)),
+      h('span', { className: 'x' }, highlight(r.text, terms)),
+      h('span', { className: 'chip' }, r.tag))));
+  }
+
+  function renderRules() {
+    rerender($('ruleList'), Object.keys(RULES).map(k => h('li', null, RULES[k])));
+  }
+
+  /* ---------- Kill switch ---------- */
+  function setKillMessage(text, tone) {
+    const el = $('ksMsg');
+    el.textContent = text;
+    el.className = 'ks-msg' + (tone ? ' ' + tone : '');
+  }
+  function disarm() {
+    app.armedAt = 0;
+    holdStop(false, true);
+    $('ksConfirm').hidden = true;
+    $('ksStart').setAttribute('aria-expanded', 'false');
+  }
+  function renderKill(s) {
+    const on = !!(s && s.downtime);
+    const pending = app.kill;
+    const ready = canCommand() && !pending;
+    $('ksPanel').classList.toggle('on', on);
+    const st = $('ksState');
+    st.className = 'chip ' + (on ? 'critical' : 'good');
+    st.textContent = on ? '▲ Downtime ON' + (app.downtimeSince ? ' since ' + app.downtimeSince : '') : '✓ WASEL live';
+    if (on && !$('ksConfirm').hidden) disarm();
+    $('ksArm').hidden = on;
+    $('ksActive').hidden = !on;
+    $('ksStart').disabled = !ready;
+    $('ksHold').disabled = !ready;
+    $('ksRestore').disabled = !ready;
+    $('ksRestore').textContent = pending && !pending.on ? 'Restoring… waiting for the dashboard' : 'Restore WASEL (leave downtime)';
+    $('ksStart').textContent = pending && pending.on ? 'Switching… waiting for the dashboard' : 'Switch to downtime mode…';
+    if (!canCommand() && !pending && !$('ksMsg').textContent) setKillMessage('Needs a live dashboard feed to send commands.', 'warning');
+    if (canCommand() && $('ksMsg').textContent === 'Needs a live dashboard feed to send commands.') setKillMessage('', '');
+  }
+  function engageKill(on) {
+    const id = sendCommand('killSwitch', { on });
+    disarm();
+    if (!id) { setKillMessage('Could not send the command: this browser cannot reach the dashboard.', 'critical'); return; }
+    app.kill = { on, at: Date.now() };
+    setKillMessage(on ? 'Sent: switch to downtime. Waiting for the dashboard to confirm…' : 'Sent: restore WASEL. Waiting for the dashboard to confirm…', '');
+    renderAll();
+  }
+
+  // Hold-to-confirm: pointer, touch and keyboard (Space / Enter) all work.
+  const hold = { active: false, start: 0, raf: 0 };
+  function holdStep() {
+    if (!hold.active) return;
+    if ($('ksHold').disabled) { holdStop(false, false); return; }   // feed lost mid-hold
+    const p = Math.min(1, (performance.now() - hold.start) / CFG.HOLD_MS);
+    $('ksFill').style.transform = 'scaleX(' + p.toFixed(3) + ')';
+    $('ksHoldLabel').textContent = p < 1 ? 'Keep holding… ' + ((CFG.HOLD_MS / 1000) * (1 - p)).toFixed(1) + ' s' : 'Confirmed';
+    if (p >= 1) { holdStop(true, false); return; }
+    hold.raf = requestAnimationFrame(holdStep);
+  }
+  function holdStart() {
+    if (hold.active || $('ksHold').disabled) return;
+    hold.active = true;
+    hold.start = performance.now();
+    app.armedAt = Date.now();
+    setKillMessage('', '');
+    hold.raf = requestAnimationFrame(holdStep);
+  }
+  function holdStop(done, silent) {
+    if (!hold.active) return;
+    hold.active = false;
+    cancelAnimationFrame(hold.raf);
+    $('ksFill').style.transform = 'scaleX(0)';
+    $('ksHoldLabel').textContent = 'Hold 2 s to confirm downtime';
+    if (done) engageKill(true);
+    else if (!silent) setKillMessage('Released early: nothing changed. Hold for the full 2 seconds to confirm.', 'warning');
+  }
+
+  function wireKill() {
+    $('ksStart').addEventListener('click', () => {
+      if (!canCommand()) return;
+      app.armedAt = Date.now();
+      $('ksConfirm').hidden = false;
+      $('ksStart').setAttribute('aria-expanded', 'true');
+      setKillMessage('', '');
+      $('ksHold').focus();
+    });
+    $('ksCancel').addEventListener('click', () => {
+      disarm();
+      setKillMessage('Cancelled: WASEL stays live.', '');
+      $('ksStart').focus();
+    });
+    $('ksRestore').addEventListener('click', () => { if (canCommand() && !app.kill) engageKill(false); });
+
+    const btn = $('ksHold');
+    btn.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault();
+      btn.focus();
+      try { btn.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+      holdStart();
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => btn.addEventListener(type, () => holdStop(false, false)));
+    btn.addEventListener('keydown', e => {
+      if (e.key !== ' ' && e.key !== 'Enter') return;
+      e.preventDefault();
+      if (!e.repeat) holdStart();
+    });
+    btn.addEventListener('keyup', e => {
+      if (e.key !== ' ' && e.key !== 'Enter') return;
+      e.preventDefault();
+      holdStop(false, false);
+    });
+    btn.addEventListener('blur', () => holdStop(false, true));
+    btn.addEventListener('contextmenu', e => e.preventDefault());
+    btn.addEventListener('click', e => e.preventDefault());   // only a full hold confirms
+  }
+
+  /* ---------- Other interactions ---------- */
+  function toast(text) {
+    const el = $('toast');
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(app.toastTimer);
+    app.toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+  }
+  function smoothScroll(el) {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  }
+  function showInLog(cat, q) {
+    app.filter = cat || 'all';
+    app.query = (q || '').slice(0, 60);
+    $('q').value = app.query;
+    if (app.snap) renderLog(app.snap);
+    smoothScroll($('logPanel'));
+    $('h-log').focus({ preventScroll: true });
+  }
+  function reviewBreakGlass(i) {
+    if (!canCommand()) return;
+    const p = app.reviews.get(i);
+    if (p && !p.failed) return;
+    if (!sendCommand('reviewBreakGlass', { i })) { toast('Could not send: this browser cannot reach the dashboard.'); return; }
+    app.reviews.set(i, { at: Date.now(), failed: false });
+    renderAll();
+  }
+
+  function wireUi() {
+    document.addEventListener('click', e => {
+      const el = e.target instanceof Element ? e.target.closest('[data-act]') : null;
+      if (!el || el.disabled) return;
+      const act = el.getAttribute('data-act');
+      if (act === 'filter') {
+        app.filter = el.getAttribute('data-cat') || 'all';
+        if (app.snap) renderLog(app.snap);
+      } else if (act === 'log') {
+        showInLog(el.getAttribute('data-cat'), el.getAttribute('data-q'));
+      } else if (act === 'review') {
+        reviewBreakGlass(Number(el.getAttribute('data-i')));
+      } else if (act === 'goto-bg') {
+        const i = el.getAttribute('data-i');
+        const row = Array.from($('bg').querySelectorAll('[data-bg]')).find(r => r.getAttribute('data-bg') === i);
+        smoothScroll(row || $('bgPanel'));
+        const b = row && row.querySelector('button');
+        if (b && !b.disabled) b.focus({ preventScroll: true });
+      }
+    });
+    const q = $('q');
+    q.addEventListener('input', () => {
+      app.query = q.value.slice(0, 60);
+      if (app.snap) renderLog(app.snap);
+    });
+    q.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && q.value) { e.preventDefault(); q.value = ''; app.query = ''; if (app.snap) renderLog(app.snap); }
+    });
+    $('qClear').addEventListener('click', () => {
+      q.value = ''; app.query = '';
+      if (app.snap) renderLog(app.snap);
+      q.focus();
+    });
+  }
+
+  /* ---------- Confirmations and timeouts for commands ---------- */
+  function settleCommands(s) {
+    const now = Date.now();
+    if (s) {
+      app.reviews.forEach((p, i) => {
+        const row = s.breakGlass.find(b => b.i === i);
+        if (row && row.reviewed) {
+          app.reviews.delete(i);
+          toast('Dashboard confirmed: break-glass ' + (row.ref || 'entry') + ' marked reviewed.');
+        }
+      });
+      if (app.kill && s.downtime === app.kill.on) {
+        setKillMessage(app.kill.on
+          ? 'Dashboard confirmed: downtime mode is ON. Brief staff on paper and voice procedures.'
+          : 'Dashboard confirmed: WASEL restored to normal operation.', 'good');
+        app.kill = null;
+      }
+    }
+    app.reviews.forEach(p => { if (!p.failed && now - p.at > CFG.CMD_TIMEOUT_MS) p.failed = true; });
+    if (app.kill && now - app.kill.at > CFG.CMD_TIMEOUT_MS) {
+      app.kill = null;
+      setKillMessage('Not confirmed by the dashboard after ' + (CFG.CMD_TIMEOUT_MS / 1000) + ' seconds. Check the dashboard tab is open, then try again.', 'critical');
+    }
+    if (app.armedAt && !hold.active && now - app.armedAt > CFG.ARM_TIMEOUT_MS) {
+      disarm();
+      setKillMessage('Kill switch disarmed after 15 seconds without confirmation.', '');
+    }
+  }
+
+  function announceNew(alerts) {
+    const keys = new Set(alerts.map(a => a.key));
+    if (app.seenAlerts) {
+      const fresh = alerts.filter(a => !app.seenAlerts.has(a.key) && a.level !== 'warning');
+      if (fresh.length) $('announce').textContent = 'New ' + LEVELS[fresh[0].level].word.toLowerCase() + ' alert: ' + fresh[0].title + (fresh.length > 1 ? ', and ' + (fresh.length - 1) + ' more.' : '.');
+    }
+    app.seenAlerts = keys;
+  }
+
+  function renderAll() {
+    const s = app.snap;
+    renderHeader(s);
+    renderFrame(s);
+    renderKill(s);
+    if (!s) return;
+    const alerts = detectAlerts(s);
+    renderTiles(s, alerts);
+    renderAlerts(alerts);
+    renderBreakGlass(s);
+    renderDevices(s);
+    renderLog(s);
+    announceNew(alerts);
+  }
+
+  function onState(raw) {
+    const s = normalize(raw);
+    if (!s || s.ts <= app.lastTs) return;   // malformed, duplicate or out of order
+    if (s.downtime && !(app.snap && app.snap.downtime)) app.downtimeSince = s.simClock;
+    if (!s.downtime) app.downtimeSince = '';
+    app.snap = s;
+    app.lastTs = s.ts;
+    app.lastAt = Date.now();
+    settleCommands(s);
+    renderAll();
+  }
+
+  /* ---------- Start ---------- */
+  renderRules();
+  wireKill();
+  wireUi();
+  if (stateChannel) stateChannel.addEventListener('message', ev => onState(ev.data));
+  renderAll();
+  setInterval(() => { settleCommands(null); renderAll(); }, 1000);
+})();
+</script>
+</body>
+</html>

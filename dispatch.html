@@ -1,0 +1,1368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: no third-party code and no network. The page talks to the
+     other WASEL pages only over same-origin BroadcastChannel. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="WASEL Dispatch: the 998 call-taker screen. Tap and slide to describe an incident, see an explainable unit and hospital recommendation, and dispatch with one tap. The ER board is pre-alerted automatically. Demo data.">
+<title>WASEL Dispatch</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d03b3b'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * WASEL Dispatch · 998 call-taker screen (Nexus 26 demo)
+ * Same design tokens as the ER Command Center dashboard (src/shell.html) and
+ * the responder app, so all screens read as one product. Dark by default;
+ * light theme via :root[data-theme="light"]. Status colour is always paired
+ * with text or a glyph (WCAG 1.4.1). Every control is a tap target >= 44px.
+ * The operator never has to type: tiles, chips, a slider and toggles.
+ * ========================================================================= */
+
+/* ---------- Theme tokens (shared with the dashboard) ---------- */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --raised: #2a2a28;
+  --hover: #33332f;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --border: rgba(255, 255, 255, .10);
+  --border-strong: rgba(255, 255, 255, .18);
+  --accent: #3987e5;
+  --accent-strong: #1f6fd1;
+  --accent-fg: #6aa6f0;
+  --accent-weak: rgba(57, 135, 229, .16);
+  --shadow-up: 0 -10px 30px rgba(0, 0, 0, .45);
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-weak: rgba(208, 59, 59, .16);
+  --serious-weak: rgba(236, 131, 90, .15);
+  --warning-weak: rgba(250, 178, 25, .13);
+  --good-weak: rgba(12, 163, 12, .15);
+  --critical-fg: #f47067;
+  --serious-fg: #ec835a;
+  --warning-fg: #fab219;
+  --good-fg: #4cc44c;
+
+  --radius: 12px;
+  --tap: 44px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --raised: #ebeae5;
+  --hover: #e2e1db;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #6b6a65;
+  --border: rgba(11, 11, 11, .10);
+  --border-strong: rgba(11, 11, 11, .18);
+  --accent: #2a78d6;
+  --accent-strong: #1f6fd1;
+  --accent-fg: #1f63b8;
+  --accent-weak: rgba(42, 120, 214, .12);
+  --shadow-up: 0 -10px 30px rgba(11, 11, 11, .14);
+  --critical-fg: #b42318;
+  --serious-fg: #b54708;
+  --warning-fg: #8a5a00;
+  --good-fg: #0a7a0a;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text);
+  font: 15px/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, p { margin: 0; }
+button, input { font: inherit; color: inherit; }
+::selection { background: var(--accent-weak); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+/* Native radios / checkboxes stay in the tab order and keep arrow-key behaviour;
+   only their look is replaced by the .face that follows them. */
+.vh { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.ico { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.app {
+  max-width: 1440px; margin: 0 auto; min-height: 100vh;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 16px 0;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: var(--tap); padding: 0 16px; border-radius: 10px;
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--text);
+  font-size: 14.5px; font-weight: 650; line-height: 1.15; white-space: nowrap; cursor: pointer;
+  touch-action: manipulation; transition: background-color .15s ease, border-color .15s ease;
+}
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent-strong); border-color: transparent; color: #fff; }
+.btn.primary:hover { background: var(--accent); }
+.btn.ghost { background: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--raised); color: var(--text); }
+.btn.sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
+.btn.round { width: var(--tap); height: var(--tap); padding: 0; font-size: 22px; font-weight: 700; flex: none; }
+.btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; transform: none; }
+.btn.armed { border-color: var(--warning); background: var(--warning-weak); color: var(--warning-fg); }
+
+/* ---------- Chips (shared) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--text-2);
+  font-size: 12.5px; font-weight: 650; line-height: 1; white-space: nowrap;
+  font-variant-numeric: tabular-nums; vertical-align: middle;
+}
+.chip.sm { height: 20px; padding: 0 7px; font-size: 11px; gap: 4px; }
+.chip.critical { background: var(--critical); border-color: var(--critical); color: #fff; }
+.chip.serious { background: var(--serious-weak); border-color: rgba(236, 131, 90, .55); color: var(--serious-fg); }
+.chip.warning { background: var(--warning-weak); border-color: rgba(250, 178, 25, .5); color: var(--warning-fg); }
+.chip.good { background: var(--good-weak); border-color: rgba(12, 163, 12, .5); color: var(--good-fg); }
+.chip.info { background: var(--accent-weak); border-color: rgba(57, 135, 229, .5); color: var(--accent-fg); }
+
+/* ---------- Header ---------- */
+.hdr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 56px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 320px; }
+.logo {
+  flex: none; width: 40px; height: 40px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: var(--critical); color: #fff;
+  font-size: 30px; font-weight: 800; line-height: 1; padding-bottom: 3px;
+}
+.brand > div { min-width: 0; }
+.brand h1 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
+.brand h1 .h1-sub { font-weight: 500; color: var(--text-2); }
+.brand p { margin-top: 2px; font-size: 13px; color: var(--text-2); }
+.simtag {
+  display: inline-block; margin-inline-start: 8px; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid var(--border-strong); color: var(--muted);
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: 3px;
+}
+.hdr-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-inline-start: auto; }
+.clockbox { text-align: end; }
+#clock { font-size: 28px; font-weight: 650; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.clockbox small {
+  display: block; margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+}
+
+/* ---------- Layout ---------- */
+.grid { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+@media (min-width: 960px) {
+  .grid { grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); }
+}
+
+/* ---------- Panels ---------- */
+.panel {
+  min-width: 0; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.ph {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px;
+  min-height: 44px; padding: 6px 14px; border-bottom: 1px solid var(--border);
+}
+.ph h2 { font-size: 12.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.meta { margin-inline-start: auto; min-width: 0; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sh {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  min-height: 40px; padding: 8px 14px 4px; border-top: 1px solid var(--border);
+  font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.sh .btn { margin-inline-start: auto; text-transform: none; letter-spacing: 0; }
+.hint { margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+
+/* ---------- Questions (left panel) ---------- */
+.q { padding: 12px 14px 14px; border-radius: 0; transition: background-color .3s ease; }
+.q + .q { border-top: 1px solid var(--border); }
+.q-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+.q-h h3 { font-size: 15.5px; font-weight: 700; }
+.q-h .opt { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.qn {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--raised); color: var(--text-2);
+  font-size: 13px; font-weight: 800; line-height: 1;
+}
+.q.done .qn { background: var(--good); color: #0b0b0b; }
+/* Dispatch tapped with a step missing: that step flashes amber */
+.q.need { animation: need 1.6s ease; }
+@keyframes need {
+  0%, 55% { background: var(--warning-weak); box-shadow: inset 0 0 0 2px var(--warning); }
+  100% { background: transparent; box-shadow: none; }
+}
+
+/* Shared "face" of a hidden native input */
+.tile, .pick, .sev, .tog { position: relative; display: block; min-width: 0; cursor: pointer; }
+.pick { display: inline-block; }
+.face {
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease;
+  -webkit-user-select: none; user-select: none;
+}
+.face:hover { background: var(--hover); }
+.vh:focus-visible + .face { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 1 · Incident type tiles */
+.tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.tile .face {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  min-height: 84px; padding: 10px 6px; border-radius: 12px;
+  font-size: 14px; font-weight: 650; line-height: 1.2; text-align: center;
+}
+.tile .face svg { width: 32px; height: 32px; color: var(--text-2); }
+.tile .vh:checked + .face { background: var(--accent-weak); border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.tile .vh:checked + .face svg { color: var(--accent-fg); }
+.tile .vh:checked + .face::after {
+  content: "\2713"; position: absolute; top: 6px; inset-inline-end: 9px;
+  font-size: 14px; font-weight: 900; color: var(--accent-fg);
+}
+
+/* 2 · Location chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pick .face {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: var(--tap); padding: 0 16px; border-radius: 999px;
+  font-size: 14px; font-weight: 600; white-space: nowrap;
+}
+.pick .vh:checked + .face { background: var(--accent-strong); border-color: transparent; color: #fff; }
+.pick .vh:checked + .face::before { content: "\2713"; font-weight: 900; }
+.detail { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.detail label { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.txt {
+  width: 100%; min-width: 0; height: var(--tap); padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--border-strong); background: var(--page); color: var(--text); font-size: 15px;
+}
+.txt::placeholder { color: var(--muted); }
+.txt[aria-invalid="true"] { border-color: var(--critical); box-shadow: inset 0 0 0 1px var(--critical); }
+.detail .hint { margin-top: 0; }
+.err { font-size: 13px; font-weight: 650; color: var(--critical-fg); }
+
+/* 3 · Casualties */
+.cas { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.cas-num { display: flex; align-items: baseline; gap: 8px; min-width: 8.2em; }
+.cas-num b { min-width: 2ch; font-size: 56px; font-weight: 750; line-height: .95; text-align: end; font-variant-numeric: tabular-nums; }
+.cas-num span { font-size: 14px; font-weight: 600; color: var(--text-2); }
+.cas-ctl { flex: 1 1 260px; min-width: 0; display: flex; align-items: flex-start; gap: 10px; }
+.rangewrap { position: relative; flex: 1 1 auto; min-width: 0; padding-bottom: 18px; }
+.range {
+  -webkit-appearance: none; appearance: none; display: block;
+  width: 100%; height: var(--tap); margin: 0; background: transparent; cursor: pointer;
+  --fill: 0%;
+}
+.range::-webkit-slider-runnable-track {
+  height: 10px; border-radius: 5px;
+  background: linear-gradient(to right, var(--accent) 0 var(--fill), var(--raised) var(--fill) 100%);
+}
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 30px; height: 30px; margin-top: -10px;
+  border-radius: 50%; background: #fff; border: 3px solid var(--accent-strong);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .4);
+}
+.range::-moz-range-track { height: 10px; border-radius: 5px; background: var(--raised); }
+.range::-moz-range-progress { height: 10px; border-radius: 5px; background: var(--accent); }
+.range::-moz-range-thumb { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 3px solid var(--accent-strong); }
+.range:focus-visible { outline-offset: 0; }
+.scale { position: absolute; inset-inline: 15px; bottom: 0; height: 16px; font-size: 11.5px; color: var(--muted); }
+.scale span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scale .mci { color: var(--critical-fg); font-weight: 700; }
+
+/* 4 · Severity segmented control */
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sev .face {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 0 8px; border-radius: 12px;
+  font-size: 15.5px; font-weight: 700;
+}
+.sev .g { font-size: 14px; line-height: 1; }
+.sev-minor .g { color: var(--good-fg); }
+.sev-serious .g { color: var(--serious-fg); }
+.sev-major .g { color: var(--critical-fg); }
+.sev .vh:checked + .face .g { color: inherit; }
+.sev-minor .vh:checked + .face { background: var(--good); border-color: var(--good); color: #0b0b0b; }
+.sev-serious .vh:checked + .face { background: var(--serious); border-color: var(--serious); color: #0b0b0b; }
+.sev-major .vh:checked + .face { background: var(--critical); border-color: var(--critical); color: #fff; }
+
+/* 5 · Hazard toggles */
+.toggles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tog .face {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 0 12px; border-radius: 12px;
+  font-size: 14.5px; font-weight: 600;
+}
+.tog .box {
+  flex: none; width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--border-strong);
+  display: grid; place-items: center; font-size: 14px; font-weight: 900; line-height: 1;
+}
+.tog .vh:checked + .face { background: var(--warning-weak); border-color: rgba(250, 178, 25, .6); }
+.tog .vh:checked + .face .box { background: var(--warning); border-color: var(--warning); color: #0b0b0b; }
+.tog .vh:checked + .face .box::after { content: "\2713"; }
+.tog.crit .vh:checked + .face { background: var(--critical-weak); border-color: rgba(208, 59, 59, .6); }
+.tog.crit .vh:checked + .face .box { background: var(--critical); border-color: var(--critical); color: #fff; }
+
+/* ---------- Recommendation (right panel) ---------- */
+.banner {
+  display: flex; align-items: flex-start; gap: 10px; margin: 12px 14px 0; padding: 10px 12px;
+  border-radius: 10px; border: 1px solid rgba(208, 59, 59, .6); background: var(--critical-weak);
+  font-size: 14px;
+}
+.banner b { color: var(--critical-fg); }
+.units { padding: 4px 14px 6px; }
+.unit {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  min-height: 64px; padding: 6px 0;
+}
+.unit + .unit { border-top: 1px solid var(--border); }
+.unit-ico { width: 30px; height: 30px; color: var(--text-2); }
+.unit-name { min-width: 0; }
+.unit-name b { display: block; font-size: 15.5px; }
+.unit-name small { display: block; font-size: 12.5px; color: var(--muted); }
+.unit-name small.adj { color: var(--accent-fg); font-weight: 650; }
+.unit-name small.low { color: var(--warning-fg); font-weight: 650; }
+.stepper { display: flex; align-items: center; gap: 6px; }
+.stepper output {
+  min-width: 2.2ch; text-align: center; font-size: 30px; font-weight: 750; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.unit.zero output, .unit.zero .unit-ico { color: var(--muted); }
+
+.why, .split, .hosps { list-style: none; margin: 0; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+.why li { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 1.35; }
+.why .g { flex: none; width: 1.2em; text-align: center; font-weight: 900; color: var(--accent-fg); }
+.why li.critical { font-weight: 700; color: var(--critical-fg); }
+.why li.critical .g { color: var(--critical-fg); }
+.why li.warning .g { color: var(--warning-fg); }
+.why li.info .g { color: var(--text-2); }
+.need-note { padding: 2px 14px 6px; font-size: 13px; color: var(--text-2); }
+.need-note.warning { color: var(--warning-fg); font-weight: 650; }
+.split li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.split .n { min-width: 2.4em; font-size: 22px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.split .dest { min-width: 0; }
+.split .dest b { display: block; font-size: 14.5px; }
+.split .dest small { display: block; font-size: 12.5px; color: var(--text-2); }
+.split li.critical { border-color: rgba(208, 59, 59, .6); background: var(--critical-weak); }
+.split li.critical .n, .split li.critical b { color: var(--critical-fg); }
+.split-note { padding: 0 14px 12px; font-size: 12.5px; color: var(--muted); }
+
+/* ---------- Hospital capacity ---------- */
+.hosps { padding-top: 10px; }
+.hosp {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px;
+  padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.hosp.off { border-style: dashed; background: transparent; }
+.hosp-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.hosp-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14.5px; font-weight: 650; }
+.hosp-nums { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.hosp.off .hosp-nums { color: var(--muted); }
+.hosp-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: end; }
+.hosp-side .eta { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------- Sticky dispatch bar ---------- */
+.act {
+  position: sticky; bottom: 0; z-index: 10;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  margin: 0 -16px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface); border-top: 1px solid var(--border-strong); box-shadow: var(--shadow-up);
+}
+.act-info { flex: 1 1 460px; min-width: 0; }
+.act-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 14px; }
+.act-top b { font-size: 15px; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.act-top .muted { font-variant-numeric: tabular-nums; }
+.tl { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.tl li {
+  display: flex; align-items: flex-start; gap: 8px; min-width: 0;
+  padding: 6px 8px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.tl li > i {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--raised); color: var(--muted);
+  font-style: normal; font-size: 12px; font-weight: 900; line-height: 1;
+}
+.tl li.done > i { background: var(--good); color: #0b0b0b; }
+.tl li.warn { border-color: rgba(250, 178, 25, .5); }
+.tl li.warn > i { background: var(--warning); color: #0b0b0b; }
+.tl li > div { min-width: 0; }
+.tl b { display: block; font-size: 13px; }
+.tl li.pending b { color: var(--muted); }
+.tl small { display: block; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tl li.warn small.s { color: var(--warning-fg); font-weight: 650; white-space: normal; }
+.act-btns { display: flex; gap: 10px; margin-inline-start: auto; }
+.btn.big { min-height: 60px; padding: 0 22px; font-size: 16px; border-radius: 12px; }
+.dispatch { min-width: 290px; flex-direction: column; gap: 3px; padding-block: 8px; white-space: normal; }
+.dispatch b { font-size: 18px; font-weight: 800; }
+.dispatch small { max-width: 100%; font-size: 12.5px; font-weight: 600; line-height: 1.25; text-align: center; opacity: .92; }
+.btn.primary.dispatch[aria-disabled="true"] { background: var(--raised); border-color: var(--border-strong); color: var(--text-2); opacity: 1; }
+
+/* ---------- Footer ---------- */
+.foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px;
+  padding: 10px 0 16px; font-size: 13px; color: var(--muted);
+}
+.foot b { color: var(--text-2); }
+.foot nav { display: flex; gap: 4px 12px; margin-inline-start: auto; }
+.foot a { display: inline-flex; align-items: center; min-height: var(--tap); color: var(--accent-fg); font-weight: 600; }
+
+/* ---------- Small screens (phone ~390px) ---------- */
+@media (max-width: 600px) {
+  .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tile .face { min-height: 76px; }
+  .toggles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cas-num b { font-size: 48px; }
+  .brand h1 { font-size: 18px; }
+  #clock { font-size: 24px; }
+  .act-btns { width: 100%; }
+  .dispatch { flex: 1 1 auto; min-width: 0; }
+  .act:not(.sent) .tl { display: none; }          /* on a phone the timeline appears once dispatched */
+  .tl li:not(.warn) small.s { display: none; }   /* keep a "phone the ER" warning visible */
+  .tl b { font-size: 12px; }
+  .tl li { flex-direction: column; gap: 4px; }
+  .tl li { padding: 6px; gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<!-- Icon sprite: drawn inline, nothing is fetched -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M3 16v-3.5l2.2-4.9A2 2 0 0 1 7 6.5h10a2 2 0 0 1 1.8 1.1L21 12.5V16M3 12.5h18M9 16h6"/><circle cx="6.5" cy="16.5" r="2"/><circle cx="17.5" cy="16.5" r="2"/></symbol>
+  <symbol id="i-fire" viewBox="0 0 24 24"><path d="M12 2.8c.6 3.2 4.8 5.3 4.8 10.2a4.8 4.8 0 0 1-9.6 0c0-2.2 1.2-3.6 2-4.6.3 1.6 1 2.6 2 3 .3-3.4-.4-5.8.8-8.6zM8 21.2h8"/></symbol>
+  <symbol id="i-med" viewBox="0 0 24 24"><path d="M9.5 3.5h5v6h6v5h-6v6h-5v-6h-6v-5h6z"/></symbol>
+  <symbol id="i-chem" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6.2l-5.4 9.2A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9.2V3M7.2 15h9.6"/></symbol>
+  <symbol id="i-other" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01" stroke-width="2.6"/></symbol>
+  <symbol id="i-amb" viewBox="0 0 24 24"><path d="M2.5 16V7a1 1 0 0 1 1-1H14v10M14 9.5h4l3 3.5v3h-1M9 16h5M7 8.5v4M5 10.5h4"/><circle cx="6.5" cy="16.5" r="2"/><circle cx="17.5" cy="16.5" r="2"/></symbol>
+  <symbol id="i-rescue" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2l-5.7 5.7a1.4 1.4 0 0 0 2 2l5.7-5.7a4 4 0 0 0 5.2-5.4l-2.4 2.4-2-.4-.4-2z"/></symbol>
+  <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2.5 16V9.5H14V16M14 11h4.5L21 13.5V16h-1M9 16h5M3 6.5l10 0M5 6.5v3M11 6.5v3"/><circle cx="6.5" cy="16.5" r="2"/><circle cx="17.5" cy="16.5" r="2"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="hdr">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">+</div>
+      <div>
+        <h1>WASEL Dispatch <span class="h1-sub">· 998 call-taker</span><span class="simtag">Demo</span></h1>
+        <p>Tap and slide. The system recommends, you confirm with one tap.</p>
+      </div>
+    </div>
+    <div class="hdr-right">
+      <span id="feedChip" class="chip warning" role="status" title="Live capacity from the WASEL ER board">&#9675; No live feed</span>
+      <div class="clockbox"><div id="clock">--:--:--</div><small>Local time</small></div>
+      <button id="themeBtn" type="button" class="btn ghost sm">Light theme</button>
+    </div>
+  </header>
+
+  <form id="call" class="grid" novalidate autocomplete="off" aria-label="Incident details">
+    <!-- ===================== Left: what the caller says ===================== -->
+    <section class="panel" aria-labelledby="callH">
+      <div class="ph"><h2 id="callH">Incident</h2><span id="callMeta" class="meta"></span></div>
+
+      <div class="q" id="qKind">
+        <div class="q-h"><span class="qn" data-n="1" aria-hidden="true">1</span><h3 id="kindH">What happened?</h3></div>
+        <div class="tiles" role="radiogroup" aria-labelledby="kindH">
+          <label class="tile"><input class="vh" type="radio" name="kind" value="rtc"><span class="face"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-car"/></svg>Road crash</span></label>
+          <label class="tile"><input class="vh" type="radio" name="kind" value="fire"><span class="face"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-fire"/></svg>Fire</span></label>
+          <label class="tile"><input class="vh" type="radio" name="kind" value="medical"><span class="face"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-med"/></svg>Medical</span></label>
+          <label class="tile"><input class="vh" type="radio" name="kind" value="chemical"><span class="face"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chem"/></svg>Chemical</span></label>
+          <label class="tile"><input class="vh" type="radio" name="kind" value="other"><span class="face"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-other"/></svg>Other</span></label>
+        </div>
+      </div>
+
+      <div class="q" id="qPlace">
+        <div class="q-h"><span class="qn" data-n="2" aria-hidden="true">2</span><h3 id="placeH">Where?</h3></div>
+        <div class="chips" role="radiogroup" aria-labelledby="placeH">
+          <label class="pick"><input class="vh" type="radio" name="place" value="e311"><span class="face">E311 highway km 42</span></label>
+          <label class="pick"><input class="vh" type="radio" name="place" value="nahda"><span class="face">Al Nahda tower block</span></label>
+          <label class="pick"><input class="vh" type="radio" name="place" value="unicity"><span class="face">University City</span></label>
+          <label class="pick"><input class="vh" type="radio" name="place" value="ind6"><span class="face">Industrial Area 6</span></label>
+          <label class="pick"><input class="vh" type="radio" name="place" value="corniche"><span class="face">Corniche</span></label>
+          <label class="pick"><input class="vh" type="radio" name="place" value="other"><span class="face">Other place</span></label>
+        </div>
+        <div class="detail">
+          <label id="detailLabel" for="detail">Extra detail (optional)</label>
+          <input id="detail" class="txt" type="text" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="e.g. northbound, near exit 14" aria-describedby="detailHint detailErr">
+          <small id="detailHint" class="hint">A place only. Never a name or phone number.</small>
+          <p id="detailErr" class="err" hidden></p>
+        </div>
+      </div>
+
+      <div class="q done" id="qCas">
+        <div class="q-h">
+          <span class="qn" data-n="3" aria-hidden="true">&#10003;</span><h3 id="casH">How many hurt?</h3>
+          <span id="casMci" class="chip sm critical" hidden>&#9650; MCI scale</span>
+        </div>
+        <div class="cas">
+          <div class="cas-num" aria-hidden="true"><b id="casNum">1</b><span id="casWord">casualty</span></div>
+          <div class="cas-ctl">
+            <button type="button" class="btn round" data-cas="-1" aria-label="One fewer casualty">&minus;</button>
+            <div class="rangewrap">
+              <input id="cas" class="range" type="range" min="1" max="30" step="1" value="1" aria-labelledby="casH" aria-valuetext="1 casualty">
+              <div class="scale" aria-hidden="true">
+                <span style="left:0%">1</span><span class="mci" style="left:31.03%">10 · MCI</span><span style="left:65.52%">20</span><span style="left:100%">30</span>
+              </div>
+            </div>
+            <button type="button" class="btn round" data-cas="1" aria-label="One more casualty">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="q" id="qSev">
+        <div class="q-h"><span class="qn" data-n="4" aria-hidden="true">4</span><h3 id="sevH">How bad?</h3></div>
+        <div class="seg" role="radiogroup" aria-labelledby="sevH">
+          <label class="sev sev-minor"><input class="vh" type="radio" name="severity" value="minor"><span class="face"><span class="g" aria-hidden="true">&#9679;</span>Minor</span></label>
+          <label class="sev sev-serious"><input class="vh" type="radio" name="severity" value="serious"><span class="face"><span class="g" aria-hidden="true">&#9650;</span>Serious</span></label>
+          <label class="sev sev-major"><input class="vh" type="radio" name="severity" value="major"><span class="face"><span class="g" aria-hidden="true">&#9670;</span>Major</span></label>
+        </div>
+        <p class="hint">Minor: walking wounded · Serious: needs hospital · Major: life-threatening</p>
+      </div>
+
+      <div class="q" id="qHaz">
+        <div class="q-h"><span class="qn" data-n="5" aria-hidden="true">5</span><h3 id="hazH">At the scene</h3><span class="opt">optional · tap all that apply</span></div>
+        <div class="toggles" role="group" aria-labelledby="hazH">
+          <label class="tog crit"><input class="vh" type="checkbox" name="trapped"><span class="face"><span class="box" aria-hidden="true"></span>Trapped</span></label>
+          <label class="tog"><input class="vh" type="checkbox" name="hz-fire"><span class="face"><span class="box" aria-hidden="true"></span>Fire</span></label>
+          <label class="tog"><input class="vh" type="checkbox" name="hz-fuel"><span class="face"><span class="box" aria-hidden="true"></span>Fuel</span></label>
+          <label class="tog"><input class="vh" type="checkbox" name="hz-chemical"><span class="face"><span class="box" aria-hidden="true"></span>Chemical</span></label>
+          <label class="tog"><input class="vh" type="checkbox" name="hz-electrical"><span class="face"><span class="box" aria-hidden="true"></span>Electrical</span></label>
+          <label class="tog"><input class="vh" type="checkbox" name="hz-crowd"><span class="face"><span class="box" aria-hidden="true"></span>Crowd</span></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Right: what the system recommends ===================== -->
+    <div class="col">
+      <section class="panel" aria-labelledby="recH">
+        <div class="ph"><h2 id="recH">Recommendation</h2><span class="meta">Rule-based · updates as you tap · adjust with &minus; / +</span></div>
+        <div id="mciBanner" class="banner" role="status" hidden>
+          <span class="chip critical">&#9650; MCI</span>
+          <div><b>Mass-casualty incident.</b> <span id="mciText"></span></div>
+        </div>
+        <div class="units">
+          <div class="unit" data-unit="ambulances">
+            <svg class="ico unit-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-amb"/></svg>
+            <div class="unit-name"><b id="uAmbH">Ambulances</b><small>System pick</small></div>
+            <div class="stepper" role="group" aria-labelledby="uAmbH">
+              <button type="button" class="btn round" data-unit="ambulances" data-d="-1" aria-label="One fewer ambulance">&minus;</button>
+              <output aria-labelledby="uAmbH" aria-live="off">1</output>
+              <button type="button" class="btn round" data-unit="ambulances" data-d="1" aria-label="One more ambulance">+</button>
+            </div>
+          </div>
+          <div class="unit" data-unit="rescue">
+            <svg class="ico unit-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-rescue"/></svg>
+            <div class="unit-name"><b id="uResH">Rescue units</b><small>Not needed</small></div>
+            <div class="stepper" role="group" aria-labelledby="uResH">
+              <button type="button" class="btn round" data-unit="rescue" data-d="-1" aria-label="One fewer rescue unit">&minus;</button>
+              <output aria-labelledby="uResH" aria-live="off">0</output>
+              <button type="button" class="btn round" data-unit="rescue" data-d="1" aria-label="One more rescue unit">+</button>
+            </div>
+          </div>
+          <div class="unit" data-unit="fire">
+            <svg class="ico unit-ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-truck"/></svg>
+            <div class="unit-name"><b id="uFireH">Fire units</b><small>Not needed</small></div>
+            <div class="stepper" role="group" aria-labelledby="uFireH">
+              <button type="button" class="btn round" data-unit="fire" data-d="-1" aria-label="One fewer fire unit">&minus;</button>
+              <output aria-labelledby="uFireH" aria-live="off">0</output>
+              <button type="button" class="btn round" data-unit="fire" data-d="1" aria-label="One more fire unit">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="sh"><span id="whyH">Why</span><button id="resetUnits" type="button" class="btn sm" hidden>Use system counts</button></div>
+        <ul id="why" class="why" aria-labelledby="whyH"></ul>
+        <div class="sh"><span id="splitH">Send ambulances to</span></div>
+        <p id="needNote" class="need-note"></p>
+        <ul id="split" class="split" aria-labelledby="splitH"></ul>
+        <p id="splitNote" class="split-note"></p>
+      </section>
+
+      <section class="panel" aria-labelledby="capH">
+        <div class="ph"><h2 id="capH">Hospital capacity</h2><span id="capMeta" class="meta"></span></div>
+        <ul id="hosps" class="hosps" aria-labelledby="capH"></ul>
+      </section>
+    </div>
+  </form>
+
+  <!-- ===================== Sticky: one tap to dispatch ===================== -->
+  <section id="act" class="act" aria-label="Dispatch">
+    <div class="act-info">
+      <div class="act-top"><b id="actId">CALL-0000</b><span id="actClock" class="muted"></span><span id="actState" class="chip warning">Not ready</span></div>
+      <ol class="tl" aria-label="Call progress">
+        <li id="tl1" class="pending"><i aria-hidden="true">1</i><div><b>Call received</b><small class="t"></small><small class="s"></small></div></li>
+        <li id="tl2" class="pending"><i aria-hidden="true">2</i><div><b>Units dispatched</b><small class="t"></small><small class="s"></small></div></li>
+        <li id="tl3" class="pending"><i aria-hidden="true">3</i><div><b>ER pre-alerted</b><small class="t"></small><small class="s"></small></div></li>
+      </ol>
+    </div>
+    <div class="act-btns">
+      <button id="newBtn" type="button" class="btn big ghost">New call</button>
+      <button id="dispatchBtn" type="button" class="btn big primary dispatch" aria-describedby="dispatchSub"><b id="dispatchLabel">Dispatch</b><small id="dispatchSub"></small></button>
+    </div>
+  </section>
+  <p id="live" class="sr-only" aria-live="polite"></p>
+
+  <footer class="foot">
+    <span><b>No caller identity or phone number leaves this screen.</b> Only the incident (place, counts, hazards, units) goes to the ER board.</span>
+    <span>Partner hospitals marked (demo) are simulated.</span>
+    <nav aria-label="Other WASEL screens"><a href="er-command-center.html" target="_blank" rel="noopener noreferrer">ER board</a><a href="responder.html" target="_blank" rel="noopener noreferrer">Responder app</a></nav>
+  </footer>
+</div>
+
+<noscript><p style="padding:16px">WASEL Dispatch needs JavaScript to compute the recommendation.</p></noscript>
+
+<script>
+'use strict';
+/* =========================================================================
+ * WASEL Dispatch · logic
+ * 1. readCall()       reads the tapped inputs into a plain object
+ * 2. recommend()      explainable rules -> units + the reason for each
+ * 3. planSplit()      ambulances -> hospitals by capability, capacity, travel
+ * 4. render()         paints everything (textContent only, never innerHTML)
+ * 5. onDispatch()     posts the incident on BroadcastChannel('wasel-incident')
+ *                     exactly as CHANNELS.md section 1 defines it
+ * Live capacity arrives on BroadcastChannel('wasel-capacity') (CHANNELS.md 3).
+ * Nothing is stored and nothing goes into the URL.
+ * ========================================================================= */
+(function () {
+  // ---------- Reference data (fictional, demo only) ----------
+  const SEVERITY = {
+    minor:   { label: 'Minor',   factor: 0.25, rate: '1 per 4' },
+    serious: { label: 'Serious', factor: 0.5,  rate: '1 per 2' },
+    major:   { label: 'Major',   factor: 1,    rate: '1 each' },
+  };
+  const KINDS = ['rtc', 'fire', 'medical', 'chemical', 'other'];
+  const HAZARDS = ['fire', 'fuel', 'chemical', 'electrical', 'crowd'];
+  const HAZARD_LABEL = { fire: 'Fire', fuel: 'Fuel', chemical: 'Chemical', electrical: 'Electrical', crowd: 'Crowd' };
+  const PLACES = {
+    e311: 'E311 highway, km 42',
+    nahda: 'Al Nahda tower block',
+    unicity: 'University City',
+    ind6: 'Industrial Area 6',
+    corniche: 'Corniche',
+  };
+  const AMB_CAP = 12;             // most ambulances one dispatch may commit; beyond it, mutual aid
+  const MCI_COUNT = 10;           // casualties that make any incident an MCI
+  const MCI_MAJOR_COUNT = 6;      // ...or this many when severity is Major
+  const FEED_STALE_MS = 15000;    // dashboard broadcasts every 5 s; silent for 15 s = no live feed
+  const DRIFT_MS = 5000;          // simulated partner capacity changes this often
+  const CLEAR_ARM_MS = 3000;      // second tap window for clearing an unsent call
+  const LIMITS = { ambulances: [1, 20], rescue: [0, 4], fire: [0, 6] };
+  const UNIT_WORDS = {
+    ambulances: ['ambulance', 'ambulances'],
+    rescue: ['rescue unit', 'rescue units'],
+    fire: ['fire unit', 'fire units'],
+  };
+  const NEED_LABEL = { trauma: 'trauma bays', burns: 'burns beds', resus: 'resus bays', general: 'ED beds' };
+  const CAP_LABEL = { trauma: 'Trauma', burns: 'Burns', stroke: 'Stroke' };
+  const MODES = ['steady', 'strain', 'surge', 'mci'];
+  const MODE_TONE = { steady: 'good', strain: 'warning', surge: 'serious', mci: 'critical' };
+  // Road minutes from each preset place (fictional geography)
+  const TRAVEL = {
+    dgh: { e311: 12, nahda: 9, unicity: 15, ind6: 11, corniche: 8 },
+    htc: { e311: 18, nahda: 14, unicity: 10, ind6: 20, corniche: 12 },
+    gbu: { e311: 25, nahda: 20, unicity: 22, ind6: 9, corniche: 16 },
+    ngs: { e311: 15, nahda: 7, unicity: 12, ind6: 17, corniche: 10 },
+  };
+  const DRIFT_FIELDS = ['ed', 'resus', 'trauma', 'burns', 'icu'];
+  // Three fictional partner hospitals (CHANNELS.md 3): trauma centre, burns unit, stroke-capable general
+  const partners = [
+    { id: 'htc', name: 'Harbour Trauma Centre (demo)', caps: ['trauma'], ed: 9, resus: 3, trauma: 3, burns: 0, icu: 2 },
+    { id: 'gbu', name: 'Gulfside Burns Unit (demo)', caps: ['burns'], ed: 5, resus: 1, trauma: 0, burns: 4, icu: 1 },
+    { id: 'ngs', name: 'Northgate General & Stroke (demo)', caps: ['stroke'], ed: 12, resus: 2, trauma: 0, burns: 0, icu: 2 },
+  ].map((p) => {
+    const max = {};
+    for (const f of DRIFT_FIELDS) max[f] = p[f] > 0 ? Math.max(2, p[f] * 2) : 0;
+    return Object.assign(p, { max, live: false, hasData: true, mode: null, oNeg: null, diversion: false });
+  });
+
+  // ---------- Channels ----------
+  function openChannel(name) {
+    try { return typeof BroadcastChannel === 'function' ? new BroadcastChannel(name) : null; }
+    catch (err) { return null; }
+  }
+  const incidentChannel = openChannel('wasel-incident');
+  const capacityChannel = openChannel('wasel-capacity');
+
+  // ---------- State (memory only) ----------
+  const state = {
+    callId: '',
+    callStart: 0,
+    dirty: false,
+    overrides: { ambulances: null, rescue: null, fire: null },
+    sent: null,          // { firstAt, lastAt, key, updates, summary, erOk, erName, erNote }
+    capacity: null,      // last valid capacity message from the ER board
+    capacityAt: 0,       // when it arrived (this page's clock)
+    clearArmed: false,
+    clearTimer: 0,
+  };
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    form: $('call'), detail: $('detail'), detailLabel: $('detailLabel'), detailErr: $('detailErr'),
+    cas: $('cas'), casNum: $('casNum'), casWord: $('casWord'), casMci: $('casMci'),
+    callMeta: $('callMeta'), mci: $('mciBanner'), mciText: $('mciText'),
+    why: $('why'), resetUnits: $('resetUnits'), needNote: $('needNote'), split: $('split'), splitNote: $('splitNote'),
+    hosps: $('hosps'), capMeta: $('capMeta'), feed: $('feedChip'), clock: $('clock'),
+    act: $('act'), actId: $('actId'), actClock: $('actClock'), actState: $('actState'),
+    tl: [$('tl1'), $('tl2'), $('tl3')],
+    newBtn: $('newBtn'), dispatchBtn: $('dispatchBtn'), dispatchLabel: $('dispatchLabel'), dispatchSub: $('dispatchSub'),
+    live: $('live'), themeBtn: $('themeBtn'),
+  };
+  const Q = { kind: $('qKind'), place: $('qPlace'), cas: $('qCas'), severity: $('qSev'), hazards: $('qHaz') };
+  const unitRows = {};
+  for (const key of Object.keys(LIMITS)) {
+    const row = el.form.querySelector('.unit[data-unit="' + key + '"]');
+    unitRows[key] = {
+      row,
+      out: row.querySelector('output'),
+      sub: row.querySelector('.unit-name small'),
+      minus: row.querySelector('[data-d="-1"]'),
+      plus: row.querySelector('[data-d="1"]'),
+    };
+  }
+
+  // ---------- Helpers ----------
+  function h(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = String(text);
+    return node;
+  }
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const pad = (n) => String(n).padStart(2, '0');
+  function hms(t) { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
+  function mss(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + pad(s % 60); }
+  const plural = (n, one, many) => (n === 1 ? one : many);
+  const unitWord = (key, n) => UNIT_WORDS[key][n === 1 ? 0 : 1];
+  /** Strip control characters, collapse whitespace, cap length. */
+  function cleanText(s, max) {
+    return String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max || 80);
+  }
+  /** A phone number (7+ digits with separators) or an email address: caller details, never a place. */
+  const PII_RE = /\+?\d(?:[\s().-]*\d){6,}|[^\s@]+@[^\s@]+/;
+  function newCallId() {
+    let n;
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+      n = window.crypto.getRandomValues(new Uint32Array(1))[0] % 10000;
+    } else {
+      n = Math.floor(Math.random() * 10000);
+    }
+    return 'CALL-' + String(n).padStart(4, '0');
+  }
+  function radioValue(name, allowed) {
+    const input = el.form.querySelector('input[name="' + name + '"]:checked');
+    return input && allowed.includes(input.value) ? input.value : '';
+  }
+  function announce(text) {
+    el.live.textContent = '';
+    window.setTimeout(() => { el.live.textContent = text; }, 30);
+  }
+  function feedFresh() { return state.capacityAt > 0 && Date.now() - state.capacityAt <= FEED_STALE_MS; }
+  function unitSummary(u) {
+    const parts = [u.ambulances + ' ' + unitWord('ambulances', u.ambulances)];
+    if (u.rescue) parts.push(u.rescue + ' rescue');
+    if (u.fire) parts.push(u.fire + ' fire');
+    return parts.join(' · ');
+  }
+
+  // ---------- 1. Read the call ----------
+  function readCall() {
+    const f = el.form.elements;
+    const kind = radioValue('kind', KINDS);
+    const placeId = radioValue('place', Object.keys(PLACES).concat('other'));
+    const detail = cleanText(el.detail.value, 80);
+    const casualties = clamp(parseInt(el.cas.value, 10) || 1, 1, 30);
+    const severity = radioValue('severity', Object.keys(SEVERITY));
+    const trapped = f.namedItem('trapped').checked;
+    const hazards = HAZARDS.filter((hz) => f.namedItem('hz-' + hz).checked);
+    const placeError = detail && PII_RE.test(detail)
+      ? 'That looks like a phone number or email. Enter a place only: caller details never leave this screen.'
+      : '';
+    const preset = placeId && placeId !== 'other' ? PLACES[placeId] : '';
+    const place = placeError ? '' : (preset ? (detail ? preset + ' · ' + detail : preset) : detail);
+    return { kind, placeId, preset, detail, place, placeError, casualties, severity, trapped, hazards };
+  }
+  function missing(call) {
+    const out = [];
+    if (!call.kind) out.push({ key: 'kind', text: 'incident type' });
+    if (!call.place) out.push({ key: 'place', text: call.placeError ? 'a place without caller details' : 'place' });
+    if (!call.severity) out.push({ key: 'severity', text: 'severity' });
+    return out;
+  }
+
+  // ---------- 2. Explainable rules ----------
+  function recommend(call) {
+    const rules = [];
+    const n = call.casualties;
+    const sev = SEVERITY[call.severity || 'serious'];
+    const raw = Math.ceil(n * sev.factor);
+    const ambulances = clamp(raw, 1, AMB_CAP);
+    rules.push({ tone: '', glyph: '→', text: n + ' ' + plural(n, 'casualty', 'casualties') + ' × ' + sev.label
+      + (call.severity ? '' : ' (assumed until you pick)') + ' (' + sev.rate + ') → ' + ambulances + ' ' + unitWord('ambulances', ambulances) });
+    if (raw > AMB_CAP) {
+      rules.push({ tone: 'warning', glyph: '!', text: 'Capped at ' + AMB_CAP + ' per dispatch → request mutual aid for ' + (raw - AMB_CAP) + ' more' });
+    }
+
+    let mciReason = '';
+    if (n >= MCI_COUNT) mciReason = n + ' casualties (' + MCI_COUNT + ' or more) → declare a major incident';
+    else if (call.severity === 'major' && n >= MCI_MAJOR_COUNT) mciReason = n + ' casualties × Major (' + MCI_MAJOR_COUNT + ' or more) → declare a major incident';
+    const mci = Boolean(mciReason);
+    if (mci) rules.push({ tone: 'critical', glyph: '▲', text: 'MCI: ' + mciReason });
+
+    let rescue = 0;
+    if (call.trapped) {
+      rescue = mci ? 2 : 1;
+      rules.push({ tone: '', glyph: '→', text: 'Trapped' + (mci ? ' + MCI' : '') + ' → ' + rescue + ' ' + unitWord('rescue', rescue) });
+    }
+
+    const fireTriggers = new Set();
+    if (call.kind === 'fire') fireTriggers.add('Fire call');
+    if (call.kind === 'chemical') fireTriggers.add('Chemical call');
+    for (const hz of ['fire', 'fuel', 'chemical']) if (call.hazards.includes(hz)) fireTriggers.add(HAZARD_LABEL[hz]);
+    let fire = 0;
+    if (fireTriggers.size) {
+      fire = mci ? 2 : 1;
+      rules.push({ tone: '', glyph: '→', text: Array.from(fireTriggers).join(' + ') + (mci ? ' + MCI' : '') + ' → ' + fire + ' ' + unitWord('fire', fire) });
+    }
+
+    if (call.kind === 'chemical' || call.hazards.includes('chemical')) {
+      rules.push({ tone: 'warning', glyph: '!', text: 'Chemical → HAZMAT: alert the Civil Defence HAZMAT team, approach upwind, decontaminate before transport' });
+    }
+    if (call.hazards.includes('electrical')) {
+      rules.push({ tone: 'info', glyph: 'i', text: 'Electrical → ask the utility to isolate power before crews touch anything' });
+    }
+    if (call.hazards.includes('crowd')) {
+      rules.push({ tone: 'info', glyph: 'i', text: 'Crowd → request police for scene control and a clear access route' });
+    }
+    return { base: { ambulances, rescue, fire }, rules, mci, mciReason };
+  }
+  /** An operator override that now matches the system pick is no longer an override. */
+  function normaliseOverrides(base) {
+    for (const key of Object.keys(LIMITS)) if (state.overrides[key] === base[key]) state.overrides[key] = null;
+  }
+  function effectiveUnits(base) {
+    const out = {};
+    for (const key of Object.keys(LIMITS)) out[key] = state.overrides[key] == null ? base[key] : state.overrides[key];
+    return out;
+  }
+
+  // ---------- 3. Hospitals and the ambulance split ----------
+  function liveHospital() {
+    const cap = state.capacity;
+    return {
+      id: 'dgh', name: cap ? cap.hospital : 'Demo General Hospital', caps: ['trauma'], live: true,
+      hasData: feedFresh(), mode: cap ? cap.mode : null,
+      ed: cap ? cap.edBedsFree : 0, resus: cap ? cap.resusFree : 0, trauma: cap ? cap.traumaFree : 0,
+      burns: 0, icu: cap ? cap.icuFree : 0, oNeg: cap ? cap.oNeg : null,
+      diversion: Boolean(cap && cap.diversion),
+    };
+  }
+  function withStatus(hosp, placeId) {
+    const table = TRAVEL[hosp.id] || {};
+    const travel = placeId && table[placeId] != null ? table[placeId] : null;
+    let status = 'Open', tone = 'good', glyph = '✓', usable = true;
+    if (!hosp.hasData) { status = 'No live feed'; tone = 'warning'; glyph = '○'; usable = false; }
+    else if (hosp.diversion) { status = 'On diversion'; tone = 'critical'; glyph = '✕'; usable = false; }
+    else if (hosp.ed === 0) { status = 'ED full'; tone = 'critical'; glyph = '✕'; usable = false; }
+    else if (hosp.ed <= 3) { status = 'Busy'; tone = 'warning'; glyph = '▲'; }
+    return Object.assign({}, hosp, { travel, status, tone, glyph, usable });
+  }
+  function hospitalsNow(placeId) {
+    return [liveHospital()].concat(partners).map((x) => withStatus(x, placeId));
+  }
+  /** What the sickest patients on this call need most. */
+  function primaryNeed(call) {
+    if (call.severity === 'minor') return 'general';
+    if (call.kind === 'fire' || call.hazards.includes('fire')) return 'burns';
+    if (call.kind === 'rtc' || call.trapped) return 'trauma';
+    if (call.severity === 'major' || call.kind === 'chemical') return 'resus';
+    return 'general';
+  }
+  function specialistSlots(hosp, need) {
+    if (need === 'trauma') return hosp.caps.includes('trauma') ? hosp.trauma + hosp.resus : 0;
+    if (need === 'burns') return hosp.caps.includes('burns') ? hosp.burns : 0;
+    if (need === 'resus') return hosp.resus;
+    return 0;
+  }
+  /**
+   * Greedy, explainable split. The share of ambulances carrying the sickest
+   * patients (all for Major, half for Serious, none for Minor) goes to the
+   * nearest hospitals with the matching bays; everyone else goes to the nearest
+   * ED with beds. Anything left over is flagged for mutual aid.
+   */
+  function planSplit(call, ambulances, hospitals) {
+    const need = primaryNeed(call);
+    const perAmb = Math.max(1, Math.ceil(call.casualties / ambulances));
+    const byTravel = (a, b) => (a.travel == null ? 999 : a.travel) - (b.travel == null ? 999 : b.travel) || b.ed - a.ed;
+    const usable = hospitals.filter((x) => x.usable).sort(byTravel);
+    const rows = new Map();
+    const add = (hosp, count, reason) => {
+      const row = rows.get(hosp.id) || { hosp, count: 0, reasons: [] };
+      row.count += count;
+      row.reasons.push(reason);
+      rows.set(hosp.id, row);
+    };
+    // ED beds still free at each hospital as ambulances are assigned, so one
+    // hospital is never sent more patients than it has room for.
+    const edLeft = new Map(usable.map((x) => [x.id, x.ed]));
+    const companions = perAmb - 1;   // patients on a specialist ambulance besides the sickest one
+    let left = ambulances;
+    const wanted = need === 'general' ? 0 : (call.severity === 'major' ? ambulances : Math.ceil(ambulances / 2));
+    let specialist = wanted;
+    for (const hosp of usable) {
+      if (!specialist) break;
+      const slots = specialistSlots(hosp, need);
+      const roomForCompanions = companions ? Math.floor(edLeft.get(hosp.id) / companions) : slots;
+      const take = Math.min(specialist, slots, roomForCompanions);
+      if (take > 0) {
+        add(hosp, take, NEED_LABEL[need] + ' free: ' + slots);
+        edLeft.set(hosp.id, edLeft.get(hosp.id) - take * companions);
+        specialist -= take;
+        left -= take;
+      }
+    }
+    for (const hosp of usable) {
+      if (!left) break;
+      const free = edLeft.get(hosp.id);
+      const take = Math.min(left, Math.floor(free / perAmb));
+      if (take > 0) {
+        add(hosp, take, 'ED beds free: ' + free);
+        edLeft.set(hosp.id, free - take * perAmb);
+        left -= take;
+      }
+    }
+    return { need, perAmb, wanted, short: specialist, rows: Array.from(rows.values()), overflow: left };
+  }
+
+  // ---------- Simulated partner drift ----------
+  function driftPartners() {
+    for (const p of partners) {
+      for (const f of DRIFT_FIELDS) {
+        if (!p.max[f]) continue;
+        const r = Math.random();
+        const step = r < 0.2 ? -1 : (r > 0.8 ? 1 : 0);
+        p[f] = clamp(p[f] + step, 0, p.max[f]);
+      }
+    }
+  }
+
+  // ---------- Live capacity from the ER board (CHANNELS.md 3) ----------
+  function count(x) { return Number.isInteger(x) && x >= 0 && x <= 9999 ? x : null; }
+  function parseCapacity(m) {
+    if (!m || typeof m !== 'object' || m.type !== 'capacity' || m.v !== 1) return null;
+    const out = {
+      edBedsFree: count(m.edBedsFree), resusFree: count(m.resusFree),
+      traumaFree: count(m.traumaFree), icuFree: count(m.icuFree),
+    };
+    if (Object.keys(out).some((k) => out[k] === null)) return null;
+    const name = typeof m.hospital === 'string' ? cleanText(m.hospital, 60) : '';
+    out.hospital = name || 'Demo General Hospital';
+    out.oNeg = count(m.oNeg);
+    out.mode = MODES.includes(m.mode) ? m.mode : null;
+    out.diversion = m.diversion === true;
+    out.ts = Number.isFinite(m.ts) ? m.ts : Date.now();
+    return out;
+  }
+  function onCapacity(event) {
+    const cap = parseCapacity(event && event.data);
+    if (!cap) return;
+    if (state.capacity && cap.ts < state.capacity.ts) return;   // out of order: keep the newer one
+    state.capacity = cap;
+    state.capacityAt = Date.now();
+    render();
+  }
+
+  // ---------- 4. Render ----------
+  function renderInputs(call) {
+    const done = { kind: Boolean(call.kind), place: Boolean(call.place), cas: true,
+      severity: Boolean(call.severity), hazards: call.trapped || call.hazards.length > 0 };
+    for (const key of Object.keys(Q)) {
+      const q = Q[key];
+      q.classList.toggle('done', done[key]);
+      const badge = q.querySelector('.qn');
+      badge.textContent = done[key] ? '✓' : badge.dataset.n;
+    }
+    el.casNum.textContent = String(call.casualties);
+    el.casWord.textContent = plural(call.casualties, 'casualty', 'casualties');
+    el.cas.setAttribute('aria-valuetext', call.casualties + ' ' + plural(call.casualties, 'casualty', 'casualties'));
+    el.cas.style.setProperty('--fill', ((call.casualties - 1) / 29 * 100).toFixed(2) + '%');
+    el.casMci.hidden = call.casualties < MCI_COUNT;
+
+    if (call.placeId === 'other') {
+      el.detailLabel.textContent = 'Type the place (road, landmark or block)';
+      el.detail.placeholder = 'e.g. Sheikh Zayed Rd, exit 41';
+    } else if (call.preset) {
+      el.detailLabel.textContent = 'Extra detail (optional)';
+      el.detail.placeholder = 'e.g. northbound, near exit 14';
+    } else {
+      el.detailLabel.textContent = 'Or type a place that is not listed';
+      el.detail.placeholder = 'e.g. Sheikh Zayed Rd, exit 41';
+    }
+    el.detail.setAttribute('aria-invalid', call.placeError ? 'true' : 'false');
+    el.detailErr.hidden = !call.placeError;
+    el.detailErr.textContent = call.placeError;
+    el.callMeta.textContent = state.callId + ' · received ' + hms(state.callStart);
+  }
+
+  function renderRecommendation(rec, units) {
+    el.mci.hidden = !rec.mci;
+    el.mciText.textContent = rec.mci ? rec.mciReason.replace(/^./, (c) => c.toUpperCase()) + '. The ER board sees an MCI-scale inbound.' : '';
+    for (const key of Object.keys(LIMITS)) {
+      const u = unitRows[key];
+      const val = units[key];
+      const base = rec.base[key];
+      const ov = state.overrides[key];
+      const [lo, hi] = LIMITS[key];
+      u.out.textContent = String(val);
+      u.row.classList.toggle('zero', val === 0);
+      if (ov == null) {
+        u.sub.textContent = base ? 'System pick' : 'Not needed';
+        u.sub.className = '';
+      } else {
+        const diff = val - base;
+        u.sub.textContent = 'You ' + (diff > 0 ? '+' : '−') + Math.abs(diff) + ' · system ' + base + (diff < 0 ? ' (below system)' : '');
+        u.sub.className = diff < 0 ? 'low' : 'adj';
+      }
+      u.minus.setAttribute('aria-disabled', val <= lo ? 'true' : 'false');
+      u.plus.setAttribute('aria-disabled', val >= hi ? 'true' : 'false');
+    }
+    el.resetUnits.hidden = Object.keys(LIMITS).every((k) => state.overrides[k] == null);
+
+    const items = rec.rules.map((r) => {
+      const li = h('li', r.tone);
+      li.append(h('span', 'g', r.glyph), h('span', null, r.text));
+      return li;
+    });
+    for (const key of Object.keys(LIMITS)) {
+      if (state.overrides[key] == null) continue;
+      const li = h('li', 'info');
+      li.append(h('span', 'g', '±'), h('span', null, 'Operator set ' + UNIT_WORDS[key][1] + ' to ' + units[key] + ' (system ' + rec.base[key] + ')'));
+      items.push(li);
+    }
+    el.why.replaceChildren.apply(el.why, items);
+  }
+
+  function renderSplit(call, units, hospitals) {
+    const plan = planSplit(call, units.ambulances, hospitals);
+    const per = plan.perAmb + ' ' + plural(plan.perAmb, 'casualty', 'casualties') + ' per ambulance';
+    if (plan.short > 0) {
+      el.needNote.className = 'need-note warning';
+      el.needNote.textContent = '! No ' + NEED_LABEL[plan.need] + ' free for ' + plan.short + ' of ' + plan.wanted + ': sent to the nearest ED instead · ~' + per;
+    } else {
+      el.needNote.className = 'need-note';
+      el.needNote.textContent = plan.wanted
+        ? 'Sickest first to ' + NEED_LABEL[plan.need] + ' (' + plan.wanted + ' of ' + units.ambulances + '), the rest to the nearest ED · ~' + per
+        : 'Nearest ED with free beds · ~' + per;
+    }
+    const rows = plan.rows.map((r) => {
+      const li = h('li');
+      const dest = h('div', 'dest');
+      dest.append(h('b', null, r.hosp.name), h('small', null, r.reasons.join(' · ')));
+      li.append(h('span', 'n', r.count + ' →'), dest, h('span', 'chip', r.hosp.travel != null ? r.hosp.travel + ' min' : 'travel n/a'));
+      return li;
+    });
+    if (plan.overflow > 0) {
+      const li = h('li', 'critical');
+      const dest = h('div', 'dest');
+      dest.append(h('b', null, 'No free capacity found'), h('small', null, 'Hold at the casualty clearing point · request mutual aid'));
+      li.append(h('span', 'n', plan.overflow + ' →'), dest, h('span', 'chip critical', '✕ Action'));
+      rows.push(li);
+    }
+    el.split.replaceChildren.apply(el.split, rows);
+    el.splitNote.textContent = 'Advisory: each crew confirms its destination on scene in the responder app.'
+      + (call.preset ? '' : ' Pick a preset place to see travel times.');
+  }
+
+  function renderHospitals(list) {
+    const items = list.map((x) => {
+      const li = h('li', 'hosp' + (x.usable ? '' : ' off'));
+      const main = h('div', 'hosp-main');
+      const name = h('div', 'hosp-name');
+      name.append(h('span', null, x.name));
+      if (x.live) name.append(h('span', 'chip sm ' + (x.hasData ? 'info' : 'warning'), x.hasData ? 'LIVE' : 'SILENT'));
+      if (x.live && x.hasData && x.mode) name.append(h('span', 'chip sm ' + MODE_TONE[x.mode], x.mode.toUpperCase()));
+      for (const c of x.caps) name.append(h('span', 'chip sm', CAP_LABEL[c]));
+      let nums;
+      if (x.hasData) {
+        const parts = ['ED ' + x.ed, 'Resus ' + x.resus];
+        if (x.caps.includes('trauma')) parts.push('Trauma ' + x.trauma);
+        if (x.caps.includes('burns')) parts.push('Burns ' + x.burns);
+        parts.push('ICU ' + x.icu);
+        if (x.oNeg != null) parts.push('O-neg ' + x.oNeg);
+        nums = parts.join(' · ');
+      } else if (state.capacityAt) {
+        nums = 'Silent for ' + mss(Date.now() - state.capacityAt) + ' · not used for routing';
+      } else {
+        nums = 'Waiting for the ER board · it broadcasts every 5 s';
+      }
+      main.append(name, h('div', 'hosp-nums', nums));
+      const side = h('div', 'hosp-side');
+      side.append(h('span', 'chip ' + x.tone, x.glyph + ' ' + x.status), h('span', 'eta', x.travel != null ? x.travel + ' min away' : 'travel n/a'));
+      li.append(main, side);
+      return li;
+    });
+    el.hosps.replaceChildren.apply(el.hosps, items);
+    const live = list[0];
+    el.capMeta.textContent = (live.hasData ? 'Live: ' + live.name : 'No live feed') + ' · 3 partners simulated';
+  }
+
+  function renderFeed() {
+    const fresh = feedFresh();
+    el.feed.className = 'chip ' + (fresh ? 'good' : 'warning');
+    el.feed.textContent = fresh ? '● Live capacity feed' : '○ No live feed';
+  }
+
+  function setStep(i, cls, glyph, time, sub) {
+    const li = el.tl[i];
+    li.className = cls;
+    li.querySelector('i').textContent = glyph;
+    li.querySelector('.t').textContent = time;
+    li.querySelector('.s').textContent = sub;
+  }
+
+  function messageKey(msg) {
+    return JSON.stringify(Object.assign({}, msg, { ts: 0 }));
+  }
+
+  function renderAct(call, units, miss) {
+    const sent = state.sent;
+    el.act.classList.toggle('sent', Boolean(sent));
+    el.actId.textContent = state.callId;
+    el.actClock.textContent = sent
+      ? 'Dispatched in ' + mss(sent.firstAt - state.callStart)
+      : 'On call ' + mss(Date.now() - state.callStart);
+    const changed = Boolean(sent) && !miss.length && messageKey(buildMessage(call, units)) !== sent.key;
+
+    let label, sub, ready, chipTone, chipText;
+    if (miss.length) {
+      label = sent ? 'Send update' : 'Dispatch';
+      sub = 'Still needed: ' + miss.map((m) => m.text).join(' · ');
+      ready = false; chipTone = 'warning'; chipText = '▲ Not ready';
+    } else if (!sent) {
+      label = 'Dispatch'; sub = unitSummary(units);
+      ready = true; chipTone = 'info'; chipText = '● Ready: one tap';
+    } else if (changed) {
+      label = 'Send update'; sub = 'Same ' + state.callId + ' · ' + unitSummary(units);
+      ready = true; chipTone = 'warning'; chipText = '▲ Changes not sent';
+    } else {
+      label = 'Dispatched ✓'; sub = 'Change anything to send an update';
+      ready = false; chipTone = 'good'; chipText = '✓ Dispatched';
+    }
+    el.dispatchLabel.textContent = label;
+    el.dispatchSub.textContent = sub;
+    el.dispatchBtn.setAttribute('aria-disabled', ready ? 'false' : 'true');
+    el.actState.className = 'chip ' + chipTone;
+    el.actState.textContent = chipText;
+
+    setStep(0, 'done', '✓', hms(state.callStart), state.callId);
+    if (sent) {
+      setStep(1, 'done', '✓', hms(sent.firstAt),
+        sent.summary + (sent.updates ? ' · updated ×' + sent.updates + ' at ' + hms(sent.lastAt) : ''));
+      setStep(2, sent.erOk ? 'done' : 'warn', sent.erOk ? '✓' : '!', hms(sent.lastAt),
+        sent.erOk ? sent.erName + ' board is live' : sent.erNote);
+    } else {
+      setStep(1, 'pending', '2', '', 'Waiting for your tap');
+      setStep(2, 'pending', '3', '', 'Automatic on dispatch');
+    }
+  }
+
+  function render() {
+    const call = readCall();
+    const rec = recommend(call);
+    normaliseOverrides(rec.base);
+    const units = effectiveUnits(rec.base);
+    const hospitals = hospitalsNow(call.preset ? call.placeId : '');
+    renderInputs(call);
+    renderRecommendation(rec, units);
+    renderSplit(call, units, hospitals);
+    renderHospitals(hospitals);
+    renderAct(call, units, missing(call));
+    renderFeed();
+  }
+
+  // ---------- 5. Dispatch (CHANNELS.md section 1, exact shape) ----------
+  function buildMessage(call, units) {
+    return {
+      type: 'incident',
+      v: 1,
+      id: state.callId,
+      kind: call.kind,
+      place: call.place,
+      casualties: call.casualties,
+      severity: call.severity,
+      trapped: call.trapped,
+      hazards: call.hazards.slice(),
+      units: { ambulances: units.ambulances, rescue: units.rescue, fire: units.fire },
+      ts: Date.now(),
+    };
+  }
+  function post(msg) {
+    if (!incidentChannel) return false;
+    try { incidentChannel.postMessage(msg); return true; }
+    catch (err) { return false; }
+  }
+  function flagMissing(miss) {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    miss.forEach((m, i) => {
+      const q = Q[m.key];
+      q.classList.remove('need');
+      void q.offsetWidth;            // restart the flash animation
+      q.classList.add('need');
+      window.setTimeout(() => q.classList.remove('need'), 1700);
+      if (i === 0) {
+        q.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+        const target = m.key === 'place' && (radioValue('place', ['other']) || readCall().placeError)
+          ? el.detail : q.querySelector('input');
+        target.focus({ preventScroll: true });
+      }
+    });
+    announce('Before dispatch, add: ' + miss.map((m) => m.text).join(', ') + '.');
+  }
+  function onDispatch() {
+    const call = readCall();
+    const miss = missing(call);
+    if (miss.length) { flagMissing(miss); return; }
+    const rec = recommend(call);
+    normaliseOverrides(rec.base);
+    const units = effectiveUnits(rec.base);
+    const msg = buildMessage(call, units);
+    const key = messageKey(msg);
+    if (state.sent && key === state.sent.key) { announce('Nothing changed since the last send.'); return; }
+
+    const posted = post(msg);
+    const live = feedFresh();
+    const erName = state.capacity ? state.capacity.hospital : 'Demo General Hospital';
+    const erNote = posted ? 'No ER board heard: phone the ER' : 'Browser cannot reach the ER board: phone the ER';
+    const summary = unitSummary(units);
+    if (!state.sent) {
+      state.sent = { firstAt: msg.ts, lastAt: msg.ts, key, updates: 0, summary, erOk: posted && live, erName, erNote };
+    } else {
+      Object.assign(state.sent, { lastAt: msg.ts, key, updates: state.sent.updates + 1, summary, erOk: posted && live, erName, erNote });
+    }
+    disarmClear();
+    render();
+    announce(state.callId + (state.sent.updates ? ' updated: ' : ' dispatched: ') + summary + '. '
+      + (posted && live ? 'ER pre-alert sent.' : erNote + '.'));
+  }
+
+  // ---------- New call ----------
+  function disarmClear() {
+    window.clearTimeout(state.clearTimer);
+    state.clearArmed = false;
+    el.newBtn.classList.remove('armed');
+    el.newBtn.textContent = 'New call';
+  }
+  function onNewCall() {
+    if (!state.sent && state.dirty && !state.clearArmed) {
+      state.clearArmed = true;
+      el.newBtn.classList.add('armed');
+      el.newBtn.textContent = 'Tap again to clear';
+      state.clearTimer = window.setTimeout(disarmClear, CLEAR_ARM_MS);
+      announce('This call has not been dispatched. Tap New call again to clear it.');
+      return;
+    }
+    startCall();
+    window.scrollTo(0, 0);
+    el.form.querySelector('input[name="kind"]').focus({ preventScroll: true });
+    announce('New call ' + state.callId + ' started.');
+  }
+  function startCall() {
+    el.form.reset();
+    state.callId = newCallId();
+    state.callStart = Date.now();
+    state.dirty = false;
+    state.sent = null;
+    for (const key of Object.keys(LIMITS)) state.overrides[key] = null;
+    disarmClear();
+    render();
+  }
+
+  // ---------- Events ----------
+  function onFormChange() {
+    state.dirty = true;
+    if (state.clearArmed) disarmClear();
+    render();
+  }
+  el.form.addEventListener('submit', (e) => e.preventDefault());
+  el.form.addEventListener('input', onFormChange);
+  el.form.addEventListener('change', (e) => {
+    if (e.target && e.target.name === 'place' && e.target.value === 'other') el.detail.focus();
+    onFormChange();
+  });
+  el.form.addEventListener('click', (e) => {
+    const casBtn = e.target.closest('button[data-cas]');
+    if (casBtn) {
+      el.cas.value = String(clamp((parseInt(el.cas.value, 10) || 1) + Number(casBtn.dataset.cas), 1, 30));
+      onFormChange();
+      return;
+    }
+    const step = e.target.closest('button[data-unit]');
+    if (!step) return;
+    const key = step.dataset.unit;
+    if (!Object.prototype.hasOwnProperty.call(LIMITS, key)) return;
+    const base = recommend(readCall()).base[key];
+    const current = state.overrides[key] == null ? base : state.overrides[key];
+    const next = clamp(current + Number(step.dataset.d), LIMITS[key][0], LIMITS[key][1]);
+    if (next === current) return;
+    state.overrides[key] = next === base ? null : next;
+    state.dirty = true;
+    render();
+    announce(UNIT_WORDS[key][1].replace(/^./, (c) => c.toUpperCase()) + ': ' + next + (next === base ? ', the system pick.' : ', system says ' + base + '.'));
+  });
+  el.resetUnits.addEventListener('click', () => {
+    for (const key of Object.keys(LIMITS)) state.overrides[key] = null;
+    render();
+    announce('Unit counts back to the system pick.');
+  });
+  el.dispatchBtn.addEventListener('click', onDispatch);
+  el.newBtn.addEventListener('click', onNewCall);
+  el.themeBtn.addEventListener('click', () => {
+    const toLight = document.documentElement.dataset.theme !== 'light';
+    if (toLight) document.documentElement.dataset.theme = 'light';
+    else delete document.documentElement.dataset.theme;
+    el.themeBtn.textContent = toLight ? 'Dark theme' : 'Light theme';
+  });
+  if (capacityChannel) capacityChannel.addEventListener('message', onCapacity);
+
+  // ---------- Start ----------
+  function tick() {
+    el.clock.textContent = hms(Date.now());
+    render();
+  }
+  startCall();
+  tick();
+  window.setInterval(tick, 1000);
+  window.setInterval(() => { driftPartners(); render(); }, DRIFT_MS);
+})();
+</script>
+</body>
+</html>

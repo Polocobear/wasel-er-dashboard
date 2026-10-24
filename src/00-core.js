@@ -166,8 +166,8 @@ const ROLES = {
   wall:      { label: 'Wall display', names: 'none', detail: false, audit: false, act: [] },
   charge:    { label: 'Charge nurse', names: 'partial', detail: true, audit: false,
                act: ['placement', 'prearrival', 'retriage', 'supply', 'fatigue', 'callin', 'reassign', 'capacity', 'ct', 'vent', 'needvent', 'outage',
-                     'identity', 'lwbs', 'surge'] },
-  physician: { label: 'Physician', names: 'full', detail: true, audit: false, act: ['placement', 'prearrival', 'retriage', 'needvent', 'identity'] },
+                     'identity', 'lwbs', 'surge', 'trauma', 'transfer'] },
+  physician: { label: 'Physician', names: 'full', detail: true, audit: false, act: ['placement', 'prearrival', 'retriage', 'needvent', 'identity', 'trauma', 'transfer'] },
   // detail 'assigned': opens only charts of patients assigned to nurseId; others need break-glass
   nurse:     { label: 'Nurse (A. Haddad)', names: 'partial', detail: 'assigned', audit: false,
                act: ['placement', 'prearrival', 'identity', 'lwbs'], nurseId: 'N1' },
@@ -180,7 +180,7 @@ const SUGG_LABEL = {
   placement: 'Bed placement', prearrival: 'Pre-arrival prep', retriage: 'Re-triage', supply: 'Supplies',
   fatigue: 'Staffing', callin: 'Staffing', reassign: 'Staffing', capacity: 'Capacity',
   ct: 'Equipment', vent: 'Equipment', needvent: 'Equipment', outage: 'System',
-  identity: 'Identity', lwbs: 'Lobby', surge: 'Surge',
+  identity: 'Identity', lwbs: 'Lobby', surge: 'Surge', trauma: 'Trauma activation', transfer: 'Transfer',
 };
 const LEVEL_LABEL = { 1: 'Critical', 2: 'High', 3: 'Routine' };
 

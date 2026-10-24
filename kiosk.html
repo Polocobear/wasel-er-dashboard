@@ -1,0 +1,1405 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: nothing may load from or talk to the network. The page only
+     speaks to the dashboard over same-origin BroadcastChannel (not governed by CSP). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="WASEL lobby kiosk and waiting-room display: tap-only patient self check-in and a de-identified token wait board. Simulated data.">
+<title>WASEL · Lobby Kiosk</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d03b3b'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * WASEL lobby kiosk + waiting-room display
+ * Same visual language as the ER Command Dashboard (src/shell.html): dark
+ * theme tokens, chips, status colours always paired with text.
+ * Logical properties throughout so Arabic (dir="rtl") mirrors cleanly.
+ * ========================================================================= */
+
+/* ---------- Theme tokens (shared with the dashboard) ---------- */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --raised: #2a2a28;
+  --hover: #33332f;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --border: rgba(255, 255, 255, .10);
+  --border-strong: rgba(255, 255, 255, .18);
+  --accent: #3987e5;
+  --accent-strong: #1f6fd1;
+  --accent-fg: #6aa6f0;
+  --accent-weak: rgba(57, 135, 229, .16);
+  --shadow: 0 10px 30px rgba(0, 0, 0, .45);
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-weak: rgba(208, 59, 59, .16);
+  --serious-weak: rgba(236, 131, 90, .15);
+  --warning-weak: rgba(250, 178, 25, .13);
+  --good-weak: rgba(12, 163, 12, .15);
+  --critical-fg: #f47067;
+  --serious-fg: #ec835a;
+  --warning-fg: #fab219;
+  --good-fg: #4cc44c;
+
+  --radius: 12px;
+  --gap: 8px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-ar: "Geeza Pro", "Noto Naskh Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; min-height: 100vh;
+  background: var(--page); color: var(--text);
+  font: 16px/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+:lang(ar) { font-family: var(--font-ar); }
+h1, h2, h3, p { margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.muted { color: var(--muted); }
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* ---------- Chips (shared with the dashboard) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 12px;
+  border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--text-2);
+  font-size: 13px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums;
+}
+.chip.good { background: var(--good-weak); border-color: rgba(12, 163, 12, .5); color: var(--good-fg); }
+.chip.warning { background: var(--warning-weak); border-color: rgba(250, 178, 25, .5); color: var(--warning-fg); }
+.chip.critical { background: var(--critical); border-color: var(--critical); color: #fff; }
+.chip.info { background: var(--accent-weak); border-color: rgba(57, 135, 229, .5); color: var(--accent-fg); }
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 20px; border-radius: 10px;
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--text);
+  font-size: 17px; font-weight: 650; line-height: 1.15; cursor: pointer; touch-action: manipulation;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent-strong); border-color: transparent; color: #fff; }
+.btn.primary:hover { background: var(--accent); }
+.btn.ghost { background: transparent; color: var(--text-2); }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.btn.lg { min-height: 64px; padding: 0 32px; font-size: 22px; border-radius: 14px; }
+
+/* ---------- Sticky header ---------- */
+.hdr {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding: 10px 16px; min-height: 64px;
+  background: var(--page); border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; margin-inline-end: auto; }
+.logo {
+  flex: none; width: 40px; height: 40px; border-radius: 9px;
+  display: grid; place-items: center; background: var(--critical); color: #fff;
+  font-size: 30px; font-weight: 800; line-height: 1; padding-bottom: 3px;
+}
+.brand h1 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; line-height: 1.15; }
+.brand p { margin-top: 2px; font-size: 12.5px; color: var(--text-2); }
+.simtag {
+  display: inline-block; margin-inline-start: 6px; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid var(--border-strong); color: var(--muted);
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px;
+}
+.seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+.seg button {
+  appearance: none; min-height: 44px; min-width: 44px; padding: 0 16px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--text-2); font-size: 15px; font-weight: 650; cursor: pointer;
+}
+.seg button:hover { background: var(--raised); color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--accent-strong); color: #fff; }
+.hctl { display: flex; align-items: center; gap: 14px; }
+.clockbox { text-align: end; }
+#clock { font-size: 28px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums; }
+#clockSub { margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: .09em; color: var(--muted); }
+
+main { padding: 16px; }
+
+/* ---------- Notices ---------- */
+.notice {
+  display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; margin-bottom: 14px;
+  border-radius: var(--radius); border: 1px solid rgba(250, 178, 25, .5);
+  background: var(--warning-weak); color: var(--text); font-size: 16px;
+}
+.notice b { color: var(--warning-fg); }
+.notice.critical { border-color: rgba(208, 59, 59, .6); background: var(--critical-weak); }
+.notice.critical b { color: var(--critical-fg); }
+
+/* =========================================================================
+ * KIOSK (patient-facing touch screen)
+ * ========================================================================= */
+.kiosk { max-width: 1120px; margin: 0 auto; }
+.kbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.steps { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 15px; color: var(--text-2); }
+.steps li { width: 34px; height: 8px; border-radius: 4px; background: var(--raised); }
+.steps li.on { background: var(--accent); }
+.steps li.past { background: var(--accent-strong); opacity: .6; }
+.steps .lbl { width: auto; height: auto; background: none; margin-inline-start: 6px; font-weight: 650; }
+.lang button { font-size: 17px; min-width: 110px; }
+
+.kcard {
+  position: relative; padding: clamp(18px, 3vw, 36px);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+  min-height: 460px;
+}
+.kh { font-size: clamp(26px, 3.2vw, 40px); font-weight: 750; letter-spacing: -.01em; line-height: 1.15; }
+.kh:focus { outline: none; }
+.ksub { margin-top: 8px; font-size: clamp(17px, 1.7vw, 21px); color: var(--text-2); }
+.klabel { margin: 26px 0 12px; font-size: 19px; font-weight: 700; color: var(--text-2); }
+.klabel small { font-weight: 500; color: var(--muted); margin-inline-start: 6px; }
+.redflag {
+  display: flex; gap: 12px; align-items: center; margin-top: 22px; padding: 14px 18px; border-radius: 14px;
+  background: var(--critical-weak); border: 1px solid rgba(208, 59, 59, .55); font-size: 18px; font-weight: 600;
+}
+.redflag .ico { flex: none; color: var(--critical-fg); font-size: 24px; font-weight: 800; }
+
+/* Step 1: identity choice */
+.idgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: 26px; }
+.bigbtn {
+  appearance: none; display: flex; align-items: center; gap: 20px; min-height: 168px; padding: 24px 28px;
+  border-radius: 18px; border: 2px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  text-align: start; cursor: pointer; touch-action: manipulation;
+}
+.bigbtn:hover { background: var(--raised); }
+.bigbtn.primary { background: var(--accent-strong); border-color: transparent; color: #fff; }
+.bigbtn.primary:hover { background: var(--accent); }
+.bigbtn svg { flex: none; width: 76px; height: 76px; }
+.bigbtn .bt { display: block; font-size: clamp(22px, 2.4vw, 30px); font-weight: 750; line-height: 1.15; }
+.bigbtn .bs { display: block; margin-top: 6px; font-size: 17px; font-weight: 500; opacity: .85; }
+.reader {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  min-height: 300px; margin-top: 18px; text-align: center;
+}
+.reader svg { width: 120px; height: 120px; color: var(--accent-fg); }
+.reader .rt { font-size: clamp(24px, 2.6vw, 32px); font-weight: 750; }
+.reader .rs { font-size: 18px; color: var(--text-2); max-width: 34em; }
+.reader.ok svg { color: var(--good-fg); }
+
+/* Step 2: picture tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 12px; }
+.tiles.wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.tile {
+  appearance: none; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; min-height: 140px; padding: 14px 10px; border-radius: 16px;
+  border: 2px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  font-size: 20px; font-weight: 700; line-height: 1.15; text-align: center; cursor: pointer; touch-action: manipulation;
+}
+.tile.sm { min-height: 96px; font-size: 18px; }
+.tile:hover { background: var(--raised); }
+.tile svg { width: 56px; height: 56px; color: var(--text-2); }
+.tile.sm svg { width: 40px; height: 40px; }
+.tile .ts { font-size: 15px; font-weight: 500; color: var(--muted); }
+.tile[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-weak); box-shadow: inset 0 0 0 2px var(--accent); }
+.tile[aria-pressed="true"] svg { color: var(--accent-fg); }
+.tile[aria-pressed="true"]::after {
+  content: "✓"; position: absolute; top: 8px; inset-inline-end: 10px;
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-strong); color: #fff; font-size: 16px; font-weight: 800;
+}
+.fromcard { margin-top: 10px; }
+.kactions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 28px; }
+
+/* Step 3: vitals */
+.vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; margin-top: 24px; }
+.vital {
+  padding: 18px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--border);
+  min-height: 132px; display: flex; flex-direction: column; justify-content: space-between;
+}
+.vital .vl { font-size: 16px; font-weight: 650; color: var(--text-2); }
+.vital .vv { margin-top: 8px; font-size: clamp(32px, 3.4vw, 44px); font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; }
+.vital .vu { margin-inline-start: 6px; font-size: 16px; font-weight: 500; color: var(--muted); }
+.vital .vs { margin-top: 8px; font-size: 14px; color: var(--muted); }
+.vital.busy .vv { color: var(--muted); }
+.vital.busy .bar { height: 6px; margin-top: 10px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.vital.busy .bar i { display: block; height: 100%; width: 40%; border-radius: 3px; background: var(--accent); }
+.vital.done { border-color: rgba(57, 135, 229, .45); }
+.mstatus { margin-top: 20px; font-size: 19px; font-weight: 650; }
+.mstatus.done { color: var(--good-fg); }
+
+/* Step 4: confirmation (always bilingual) */
+.done { text-align: center; }
+.done .lab { font-size: 22px; font-weight: 650; color: var(--text-2); }
+.done .lab span + span { margin-inline-start: 14px; }
+.token {
+  margin: 10px auto 6px; font-size: clamp(84px, 13vw, 168px); font-weight: 850; line-height: 1;
+  letter-spacing: .02em; font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate;
+}
+.pair { display: grid; gap: 4px; margin-top: 18px; font-size: clamp(19px, 2vw, 25px); font-weight: 650; }
+.pair [lang="ar"] { direction: rtl; }
+.pair.urgent { padding: 16px; border-radius: 16px; background: var(--critical-weak); border: 2px solid var(--critical); }
+.pair.urgent .head { color: var(--critical-fg); font-size: clamp(22px, 2.4vw, 30px); font-weight: 800; }
+.pair.calm { color: var(--text); }
+.pair.note { font-size: 18px; font-weight: 500; color: var(--text-2); }
+.regstate { margin-top: 20px; }
+.regstate .chip { font-size: 16px; min-height: 36px; padding: 4px 16px; }
+
+.kfoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--muted); font-size: 15px; }
+
+.overlay {
+  position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 24px; border-radius: 20px; text-align: center;
+  background: rgba(13, 13, 13, .94); border: 2px solid var(--critical);
+}
+.overlay .ot { font-size: clamp(24px, 3vw, 36px); font-weight: 800; }
+.overlay [lang="ar"] { direction: rtl; }
+
+/* =========================================================================
+ * LOBBY DISPLAY (wall TV, readable at 3 m)
+ * ========================================================================= */
+.lobby { display: flex; flex-direction: column; gap: 16px; }
+.ltitle { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; }
+.ltitle h2 { font-size: clamp(26px, 2.8vw, 52px); font-weight: 800; letter-spacing: -.01em; line-height: 1.1; }
+.ltitle h2[lang="ar"] { direction: rtl; }
+.ltitle .hosp { flex-basis: 100%; font-size: clamp(15px, 1.2vw, 22px); color: var(--text-2); }
+.lbanner { display: grid; gap: 4px; padding: 14px 20px; border-radius: 14px; font-size: clamp(18px, 1.6vw, 28px); font-weight: 650; }
+.lbanner.warning { background: var(--warning-weak); border: 2px solid var(--warning); }
+.lbanner.critical { background: var(--critical-weak); border: 2px solid var(--critical); }
+.lbanner [lang="ar"] { direction: rtl; }
+
+.calling {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px 24px;
+  padding: 16px 22px; border-radius: 18px; background: var(--surface); border: 2px solid var(--accent);
+}
+.calling .cl { display: grid; gap: 2px; font-size: clamp(18px, 1.6vw, 30px); font-weight: 800; color: var(--accent-fg); text-transform: uppercase; letter-spacing: .04em; }
+.calling .cl [lang="ar"] { text-transform: none; letter-spacing: 0; }
+.ctokens { display: flex; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.ctok {
+  padding: 6px 22px; border-radius: 14px; background: var(--accent-strong); color: #fff;
+  font-size: clamp(40px, 4.6vw, 96px); font-weight: 850; line-height: 1.05; font-variant-numeric: tabular-nums;
+}
+.ctok.old { background: var(--raised); color: var(--text-2); font-size: clamp(28px, 2.8vw, 56px); }
+.cnone { font-size: clamp(18px, 1.6vw, 28px); color: var(--muted); }
+.cwhere { display: grid; gap: 2px; text-align: end; font-size: clamp(16px, 1.4vw, 26px); font-weight: 650; color: var(--text-2); }
+.cwhere [lang="ar"] { direction: rtl; }
+
+.lgrid { display: grid; grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.lhead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; margin-bottom: 10px; font-size: clamp(18px, 1.5vw, 28px); font-weight: 750; color: var(--text-2); }
+.lhead [lang="ar"] { direction: rtl; }
+.tokgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+.tcard {
+  display: flex; flex-direction: column; gap: 6px; padding: 16px 20px; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.tcard .tt { font-size: clamp(40px, 3.8vw, 80px); font-weight: 850; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.tcard .tb { font-size: clamp(17px, 1.35vw, 26px); font-weight: 650; color: var(--text); }
+.tcard .tb[lang="ar"] { direction: rtl; text-align: end; color: var(--text-2); }
+.tcard.more { justify-content: center; align-items: center; color: var(--text-2); font-size: clamp(20px, 1.6vw, 30px); font-weight: 700; }
+.lempty {
+  display: grid; place-items: center; gap: 10px; min-height: 260px; padding: 28px; text-align: center;
+  border-radius: 18px; border: 2px dashed var(--border-strong); color: var(--text-2);
+  font-size: clamp(20px, 1.8vw, 32px); font-weight: 650;
+}
+.lempty [lang="ar"] { direction: rtl; }
+.lempty .hint { font-size: clamp(15px, 1.2vw, 22px); font-weight: 500; color: var(--muted); max-width: 40em; }
+
+.lside { display: grid; gap: 12px; }
+.stat { padding: 18px 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.stat .sl { display: grid; gap: 2px; font-size: clamp(15px, 1.2vw, 22px); font-weight: 650; color: var(--text-2); }
+.stat .sl [lang="ar"] { direction: rtl; }
+.stat .sv { margin-top: 8px; font-size: clamp(34px, 3.2vw, 64px); font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.stat .sv2 { font-size: clamp(17px, 1.4vw, 26px); font-weight: 650; color: var(--text-2); direction: rtl; }
+.safety { padding: 18px 20px; border-radius: 16px; background: var(--critical-weak); border: 2px solid rgba(208, 59, 59, .6); display: grid; gap: 6px; font-size: clamp(17px, 1.35vw, 26px); font-weight: 650; }
+.safety [lang="ar"] { direction: rtl; }
+.lfoot { display: grid; gap: 4px; font-size: clamp(14px, 1.1vw, 20px); color: var(--muted); }
+.lfoot [lang="ar"] { direction: rtl; }
+
+/* ---------- Motion ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .reader.busy svg { animation: pulse 1.1s ease-in-out infinite; }
+  .vital.busy .bar i { animation: sweep 1s ease-in-out infinite; }
+  .ctok.fresh { animation: callflash 1s ease-in-out 4; }
+  .kstep { animation: fadein .2s ease-out; }
+}
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.08); opacity: .7; } }
+@keyframes sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+@keyframes callflash { 0%, 100% { background: var(--accent-strong); color: #fff; } 50% { background: var(--warning); color: #0b0b0b; } }
+@keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+@media (forced-colors: active) {
+  .tile[aria-pressed="true"], .seg button[aria-pressed="true"] { outline: 3px solid Highlight; }
+}
+
+/* ---------- Narrow screens (phones, portrait tablets) ---------- */
+@media (max-width: 900px) {
+  .lgrid { grid-template-columns: minmax(0, 1fr); }
+  .calling { grid-template-columns: minmax(0, 1fr); }
+  .cwhere { text-align: start; }
+}
+@media (max-width: 640px) {
+  .hdr { padding: 8px 16px; }
+  .brand h1 { font-size: 17px; }
+  .brand p { display: none; }
+  .hctl { width: 100%; justify-content: space-between; }
+  .seg { width: 100%; }
+  .seg button { flex: 1; }
+  .kcard { min-height: 0; border-radius: 16px; }
+  .bigbtn { min-height: 120px; padding: 18px; gap: 14px; }
+  .bigbtn svg { width: 56px; height: 56px; }
+  .tile { min-height: 116px; font-size: 18px; }
+  .kactions .btn.lg { flex: 1; }
+}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">+</div>
+    <div>
+      <h1 id="screenName">WASEL · Lobby kiosk</h1>
+      <p><span id="screenSub">Patient self check-in</span> <span class="simtag">Simulated data</span></p>
+    </div>
+  </div>
+  <div class="seg" role="group" aria-label="Screen">
+    <button type="button" data-screen="kiosk" aria-pressed="true">Kiosk</button>
+    <button type="button" data-screen="lobby" aria-pressed="false">Lobby display</button>
+  </div>
+  <div class="hctl">
+    <span id="feed" class="chip warning" role="status">No feed (start the dashboard in another tab)</span>
+    <div class="clockbox">
+      <div id="clock">--:--</div>
+      <div id="clockSub">SIM CLOCK</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ==================== KIOSK ==================== -->
+  <section id="kiosk" class="kiosk" aria-label="Self check-in kiosk">
+    <div class="kbar">
+      <ol class="steps" id="steps" aria-label="Progress"></ol>
+      <div class="seg lang" role="group" aria-label="Language · اللغة">
+        <button type="button" data-lang="en" lang="en" aria-pressed="true">English</button>
+        <button type="button" data-lang="ar" lang="ar" aria-pressed="false">العربية</button>
+      </div>
+    </div>
+
+    <div id="kNotice" class="notice" role="status" hidden>
+      <span aria-hidden="true">▲</span>
+      <div><b data-t="noFeedHead"></b> <span data-t="noFeedBody"></span></div>
+    </div>
+
+    <div class="kcard">
+      <!-- Step 1: identity -->
+      <div class="kstep" id="step-id">
+        <h2 class="kh" tabindex="-1" data-t="welcome"></h2>
+        <p class="ksub" data-t="welcomeSub"></p>
+        <div id="idChoose">
+          <div class="idgrid">
+            <button type="button" class="bigbtn primary" id="btnEid">
+              <span data-icon="card"></span>
+              <span><span class="bt" data-t="tapId"></span><span class="bs" data-t="tapIdSub"></span></span>
+            </button>
+            <button type="button" class="bigbtn" id="btnTemp">
+              <span data-icon="ticket"></span>
+              <span><span class="bt" data-t="noId"></span><span class="bs" data-t="noIdSub"></span></span>
+            </button>
+          </div>
+          <p class="redflag"><span class="ico" aria-hidden="true">!</span><span data-t="redFlag"></span></p>
+        </div>
+        <div id="idReader" class="reader" role="status" hidden>
+          <span data-icon="card"></span>
+          <p class="rt" id="readerTitle"></p>
+          <p class="rs" data-t="cardPrivacy"></p>
+        </div>
+      </div>
+
+      <!-- Step 2: reason for visit + age band (+ sex when there is no card) -->
+      <div class="kstep" id="step-reason" hidden>
+        <h2 class="kh" tabindex="-1" data-t="reasonTitle"></h2>
+        <p class="ksub" data-t="reasonSub"></p>
+        <div class="tiles" id="complaintTiles" role="group" style="margin-top:22px"></div>
+        <h3 class="klabel" id="ageLabel"><span data-t="ageTitle"></span></h3>
+        <div class="tiles wide" id="ageTiles" role="group" aria-labelledby="ageLabel"></div>
+        <p class="fromcard" id="ageFromCard" hidden><span class="chip info" data-t="ageFromCard"></span></p>
+        <div id="sexBlock" hidden>
+          <h3 class="klabel" id="sexLabel"><span data-t="sexTitle"></span><small data-t="optional"></small></h3>
+          <div class="tiles wide" id="sexTiles" role="group" aria-labelledby="sexLabel"></div>
+        </div>
+        <div class="kactions">
+          <button type="button" class="btn lg ghost" id="btnBack" data-t="back"></button>
+          <button type="button" class="btn lg primary" id="btnReasonNext" disabled data-t="cont"></button>
+        </div>
+      </div>
+
+      <!-- Step 3: simulated device vitals -->
+      <div class="kstep" id="step-measure" hidden>
+        <h2 class="kh" tabindex="-1" data-t="measureTitle"></h2>
+        <p class="ksub" data-t="measureSub"></p>
+        <div class="vitals" id="vitals"></div>
+        <p class="mstatus" id="mStatus" role="status"></p>
+        <div class="kactions">
+          <span></span>
+          <button type="button" class="btn lg primary" id="btnMeasureNext" disabled data-t="cont"></button>
+        </div>
+      </div>
+
+      <!-- Step 4: confirmation, always in Arabic and English -->
+      <div class="kstep done" id="step-done" hidden>
+        <h2 class="kh lab" tabindex="-1"><span lang="en">Your number</span><span lang="ar">رقمك</span></h2>
+        <p class="token" id="tokenOut" aria-live="polite"></p>
+        <div class="pair urgent" id="urgentBox" hidden>
+          <p class="head" lang="en">Please go to the triage desk now.</p>
+          <p class="head" lang="ar">يرجى التوجه إلى مكتب الفرز الآن.</p>
+          <p lang="en" id="urgentWhyEn"></p>
+          <p lang="ar" id="urgentWhyAr"></p>
+        </div>
+        <div class="pair calm" id="calmBox">
+          <p lang="en">Please take a seat and watch the screen for your number.</p>
+          <p lang="ar">تفضّل بالجلوس وتابع رقمك على الشاشة.</p>
+        </div>
+        <div class="pair">
+          <p lang="en">A nurse will confirm your priority.</p>
+          <p lang="ar">سيقوم فريق التمريض بتأكيد أولويتك.</p>
+        </div>
+        <div class="pair note">
+          <p lang="en">If you feel worse while waiting, tell a nurse straight away.</p>
+          <p lang="ar">إذا شعرت بتدهور حالتك أثناء الانتظار، أخبر الممرض فوراً.</p>
+        </div>
+        <p class="regstate" role="status"><span class="chip" id="regChip"></span></p>
+        <div class="kactions" style="justify-content:center">
+          <button type="button" class="btn lg primary" id="btnDone"><span lang="en">Done</span> · <span lang="ar">تم</span></button>
+        </div>
+      </div>
+
+      <!-- Downtime: the dashboard switched to paper/voice, so self check-in pauses -->
+      <div class="overlay" id="downOverlay" role="alert" hidden>
+        <p class="ot" lang="en">Self check-in is paused. Please check in at the reception desk.</p>
+        <p class="ot" lang="ar">التسجيل الذاتي متوقف مؤقتاً. يرجى التسجيل عند مكتب الاستقبال.</p>
+      </div>
+    </div>
+
+    <div class="kfoot">
+      <button type="button" class="btn ghost" id="btnRestart" data-t="restart"></button>
+      <span id="idleNote" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <!-- ==================== LOBBY DISPLAY ==================== -->
+  <section id="lobby" class="lobby" aria-label="Waiting-room display" hidden>
+    <div class="ltitle">
+      <h2 lang="en">Emergency Department · Waiting room</h2>
+      <h2 lang="ar">قسم الطوارئ · غرفة الانتظار</h2>
+      <p class="hosp" id="lHospital"></p>
+    </div>
+
+    <div id="lBanner" class="lbanner" role="status" hidden>
+      <p lang="en" id="lBannerEn"></p>
+      <p lang="ar" id="lBannerAr"></p>
+    </div>
+
+    <div class="calling" aria-live="polite">
+      <p class="cl"><span lang="en">Now calling</span><span lang="ar">يُنادى الآن</span></p>
+      <div class="ctokens" id="cTokens"></div>
+      <p class="cwhere"><span lang="en">Please come to the nurses' desk</span><span lang="ar">يرجى التوجه إلى مكتب التمريض</span></p>
+    </div>
+
+    <div class="lgrid">
+      <div>
+        <p class="lhead"><span lang="en">Waiting · estimated wait</span><span lang="ar">قائمة الانتظار · مدة الانتظار المتوقعة</span></p>
+        <div id="tokGrid" class="tokgrid"></div>
+        <div id="lEmpty" class="lempty" hidden></div>
+      </div>
+      <aside class="lside">
+        <div class="stat">
+          <p class="sl"><span lang="en">People waiting</span><span lang="ar">عدد المنتظرين</span></p>
+          <p class="sv" id="sWaiting">–</p>
+        </div>
+        <div class="stat">
+          <p class="sl"><span lang="en">Typical wait now</span><span lang="ar">مدة الانتظار المعتادة الآن</span></p>
+          <p class="sv" id="sTypical" style="font-size:clamp(26px,2.4vw,48px)">–</p>
+          <p class="sv2" lang="ar" id="sTypicalAr"></p>
+        </div>
+        <div class="safety">
+          <p lang="en">Feeling worse while you wait? Tell a nurse now.</p>
+          <p lang="ar">هل تشعر بتدهور حالتك أثناء الانتظار؟ أخبر الممرض الآن.</p>
+        </div>
+        <div class="seg" style="justify-self:start">
+          <button type="button" id="btnFull">Full screen</button>
+        </div>
+      </aside>
+    </div>
+
+    <div class="lfoot">
+      <p lang="en">The most urgent patients are seen first, so numbers are not always called in order. Waits are estimates from the current queue and free beds.</p>
+      <p lang="ar">يُعالَج المرضى الأكثر حاجة أولاً، لذلك لا تُنادى الأرقام دائماً بالترتيب. مدة الانتظار تقديرية بحسب قائمة الانتظار والأسرّة المتاحة.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  /* =======================================================================
+   * Configuration
+   * ===================================================================== */
+  const FEED_STALE_MS = 6000;          // header shows "No feed" after this long without a state snapshot
+  const CONFIRM_TIMEOUT_MS = 8000;     // kiosk waits this long for its token to appear in state.waiting
+  const KIOSK_IDLE_MS = 90000;         // abandoned check-in clears itself (privacy for the next person)
+  const DONE_RESET_MS = 30000;         // confirmation screen clears itself after this long
+  const CALL_SHOW_MS = 90000;          // a called token stays in the "Now calling" strip this long
+  const MAX_CALLS_PER_TICK = 4;        // more departures at once means a reset, not real calls
+  const MAX_LOBBY_TOKENS = 24;         // tokens shown on the wall before "+N more"
+  const TOKEN_RE = /^[A-Z]{1,3}-\d{1,4}$/;
+  const CLOCK_RE = /^\d{1,2}:\d{2}$/;
+  const MODES = new Set(['steady', 'strain', 'surge', 'mci']);
+
+  // Wait estimate: minutes for one more bed to come free, by operating mode.
+  // Deliberately simple and explainable; shown to the public only as a band.
+  const SLOT_MIN = { steady: 8, strain: 12, surge: 16, mci: 25 };
+  const WAIT_BANDS = [
+    { max: 15, en: 'Under 15 min', ar: 'أقل من 15 دقيقة' },
+    { max: 30, en: '15 to 30 min', ar: '15 إلى 30 دقيقة' },
+    { max: 60, en: '30 to 60 min', ar: '30 إلى 60 دقيقة' },
+    { max: 120, en: '1 to 2 hours', ar: 'ساعة إلى ساعتين' },
+    { max: Infinity, en: 'Over 2 hours', ar: 'أكثر من ساعتين' },
+  ];
+
+  /* =======================================================================
+   * Kiosk text (English / Arabic). Applied with textContent only.
+   * ===================================================================== */
+  const T = {
+    welcome: { en: 'Welcome to the Emergency Department', ar: 'مرحباً بكم في قسم الطوارئ' },
+    welcomeSub: { en: 'Check in here. Just tap, no typing.', ar: 'سجّل وصولك هنا باللمس فقط، دون كتابة.' },
+    tapId: { en: 'Tap your Emirates ID', ar: 'المس بطاقة الهوية الإماراتية' },
+    tapIdSub: { en: 'Hold the card on the reader below the screen', ar: 'ضع البطاقة على القارئ أسفل الشاشة' },
+    noId: { en: 'No ID? Get a temporary number', ar: 'لا تحمل الهوية؟ احصل على رقم مؤقت' },
+    noIdSub: { en: 'Staff will register you at triage', ar: 'سيقوم الموظفون بتسجيلك عند الفرز' },
+    redFlag: { en: 'Severe chest pain, struggling to breathe or heavy bleeding? Go to the desk now.',
+               ar: 'ألم شديد في الصدر أو صعوبة شديدة في التنفس أو نزيف شديد؟ توجّه إلى المكتب فوراً.' },
+    reading: { en: 'Reading your card…', ar: 'جارٍ قراءة البطاقة…' },
+    cardOk: { en: 'Card read ✓', ar: 'تمت قراءة البطاقة ✓' },
+    cardPrivacy: { en: 'Your ID number is not shown or kept on this kiosk.', ar: 'لا يُعرض رقم هويتك ولا يُحفظ على هذا الجهاز.' },
+    reasonTitle: { en: 'What brings you in today?', ar: 'ما سبب زيارتك اليوم؟' },
+    reasonSub: { en: 'Tap the picture that fits best.', ar: 'اختر الصورة الأقرب لحالتك.' },
+    ageTitle: { en: 'Age of the patient', ar: 'عمر المريض' },
+    ageFromCard: { en: 'Age group read from your ID card', ar: 'تمت قراءة الفئة العمرية من بطاقة الهوية' },
+    sexTitle: { en: 'Sex', ar: 'الجنس' },
+    optional: { en: '(optional)', ar: '(اختياري)' },
+    back: { en: 'Back', ar: 'رجوع' },
+    cont: { en: 'Continue', ar: 'متابعة' },
+    restart: { en: 'Start over', ar: 'البدء من جديد' },
+    measureTitle: { en: 'Measuring your vital signs', ar: 'جارٍ قياس العلامات الحيوية' },
+    measureSub: { en: 'Rest your arm in the cuff and your finger in the sensor. Please stay still.',
+                  ar: 'ضع ذراعك في سوار الضغط وإصبعك في المستشعر، وابقَ ثابتاً من فضلك.' },
+    measuring: { en: 'Measuring…', ar: 'جارٍ القياس…' },
+    measuringAll: { en: 'Measuring, please stay still…', ar: 'جارٍ القياس، ابقَ ثابتاً من فضلك…' },
+    measured: { en: '✓ Done. A nurse will review these readings.', ar: '✓ اكتمل القياس. سيراجع فريق التمريض هذه القراءات.' },
+    bp: { en: 'Blood pressure', ar: 'ضغط الدم' },
+    hr: { en: 'Pulse', ar: 'النبض' },
+    spo2: { en: 'Oxygen level', ar: 'نسبة الأكسجين' },
+    temp: { en: 'Temperature', ar: 'درجة الحرارة' },
+    rr: { en: 'Breathing rate', ar: 'معدل التنفس' },
+    uBpm: { en: 'bpm', ar: 'نبضة/دقيقة' },
+    uRr: { en: '/min', ar: 'نفس/دقيقة' },
+    step: { en: 'Step {n} of 4', ar: 'الخطوة {n} من 4' },
+    idle: { en: 'This screen clears in {n} s', ar: 'ستُمسح هذه الشاشة خلال {n} ثانية' },
+    noFeedHead: { en: 'Not connected to the ED system.', ar: 'غير متصل بنظام الطوارئ.' },
+    noFeedBody: { en: 'You can still check in; please show your number at the desk. Staff: start the WASEL dashboard in another tab.',
+                  ar: 'يمكنك التسجيل، ويرجى إبراز رقمك عند المكتب. للموظفين: شغّلوا لوحة WASEL في علامة تبويب أخرى.' },
+    c_chestPain: { en: 'Chest pain', ar: 'ألم في الصدر' },
+    c_dyspnea: { en: 'Breathing', ar: 'صعوبة في التنفس' },
+    c_fever: { en: 'Fever', ar: 'حمّى' },
+    c_injury: { en: 'Injury', ar: 'إصابة' },
+    c_abdoPain: { en: 'Stomach pain', ar: 'ألم في البطن' },
+    c_other: { en: 'Other', ar: 'سبب آخر' },
+    a_child: { en: 'Child', ar: 'طفل' },
+    a_child_s: { en: 'Under 16', ar: 'أقل من 16 سنة' },
+    a_adult: { en: 'Adult', ar: 'بالغ' },
+    a_adult_s: { en: '16 to 64', ar: 'من 16 إلى 64 سنة' },
+    a_elderly: { en: 'Older adult', ar: 'كبير السن' },
+    a_elderly_s: { en: '65 and over', ar: '65 سنة فأكثر' },
+    s_male: { en: 'Male', ar: 'ذكر' },
+    s_female: { en: 'Female', ar: 'أنثى' },
+    s_unknown: { en: 'Prefer not to say', ar: 'أفضّل عدم الإجابة' },
+  };
+
+  const COMPLAINTS = [
+    { key: 'chestPain', icon: 'chest' },
+    { key: 'dyspnea', icon: 'lungs' },
+    { key: 'fever', icon: 'fever' },
+    { key: 'injury', icon: 'injury' },
+    { key: 'abdoPain', icon: 'stomach' },
+    { key: 'other', icon: 'other' },
+  ];
+  const AGE_BANDS = [
+    { key: 'child', icon: 'child' },
+    { key: 'adult', icon: 'adult' },
+    { key: 'elderly', icon: 'elderly' },
+  ];
+  const SEXES = [
+    { key: 'male', icon: 'male' },
+    { key: 'female', icon: 'female' },
+    { key: 'unknown', icon: 'unknown' },
+  ];
+
+  /* =======================================================================
+   * Pictograms: inline SVG built from constant path data (no network, no innerHTML)
+   * ===================================================================== */
+  const circle = (cx, cy, r) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+  const ICONS = {
+    card: ['M6 12h29a3 3 0 0 1 3 3v19a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V15a3 3 0 0 1 3-3z', 'M8 19h8v6H8z', 'M8 31h15',
+           'M41 18c2.4 2.4 2.4 6.6 0 9', 'M44.5 14.5c4.2 4.4 4.2 11.6 0 16'],
+    ticket: ['M7 12h34v7a5 5 0 0 0 0 10v7H7v-7a5 5 0 0 0 0-10z', 'M29 13v4', 'M29 22v4', 'M29 31v4'],
+    chest: ['M24 40C14 33 7 27 7 18.5 7 13 11 9 16 9c3.6 0 6.4 2 8 5 1.6-3 4.4-5 8-5 5 0 9 4 9 9.5C41 27 34 33 24 40z',
+            'M11 23h7l3-5 4 10 3-6h9'],
+    lungs: ['M24 6v16', 'M24 18l-5 4', 'M24 18l5 4',
+            'M19 15c-6 1-11 10-11 20 0 3.5 2 5 4.5 5C17 40 19 37 19 32z',
+            'M29 15c6 1 11 10 11 20 0 3.5-2 5-4.5 5C31 40 29 37 29 32z'],
+    fever: ['M15 30V10a5 5 0 0 1 10 0v20a8 8 0 1 1-10 0z', 'M20 16v18', 'M33 14c2 2 2 4 0 6', 'M38 11c3.5 3.5 3.5 8.5 0 12'],
+    injury: ['M33.2 4.9L43.1 14.8L14.8 43.1L4.9 33.2z', 'M23.3 14.8L33.2 24.7L24.7 33.2L14.8 23.3z'],
+    stomach: ['M17 5v8c-4 3-7 8-7 14 0 8 6 15 14 15s14-7 14-15c0-6-3-11-7-14V5', circle(24, 27, 3),
+              'M24 18v3', 'M24 33v3', 'M15 27h3', 'M30 27h3'],
+    other: [circle(24, 24, 18), 'M18.5 19a5.5 5.5 0 1 1 8 4.9c-1.6.8-2.5 2.2-2.5 4V30', 'M24 35v.5'],
+    child: [circle(24, 15, 5), 'M24 20v11', 'M24 31l-5 9', 'M24 31l5 9', 'M17 25h14'],
+    adult: [circle(24, 8, 5), 'M24 13v17', 'M24 30l-6 13', 'M24 30l6 13', 'M15 19h18'],
+    elderly: [circle(20, 8, 5), 'M20 13l2 15', 'M22 28l-5 14', 'M22 28l4 14', 'M15 19l17 3', 'M32 22v20'],
+    male: [circle(20, 28, 10), 'M27 21l12-12', 'M31 9h8v8'],
+    female: [circle(24, 17, 10), 'M24 27v15', 'M18 36h12'],
+    unknown: [circle(24, 24, 17), 'M17 24h14'],
+  };
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function icon(name) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 48 48');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2.6');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    for (const d of ICONS[name] || []) {
+      const p = document.createElementNS(SVG_NS, 'path');
+      p.setAttribute('d', d);
+      svg.appendChild(p);
+    }
+    return svg;
+  }
+
+  /* =======================================================================
+   * DOM helpers
+   * ===================================================================== */
+  const $ = (id) => document.getElementById(id);
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function langSpan(tag, lang, text, cls) {
+    const n = el(tag, cls, text);
+    n.lang = lang;
+    return n;
+  }
+
+  /* =======================================================================
+   * Channels (CHANNELS.md §4 state in, §5 commands out)
+   * ===================================================================== */
+  let stateCh = null;
+  let cmdCh = null;
+  try {
+    stateCh = new BroadcastChannel('wasel-state');
+    cmdCh = new BroadcastChannel('wasel-command');
+  } catch (err) {
+    stateCh = null;
+    cmdCh = null;
+  }
+
+  function randomHex(bytes) {
+    const a = new Uint8Array(bytes);
+    crypto.getRandomValues(a);
+    return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Returns true when the command was handed to the channel.
+  function sendCommand(action, args) {
+    if (!cmdCh) return false;
+    cmdCh.postMessage({ type: 'command', v: 1, id: 'cmd-' + randomHex(6), from: 'kiosk', role: 'Lobby kiosk', action, args });
+    return true;
+  }
+
+  /* =======================================================================
+   * Feed: validate + minimise each snapshot. Only the fields this screen
+   * needs are kept; everything else in the snapshot is dropped on arrival.
+   * ===================================================================== */
+  const feed = { snap: null, lastAt: 0, lastTs: 0 };
+  const isLive = () => feed.lastAt > 0 && Date.now() - feed.lastAt < FEED_STALE_MS;
+
+  function minimise(m) {
+    const waiting = [];
+    for (const w of Array.isArray(m.waiting) ? m.waiting : []) {
+      if (!w || typeof w !== 'object') continue;
+      waiting.push({
+        token: typeof w.token === 'string' && TOKEN_RE.test(w.token) ? w.token : null,
+        esi: Number.isInteger(w.esi) && w.esi >= 1 && w.esi <= 5 ? w.esi : 3,
+        waitMin: Number.isFinite(w.waitMin) && w.waitMin >= 0 ? w.waitMin : 0,
+      });
+    }
+    return {
+      simClock: typeof m.simClock === 'string' && CLOCK_RE.test(m.simClock) ? m.simClock : null,
+      hospital: typeof m.hospital === 'string' ? m.hospital.slice(0, 80) : '',
+      mode: MODES.has(m.mode) ? m.mode : 'steady',
+      downtime: m.downtime === true,
+      freeBeds: m.beds && Number.isFinite(m.beds.free) ? Math.max(0, Math.floor(m.beds.free)) : 0,
+      waiting,
+    };
+  }
+
+  function onStateMessage(ev) {
+    const m = ev && ev.data;
+    if (!m || typeof m !== 'object' || m.type !== 'state' || m.v !== 1 || !Number.isFinite(m.ts)) return;
+    if (m.ts === feed.lastTs) return;                       // duplicate delivery
+    const continuous = isLive();                            // no gap since the previous snapshot
+    feed.lastTs = m.ts;
+    feed.lastAt = Date.now();
+    feed.snap = minimise(m);
+    noteTokens(feed.snap.waiting);
+    renderHeader();
+    kioskOnState(feed.snap);
+    lobbyOnState(feed.snap, continuous);
+  }
+  if (stateCh) stateCh.addEventListener('message', onStateMessage);
+
+  /* =======================================================================
+   * Header: screen name, sim clock, feed chip
+   * ===================================================================== */
+  let screen = 'kiosk';
+  let wasLive = null;
+
+  function renderHeader() {
+    const live = isLive();
+    $('clock').textContent = live && feed.snap && feed.snap.simClock ? feed.snap.simClock : '--:--';
+    if (live !== wasLive) {
+      const chip = $('feed');
+      chip.className = live ? 'chip good' : 'chip warning';
+      chip.textContent = live ? '● Live' : '▲ No feed (start the dashboard in another tab)';
+      wasLive = live;
+      renderKioskNotice();
+      renderLobby();
+    }
+  }
+
+  function setScreen(next) {
+    screen = next === 'lobby' ? 'lobby' : 'kiosk';
+    $('kiosk').hidden = screen !== 'kiosk';
+    $('lobby').hidden = screen !== 'lobby';
+    document.querySelectorAll('[data-screen]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.screen === screen)));
+    $('screenName').textContent = screen === 'kiosk' ? 'WASEL · Lobby kiosk' : 'WASEL · Lobby display';
+    $('screenSub').textContent = screen === 'kiosk' ? 'Patient self check-in' : 'Waiting-room wall screen';
+    document.title = screen === 'kiosk' ? 'WASEL · Lobby Kiosk' : 'WASEL · Lobby Display';
+    // The screen choice (not patient data) lives in the hash so a wall TV can open kiosk.html#lobby directly.
+    try { history.replaceState(null, '', '#' + screen); } catch (err) { /* some file:// contexts forbid it; the toggle still works */ }
+    applyLang();
+    if (screen === 'lobby') { lobby.callSignature = null; renderLobby(); }
+  }
+
+  /* =======================================================================
+   * Clinical rules used by the kiosk (explainable, validated scores)
+   * ===================================================================== */
+  // NEWS2 (Royal College of Physicians, 2017), SpO2 scale 1. The patient is
+  // breathing room air and alert (they are using the kiosk), so those score 0.
+  const NEWS2 = {
+    rr: (v) => (v <= 8 ? 3 : v <= 11 ? 1 : v <= 20 ? 0 : v <= 24 ? 2 : 3),
+    spo2: (v) => (v <= 91 ? 3 : v <= 93 ? 2 : v <= 95 ? 1 : 0),
+    sbp: (v) => (v <= 90 ? 3 : v <= 100 ? 2 : v <= 110 ? 1 : v <= 219 ? 0 : 3),
+    hr: (v) => (v <= 40 ? 3 : v <= 50 ? 1 : v <= 90 ? 0 : v <= 110 ? 1 : v <= 130 ? 2 : 3),
+    temp: (v) => (v <= 35.0 ? 3 : v <= 36.0 ? 1 : v <= 38.0 ? 0 : v <= 39.0 ? 1 : 2),
+  };
+  function news2(v) {
+    const parts = Object.keys(NEWS2).map((k) => NEWS2[k](v[k]));
+    return { total: parts.reduce((a, b) => a + b, 0), anyThree: parts.includes(3) };
+  }
+
+  // Should the patient walk to the triage desk now instead of sitting down?
+  // 1. Chest pain: ECG within 10 minutes of arrival (AHA/ACC 2021, ESC chest-pain guidance).
+  // 2. SpO2 <= 91 % at any age (NEWS2 red score).
+  // 3. Adults: NEWS2 >= 5 or any single parameter scoring 3 (RCP urgent-response threshold).
+  //    NEWS2 is not validated under 16, so children rely on rules 1-2 plus the nurse.
+  function urgency(complaint, ageBand, v) {
+    if (complaint === 'chestPain') return 'chest';
+    if (v.spo2 <= 91) return 'vitals';
+    if (ageBand !== 'child') {
+      const s = news2(v);
+      if (s.total >= 5 || s.anyThree) return 'vitals';
+    }
+    return null;
+  }
+  const URGENT_WHY = {
+    chest: { en: 'Chest pain needs a heart tracing (ECG) within 10 minutes.', ar: 'ألم الصدر يحتاج إلى تخطيط للقلب خلال 10 دقائق.' },
+    vitals: { en: 'Some of your readings need a nurse to check them now.', ar: 'بعض قراءاتك تحتاج إلى مراجعة الممرض الآن.' },
+  };
+
+  /* =======================================================================
+   * Simulated devices (demo stand-ins for the card reader and vitals monitor)
+   * ===================================================================== */
+  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+  const pick = (weights) => {
+    const total = weights.reduce((a, w) => a + w[1], 0);
+    let r = Math.random() * total;
+    for (const [value, w] of weights) { r -= w; if (r <= 0) return value; }
+    return weights[weights.length - 1][0];
+  };
+
+  // A real Emirates ID reader hands the card straight to the hospital
+  // registration system (EMPI). The kiosk only learns that a card was verified,
+  // plus the age band and sex needed for triage. It never sees the ID number.
+  function simulateCardRead() {
+    return {
+      ageBand: pick([['adult', 70], ['elderly', 20], ['child', 10]]),
+      sex: pick([['male', 55], ['female', 45]]),
+    };
+  }
+
+  // Typical adult presentations per complaint: [low, high] for each reading.
+  const VITAL_PROFILES = {
+    chestPain: { hr: [82, 112], sbp: [128, 168], rr: [16, 22], spo2: [94, 99], temp: [36.4, 37.3] },
+    dyspnea: { hr: [96, 122], sbp: [118, 150], rr: [21, 28], spo2: [89, 95], temp: [36.6, 38.0] },
+    fever: { hr: [92, 118], sbp: [102, 128], rr: [18, 24], spo2: [94, 98], temp: [38.1, 39.7] },
+    injury: { hr: [78, 104], sbp: [118, 146], rr: [14, 20], spo2: [96, 100], temp: [36.3, 37.1] },
+    abdoPain: { hr: [84, 110], sbp: [112, 140], rr: [16, 21], spo2: [96, 99], temp: [36.5, 38.3] },
+    other: { hr: [66, 94], sbp: [112, 136], rr: [12, 18], spo2: [97, 100], temp: [36.3, 37.2] },
+  };
+  // Physiological shift by age band: children run faster and lower; older adults higher pressure.
+  const AGE_SHIFT = {
+    child: { hr: 18, sbp: -18, rr: 6, spo2: 0 },
+    adult: { hr: 0, sbp: 0, rr: 0, spo2: 0 },
+    elderly: { hr: -4, sbp: 12, rr: 1, spo2: -1 },
+  };
+  function simulateVitals(complaint, ageBand) {
+    const p = VITAL_PROFILES[complaint] || VITAL_PROFILES.other;
+    const s = AGE_SHIFT[ageBand] || AGE_SHIFT.adult;
+    const sbp = Math.round(rand(p.sbp[0], p.sbp[1]) + s.sbp);
+    return {
+      hr: Math.round(rand(p.hr[0], p.hr[1]) + s.hr),
+      sbp,
+      dbp: Math.round(sbp * 0.62 + rand(-4, 4)),
+      rr: Math.round(rand(p.rr[0], p.rr[1]) + s.rr),
+      spo2: Math.min(100, Math.round(rand(p.spo2[0], p.spo2[1]) + s.spo2)),
+      temp: Math.round(rand(p.temp[0], p.temp[1]) * 10) / 10,
+    };
+  }
+
+  /* =======================================================================
+   * Queue tokens. Numbers only ever go up while this page is open, and the
+   * kiosk catches up with tokens already in the ED queue, so a number is not
+   * reused while its owner is still waiting.
+   * ===================================================================== */
+  let tokenSeq = 0;
+  function noteTokens(waiting) {
+    for (const w of waiting) {
+      const m = /^A-(\d+)$/.exec(w.token || '');
+      if (m) tokenSeq = Math.max(tokenSeq, Number(m[1]));
+    }
+  }
+  function issueToken() {
+    tokenSeq = tokenSeq >= 999 ? 1 : tokenSeq + 1;
+    return 'A-' + String(tokenSeq).padStart(3, '0');
+  }
+
+  /* =======================================================================
+   * KIOSK state machine: id -> reason -> measure -> done
+   * Everything lives in memory and is wiped on reset. No storage, no URLs.
+   * ===================================================================== */
+  const STEPS = ['id', 'reason', 'measure', 'done'];
+  const kiosk = {
+    lang: 'en', step: 'id', idPhase: 'choose',
+    idMethod: null, ageBand: null, ageFromCard: false, sex: null, complaint: null,
+    vitals: null, measured: false, token: null, urgent: null, reg: null,
+    touchedAt: Date.now(), doneAt: 0, gen: 0, timers: new Set(),
+  };
+
+  const t = (key, n) => {
+    const entry = T[key];
+    const s = entry ? entry[kiosk.lang] || entry.en : key;
+    return n == null ? s : s.replace('{n}', String(n));
+  };
+
+  // Timers belong to the current check-in; reset cancels every one of them.
+  function later(fn, ms) {
+    const gen = kiosk.gen;
+    const id = setTimeout(() => { kiosk.timers.delete(id); if (gen === kiosk.gen) fn(); }, ms);
+    kiosk.timers.add(id);
+  }
+
+  function resetKiosk() {
+    kiosk.timers.forEach(clearTimeout);
+    kiosk.timers.clear();
+    kiosk.gen += 1;
+    Object.assign(kiosk, {
+      lang: 'en', step: 'id', idPhase: 'choose',
+      idMethod: null, ageBand: null, ageFromCard: false, sex: null, complaint: null,
+      vitals: null, measured: false, token: null, urgent: null, reg: null,
+      touchedAt: Date.now(), doneAt: 0,
+    });
+    $('vitals').replaceChildren();
+    $('tokenOut').textContent = '';
+    applyLang();
+    goStep('id');
+  }
+
+  function goStep(step) {
+    kiosk.step = step;
+    kiosk.touchedAt = Date.now();
+    for (const s of STEPS) $('step-' + s).hidden = s !== step;
+    renderSteps();
+    renderStep();
+    const h = $('step-' + step).querySelector('.kh');
+    if (h && screen === 'kiosk') h.focus({ preventScroll: true });
+    window.scrollTo(0, 0);
+  }
+
+  function renderSteps() {
+    const ol = $('steps');
+    const idx = STEPS.indexOf(kiosk.step);
+    const items = STEPS.map((_, i) => {
+      const li = el('li', i === idx ? 'on' : i < idx ? 'past' : '');
+      li.setAttribute('aria-hidden', 'true');
+      return li;
+    });
+    items.push(el('li', 'lbl', t('step', idx + 1)));
+    ol.replaceChildren(...items);
+  }
+
+  function applyLang() {
+    const ar = screen === 'kiosk' && kiosk.lang === 'ar';
+    document.documentElement.lang = ar ? 'ar' : 'en';
+    document.documentElement.dir = ar ? 'rtl' : 'ltr';
+    document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === kiosk.lang)));
+    document.querySelectorAll('#kiosk [data-t]').forEach((n) => { n.textContent = t(n.dataset.t); });
+    renderSteps();
+    renderStep();
+  }
+
+  function renderStep() {
+    if (kiosk.step === 'id') renderIdStep();
+    else if (kiosk.step === 'reason') renderReasonStep();
+    else if (kiosk.step === 'measure') renderMeasureLabels();
+    else if (kiosk.step === 'done') renderDone();
+    renderKioskNotice();
+  }
+
+  /* ---------- Step 1: identity ---------- */
+  function renderIdStep() {
+    $('idChoose').hidden = kiosk.idPhase !== 'choose';
+    $('idReader').hidden = kiosk.idPhase === 'choose';
+    $('idReader').className = 'reader ' + (kiosk.idPhase === 'ok' ? 'ok' : 'busy');
+    $('readerTitle').textContent = t(kiosk.idPhase === 'ok' ? 'cardOk' : 'reading');
+  }
+
+  function chooseEmiratesId() {
+    if (kiosk.idPhase !== 'choose') return;
+    kiosk.idPhase = 'reading';
+    renderIdStep();
+    later(() => {
+      const card = simulateCardRead();
+      Object.assign(kiosk, { idMethod: 'emirates-id', ageBand: card.ageBand, sex: card.sex, ageFromCard: true, idPhase: 'ok' });
+      renderIdStep();
+      later(() => goStep('reason'), 1000);
+    }, 1500);
+  }
+
+  function chooseTemporary() {
+    if (kiosk.idPhase !== 'choose') return;
+    Object.assign(kiosk, { idMethod: 'temporary', ageBand: null, sex: null, ageFromCard: false });
+    goStep('reason');
+  }
+
+  /* ---------- Step 2: reason + age band (+ sex without a card) ---------- */
+  // Tiles are rebuilt only when the language or step changes; a tap just flips
+  // aria-pressed, so keyboard focus stays on the tile that was pressed.
+  const TILE_GROUPS = [
+    { box: 'complaintTiles', items: COMPLAINTS, prefix: 'c_', field: 'complaint', small: false },
+    { box: 'ageTiles', items: AGE_BANDS, prefix: 'a_', field: 'ageBand', small: true },
+    { box: 'sexTiles', items: SEXES, prefix: 's_', field: 'sex', small: true },
+  ];
+
+  function tile(cfg, group) {
+    const b = el('button', group.small ? 'tile sm' : 'tile');
+    b.type = 'button';
+    b.dataset.value = cfg.key;
+    b.append(icon(cfg.icon), el('span', 'tl', t(group.prefix + cfg.key)));
+    if (T[group.prefix + cfg.key + '_s']) b.append(el('span', 'ts', t(group.prefix + cfg.key + '_s')));
+    b.addEventListener('click', () => {
+      kiosk[group.field] = cfg.key;
+      if (group.field === 'ageBand') kiosk.ageFromCard = false;
+      syncReasonStep();
+    });
+    return b;
+  }
+
+  function renderReasonStep() {
+    $('complaintTiles').setAttribute('aria-label', t('reasonTitle'));
+    for (const g of TILE_GROUPS) $(g.box).replaceChildren(...g.items.map((cfg) => tile(cfg, g)));
+    syncReasonStep();
+  }
+
+  function syncReasonStep() {
+    for (const g of TILE_GROUPS) {
+      for (const b of $(g.box).children) b.setAttribute('aria-pressed', String(kiosk[g.field] === b.dataset.value));
+    }
+    $('ageFromCard').hidden = !kiosk.ageFromCard;
+    $('sexBlock').hidden = kiosk.idMethod !== 'temporary';
+    $('btnReasonNext').disabled = !(kiosk.complaint && kiosk.ageBand);
+  }
+
+  /* ---------- Step 3: measuring ---------- */
+  const VITAL_ROWS = [
+    { key: 'bp', unit: () => 'mmHg', text: (v) => `${v.sbp}/${v.dbp}`, from: (v) => [Math.round(v.sbp * 0.6), Math.round(v.dbp * 0.6)] },
+    { key: 'hr', unit: () => t('uBpm'), text: (v) => String(v.hr) },
+    { key: 'spo2', unit: () => '%', text: (v) => String(v.spo2) },
+    { key: 'temp', unit: () => '°C', text: (v) => v.temp.toFixed(1) },
+    { key: 'rr', unit: () => t('uRr'), text: (v) => String(v.rr) },
+  ];
+  const REVEAL_AT_MS = [600, 1200, 1800, 2400, 3000];
+
+  function buildVitalCards() {
+    $('vitals').replaceChildren(...VITAL_ROWS.map((row) => {
+      const card = el('div', 'vital busy');
+      card.dataset.key = row.key;
+      const val = el('p', 'vv');
+      const bar = el('div', 'bar');
+      bar.append(el('i'));
+      card.append(el('p', 'vl'), val, bar);
+      return card;
+    }));
+  }
+
+  function renderMeasureLabels() {
+    for (const card of $('vitals').children) {
+      const row = VITAL_ROWS.find((r) => r.key === card.dataset.key);
+      card.querySelector('.vl').textContent = t(row.key);
+      if (card.classList.contains('busy')) card.querySelector('.vv').textContent = t('measuring');
+      else setVitalValue(card, row, row.text(kiosk.vitals));
+    }
+    $('mStatus').textContent = t(kiosk.measured ? 'measured' : 'measuringAll');
+    $('mStatus').className = kiosk.measured ? 'mstatus done' : 'mstatus';
+    $('btnMeasureNext').disabled = !kiosk.measured;
+  }
+
+  function setVitalValue(card, row, text) {
+    const val = card.querySelector('.vv');
+    val.replaceChildren(document.createTextNode(text), el('span', 'vu', row.unit()));
+  }
+
+  // Count the reading up to its final value, like a monitor settling.
+  function revealVital(row) {
+    const card = $('vitals').querySelector(`[data-key="${row.key}"]`);
+    if (!card) return;
+    card.classList.remove('busy');
+    card.classList.add('done');
+    const bar = card.querySelector('.bar');
+    if (bar) bar.remove();
+    const v = kiosk.vitals;
+    const finalText = row.text(v);
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { setVitalValue(card, row, finalText); return; }
+    const gen = kiosk.gen;
+    const start = performance.now();
+    const DURATION = 450;
+    const tick = (now) => {
+      if (gen !== kiosk.gen) return;
+      const k = Math.min(1, (now - start) / DURATION);
+      if (k >= 1) { setVitalValue(card, row, finalText); return; }
+      let text;
+      if (row.key === 'bp') {
+        const [s0, d0] = row.from(v);
+        text = `${Math.round(s0 + (v.sbp - s0) * k)}/${Math.round(d0 + (v.dbp - d0) * k)}`;
+      } else if (row.key === 'temp') {
+        text = (35 + (v.temp - 35) * k).toFixed(1);
+      } else {
+        const target = v[row.key];
+        text = String(Math.round(target * (0.7 + 0.3 * k)));
+      }
+      setVitalValue(card, row, text);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  function startMeasuring() {
+    kiosk.vitals = simulateVitals(kiosk.complaint, kiosk.ageBand);
+    kiosk.measured = false;
+    buildVitalCards();
+    goStep('measure');
+    VITAL_ROWS.forEach((row, i) => later(() => revealVital(row), REVEAL_AT_MS[i]));
+    later(() => {
+      kiosk.measured = true;
+      renderMeasureLabels();
+      later(finishCheckin, 2200);
+    }, REVEAL_AT_MS[REVEAL_AT_MS.length - 1] + 500);
+  }
+
+  /* ---------- Step 4: issue token, send kioskCheckin, confirm ---------- */
+  function finishCheckin() {
+    if (kiosk.step !== 'measure' || !kiosk.measured || kiosk.token) return;
+    const v = kiosk.vitals;
+    kiosk.token = issueToken();
+    kiosk.urgent = urgency(kiosk.complaint, kiosk.ageBand, v);
+    const sent = sendCommand('kioskCheckin', {
+      token: kiosk.token,
+      idMethod: kiosk.idMethod,
+      ageBand: kiosk.ageBand,
+      sex: kiosk.sex || 'unknown',
+      complaint: kiosk.complaint,
+      vitals: { hr: v.hr, sbp: v.sbp, rr: v.rr, spo2: v.spo2, temp: v.temp },
+      lang: kiosk.lang,
+    });
+    kiosk.reg = sent ? 'sending' : 'unconfirmed';
+    kiosk.doneAt = Date.now();
+    if (sent) later(() => { if (kiosk.reg === 'sending') { kiosk.reg = 'unconfirmed'; renderDone(); } }, CONFIRM_TIMEOUT_MS);
+    later(resetKiosk, DONE_RESET_MS);
+    goStep('done');
+  }
+
+  const REG_TEXT = {
+    sending: { cls: 'chip info', text: 'Sending to the ED… · جارٍ الإرسال إلى قسم الطوارئ…' },
+    registered: { cls: 'chip good', text: '✓ Registered with the ED · تم التسجيل في قسم الطوارئ' },
+    unconfirmed: { cls: 'chip warning', text: '▲ Not confirmed: please show this number at the desk · لم يتم التأكيد: يرجى إبراز هذا الرقم عند المكتب' },
+  };
+
+  function renderDone() {
+    if (!kiosk.token) return;
+    $('tokenOut').textContent = kiosk.token;
+    const why = kiosk.urgent ? URGENT_WHY[kiosk.urgent] : null;
+    $('urgentBox').hidden = !why;
+    $('calmBox').hidden = !!why;
+    $('urgentWhyEn').textContent = why ? why.en : '';
+    $('urgentWhyAr').textContent = why ? why.ar : '';
+    const reg = REG_TEXT[kiosk.reg] || REG_TEXT.sending;
+    $('regChip').className = reg.cls;
+    $('regChip').textContent = reg.text;
+  }
+
+  function kioskOnState(snap) {
+    if (kiosk.token && kiosk.reg !== 'registered' && snap.waiting.some((w) => w.token === kiosk.token)) {
+      kiosk.reg = 'registered';
+      renderDone();
+    }
+    $('downOverlay').hidden = !snap.downtime;
+  }
+
+  function renderKioskNotice() {
+    // Shown at the start of a check-in only; mid-flow the confirmation chip carries the status.
+    $('kNotice').hidden = isLive() || !(kiosk.step === 'id' || kiosk.step === 'reason');
+    if (!isLive()) $('downOverlay').hidden = true;
+  }
+
+  /* ---------- Idle handling (runs on the 1 s ticker) ---------- */
+  function kioskTick() {
+    const note = $('idleNote');
+    if (screen !== 'kiosk') { note.textContent = ''; return; }
+    const now = Date.now();
+    if (kiosk.step === 'done') {
+      const left = Math.max(0, Math.ceil((kiosk.doneAt + DONE_RESET_MS - now) / 1000));
+      note.textContent = t('idle', left);
+      return;
+    }
+    const pristine = kiosk.step === 'id' && kiosk.idPhase === 'choose' && kiosk.lang === 'en';
+    if (pristine || kiosk.step === 'measure') { note.textContent = ''; return; }
+    const left = Math.ceil((kiosk.touchedAt + KIOSK_IDLE_MS - now) / 1000);
+    if (left <= 0) { resetKiosk(); return; }
+    note.textContent = left <= 30 ? t('idle', left) : '';
+  }
+
+  /* =======================================================================
+   * LOBBY display: de-identified tokens + wait bands, "Now calling" strip.
+   * Shows token numbers only: no names, complaints, ESI levels or diagnoses.
+   * ===================================================================== */
+  const lobby = { prevTokens: null, calls: [], callSignature: null };
+
+  // Wait estimate (explainable rule, published only as a band):
+  //   the queue is served most-urgent ESI first, then longest wait;
+  //   people ahead of you minus beds free right now = beds still to come free;
+  //   each bed takes SLOT_MIN[mode] minutes to come free.
+  function estimateWaits(snap) {
+    const order = snap.waiting.slice().sort((a, b) => (a.esi - b.esi) || (b.waitMin - a.waitMin));
+    const slot = SLOT_MIN[snap.mode] || SLOT_MIN.steady;
+    return order.map((w, ahead) => ({ token: w.token, minutes: Math.max(0, ahead + 1 - snap.freeBeds) * slot }));
+  }
+  const bandFor = (minutes) => WAIT_BANDS.find((b) => minutes <= b.max) || WAIT_BANDS[WAIT_BANDS.length - 1];
+  const tokenOrder = (a, b) => a.token.localeCompare(b.token, 'en', { numeric: true });
+
+  function lobbyOnState(snap, continuous) {
+    const now = new Set(snap.waiting.map((w) => w.token).filter(Boolean));
+    if (lobby.prevTokens && continuous) {
+      const gone = [...lobby.prevTokens].filter((tok) => !now.has(tok));
+      if (gone.length > 0 && gone.length <= MAX_CALLS_PER_TICK) {
+        const at = Date.now();
+        for (const tok of gone) lobby.calls.unshift({ token: tok, at });
+        lobby.calls = lobby.calls.slice(0, 6);
+      }
+    }
+    lobby.prevTokens = now;
+    renderLobby();
+  }
+
+  // Rebuilds the strip only when its contents change, so the attention flash
+  // on a newly called number plays once and is not restarted every refresh.
+  function renderCalls() {
+    const now = Date.now();
+    lobby.calls = lobby.calls.filter((c) => now - c.at < CALL_SHOW_MS);
+    const visible = lobby.calls.slice(0, 4);
+    const signature = visible.map((c) => c.token + '@' + c.at).join('|');
+    if (signature === lobby.callSignature) return;
+    lobby.callSignature = signature;
+    const box = $('cTokens');
+    if (!visible.length) {
+      box.replaceChildren(el('p', 'cnone', '—'));
+      return;
+    }
+    box.replaceChildren(...visible.map((c, i) =>
+      el('span', 'ctok' + (i === 0 ? '' : ' old') + (i === 0 && now - c.at < 5000 ? ' fresh' : ''), c.token)));
+  }
+
+  function lobbyEmpty(enText, arText, hint) {
+    const box = $('lEmpty');
+    const parts = [langSpan('p', 'en', enText), langSpan('p', 'ar', arText)];
+    if (hint) parts.push(el('p', 'hint', hint));
+    box.replaceChildren(...parts);
+    box.hidden = false;
+    $('tokGrid').replaceChildren();
+  }
+
+  function renderLobby() {
+    if (screen !== 'lobby') return;
+    renderCalls();
+    const snap = feed.snap;
+    const live = isLive();
+    $('lHospital').textContent = snap && snap.hospital ? snap.hospital : '';
+
+    // Context banner: major incident / surge / paper downtime (no patient data)
+    const banner = $('lBanner');
+    let b = null;
+    if (live && snap && snap.downtime) {
+      b = { cls: 'critical', en: 'Paper system in use. Please listen for your number to be called.', ar: 'يُستخدم النظام الورقي حالياً. يرجى الانتباه لمناداة رقمك.' };
+    } else if (live && snap && snap.mode === 'mci') {
+      b = { cls: 'critical', en: 'A major incident is in progress. Waiting times are longer than usual.', ar: 'يجري التعامل مع حادث كبير. مدة الانتظار أطول من المعتاد.' };
+    } else if (live && snap && snap.mode === 'surge') {
+      b = { cls: 'warning', en: 'The department is very busy. Thank you for your patience.', ar: 'القسم مزدحم جداً. شكراً لصبركم.' };
+    }
+    banner.hidden = !b;
+    if (b) {
+      banner.className = 'lbanner ' + b.cls;
+      $('lBannerEn').textContent = b.en;
+      $('lBannerAr').textContent = b.ar;
+    }
+
+    if (!live || !snap) {
+      $('sWaiting').textContent = '–';
+      $('sTypical').textContent = '–';
+      $('sTypicalAr').textContent = '';
+      lobbyEmpty('Waiting for the ED system', 'بانتظار نظام الطوارئ',
+        'Staff: start the WASEL dashboard in another tab of this browser. This screen updates by itself.');
+      return;
+    }
+
+    const est = estimateWaits(snap);
+    $('sWaiting').textContent = String(snap.waiting.length);
+    if (est.length) {
+      const sorted = est.map((e) => e.minutes).sort((a, b) => a - b);
+      const typical = bandFor(sorted[Math.floor(sorted.length / 2)]);
+      $('sTypical').textContent = typical.en;
+      $('sTypicalAr').textContent = typical.ar;
+    } else {
+      $('sTypical').textContent = WAIT_BANDS[0].en;
+      $('sTypicalAr').textContent = WAIT_BANDS[0].ar;
+    }
+
+    const shown = est.filter((e) => e.token).sort(tokenOrder);
+    if (!shown.length) {
+      lobbyEmpty('No numbers waiting right now', 'لا توجد أرقام في الانتظار حالياً',
+        snap.waiting.length ? 'Patients registered at the desk are called by the nurse.' : null);
+      return;
+    }
+    $('lEmpty').hidden = true;
+    const cards = shown.slice(0, MAX_LOBBY_TOKENS).map((e) => {
+      const band = bandFor(e.minutes);
+      const card = el('div', 'tcard');
+      card.append(el('p', 'tt', e.token), langSpan('p', 'en', band.en, 'tb'), langSpan('p', 'ar', band.ar, 'tb'));
+      return card;
+    });
+    if (shown.length > MAX_LOBBY_TOKENS) {
+      const more = shown.length - MAX_LOBBY_TOKENS;
+      const card = el('div', 'tcard more');
+      card.append(langSpan('p', 'en', `+${more} more`), langSpan('p', 'ar', `+${more} أرقام أخرى`));
+      cards.push(card);
+    }
+    $('tokGrid').replaceChildren(...cards);
+  }
+
+  /* =======================================================================
+   * Wiring
+   * ===================================================================== */
+  function wire() {
+    document.querySelectorAll('[data-screen]').forEach((b) => b.addEventListener('click', () => setScreen(b.dataset.screen)));
+    document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => {
+      kiosk.lang = b.dataset.lang === 'ar' ? 'ar' : 'en';
+      kiosk.touchedAt = Date.now();
+      applyLang();
+    }));
+    document.querySelectorAll('[data-icon]').forEach((n) => n.replaceWith(icon(n.dataset.icon)));
+    $('btnEid').addEventListener('click', chooseEmiratesId);
+    $('btnTemp').addEventListener('click', chooseTemporary);
+    $('btnBack').addEventListener('click', () => {
+      Object.assign(kiosk, { idPhase: 'choose', idMethod: null, ageBand: null, sex: null, ageFromCard: false, complaint: null });
+      goStep('id');
+    });
+    $('btnReasonNext').addEventListener('click', () => { if (kiosk.complaint && kiosk.ageBand) startMeasuring(); });
+    $('btnMeasureNext').addEventListener('click', finishCheckin);
+    $('btnDone').addEventListener('click', resetKiosk);
+    $('btnRestart').addEventListener('click', resetKiosk);
+    $('kiosk').addEventListener('pointerdown', () => { kiosk.touchedAt = Date.now(); });
+    $('kiosk').addEventListener('keydown', () => { kiosk.touchedAt = Date.now(); });
+
+    const full = $('btnFull');
+    if (document.fullscreenEnabled) {
+      full.addEventListener('click', () => {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen().catch(() => {});
+      });
+    } else {
+      full.hidden = true;
+    }
+
+    window.addEventListener('hashchange', () => setScreen(location.hash.slice(1)));
+    setInterval(() => {
+      renderHeader();
+      kioskTick();
+      if (screen === 'lobby' && lobby.calls.length) renderCalls();
+    }, 1000);
+  }
+
+  wire();
+  setScreen(location.hash.slice(1) === 'lobby' ? 'lobby' : 'kiosk');
+  resetKiosk();
+  renderHeader();
+})();
+</script>
+</body>
+</html>

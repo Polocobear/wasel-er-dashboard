@@ -1,0 +1,1064 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: no third-party code and no network. This screen talks to the
+     dashboard only over same-origin BroadcastChannel (CHANNELS.md sections 4 and 5). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="WASEL stores, pharmacy and blood bank screen: stock against par level, burn rate and cover, supply request approvals with a second approver for large orders, and O-negative blood standby. Simulated data.">
+<title>WASEL · Stores &amp; Blood Bank</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d70015'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * WASEL · Stores, pharmacy and blood bank screen
+ * Same visual language as the dashboard (src/shell.html): its theme tokens,
+ * chips, panels and status colours. Status is always colour + glyph + word.
+ * Touch-first: every control is at least 44px tall; nothing needs typing.
+ * ========================================================================= */
+
+/* ---------- Theme tokens (shared with the dashboard) ---------- */
+:root {
+  color-scheme: dark;
+  --page: #000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --raised: #3a3a3c;
+  --hover: #48484a;
+  --fill: rgba(120, 120, 128, .24);
+  --fill-strong: rgba(120, 120, 128, .36);
+  --thumb: #636366;
+  --text: #f5f5f7;
+  --text-2: #aeaeb2;
+  --muted: #98989f;
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .15);
+  --accent: #0a84ff;
+  --accent-strong: #0071e3;
+  --accent-strong-hover: #0064cf;
+  --accent-fg: #409cff;
+  --accent-weak: rgba(10, 132, 255, .18);
+  --critical: #d70015;
+  --serious: #ff9f0a;
+  --warning: #ffd60a;
+  --good: #30d158;
+  --neutral: #8e8e93;
+  --on-fill: #fff;
+  --on-light-fill: #1a1a1a;
+  --critical-weak: rgba(255, 69, 58, .17);
+  --serious-weak: rgba(255, 159, 10, .16);
+  --warning-weak: rgba(255, 214, 10, .14);
+  --good-weak: rgba(48, 209, 88, .15);
+  --critical-line: rgba(255, 69, 58, .5);
+  --good-line: rgba(48, 209, 88, .55);
+  --critical-fg: #ff7a72;
+  --serious-fg: #ffb340;
+  --warning-fg: #ffd426;
+  --good-fg: #30db5b;
+  --shadow-sm: none;
+  --page-glass: rgba(0, 0, 0, .82);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --t-micro: 10.5px;
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-title: 15px;
+  --t-large: 22px;
+  --t-number: 28px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --gap: 10px;
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius: 16px;
+  --pill: 999px;
+  --touch: 44px;                 /* minimum touch target on this screen */
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f2f2f7;
+  --surface: #fff;
+  --surface-2: #f5f5f7;
+  --raised: #e8e8ed;
+  --hover: #dedee3;
+  --fill: rgba(120, 120, 128, .12);
+  --fill-strong: rgba(120, 120, 128, .2);
+  --thumb: #fff;
+  --text: #1d1d1f;
+  --text-2: #424245;
+  --muted: #6e6e73;
+  --border: rgba(0, 0, 0, .08);
+  --border-strong: rgba(0, 0, 0, .14);
+  --accent: #007aff;
+  --accent-fg: #0066cc;
+  --accent-weak: rgba(0, 122, 255, .1);
+  --serious: #ff9500;
+  --warning: #ffcc00;
+  --good: #34c759;
+  --critical-weak: rgba(255, 59, 48, .1);
+  --serious-weak: rgba(255, 149, 0, .12);
+  --warning-weak: rgba(255, 204, 0, .18);
+  --good-weak: rgba(52, 199, 89, .13);
+  --critical-line: rgba(215, 0, 21, .4);
+  --good-line: rgba(30, 123, 52, .5);
+  --critical-fg: #d70015;
+  --serious-fg: #c2410c;
+  --warning-fg: #946200;
+  --good-fg: #1e7b34;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .04), 0 2px 12px rgba(0, 0, 0, .04);
+  --page-glass: rgba(242, 242, 247, .86);
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--page); color: var(--text);
+  font: var(--t-body)/1.4 var(--font); letter-spacing: -.006em;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button { font: inherit; color: inherit; letter-spacing: inherit; }
+::selection { background: var(--accent-weak); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- App frame ---------- */
+.app { display: flex; flex-direction: column; gap: var(--gap); min-height: 100vh; max-width: 1920px; margin: 0 auto; padding: 0 var(--s4) var(--s4); }
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--touch); padding: 6px 18px; border: 0; border-radius: var(--pill);
+  background: var(--fill); color: var(--text);
+  font-size: var(--t-title); font-weight: 600; line-height: 1.2; text-align: center; cursor: pointer;
+  transition: background-color .15s ease, box-shadow .15s ease;
+}
+.btn:hover { background: var(--fill-strong); }
+.btn:active { transform: scale(.98); }
+.btn.primary { background: var(--accent-strong); color: var(--on-fill); }
+.btn.primary:hover { background: var(--accent-strong-hover); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn.icon { width: var(--touch); padding: 0; font-size: 18px; }
+
+/* ---------- Chips (status: colour + glyph + word) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 2px 9px;
+  border-radius: var(--pill); background: var(--fill); color: var(--text-2);
+  font-size: var(--t-small); font-weight: 600; line-height: 1.2; white-space: nowrap;
+  font-variant-numeric: tabular-nums; vertical-align: middle;
+}
+.chip.sm { min-height: 18px; padding: 1px 7px; font-size: var(--t-caption); gap: 4px; }
+.chip.critical { background: var(--critical); color: var(--on-fill); }
+.chip.serious { background: var(--serious-weak); color: var(--serious-fg); }
+.chip.warning { background: var(--warning-weak); color: var(--warning-fg); }
+.chip.good { background: var(--good-weak); color: var(--good-fg); }
+.chip.info { background: var(--accent-weak); color: var(--accent-fg); }
+.chip.mode { min-height: 30px; padding: 0 14px; font-weight: 700; letter-spacing: .06em; }
+.chip.mode.good { color: var(--good-fg); }
+
+/* ---------- Sticky header ---------- */
+.hdr {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s4);
+  margin-inline: calc(-1 * var(--s4)); padding: var(--s3) var(--s4);
+  background: var(--page-glass); border-bottom: 1px solid var(--border);
+  -webkit-backdrop-filter: saturate(180%) blur(16px); backdrop-filter: saturate(180%) blur(16px);
+}
+.brand { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.logo {
+  flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(180deg, #ff5b50, var(--critical));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 1px 3px rgba(0, 0, 0, .25);
+  color: var(--on-fill); font-size: 28px; font-weight: 600; line-height: 1; padding-bottom: 3px;
+}
+.brand > div { min-width: 0; }
+.brand h1 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.022em; line-height: 1.1; }
+.brand p { margin-top: 2px; font-size: var(--t-small); color: var(--text-2); }
+.simtag {
+  display: inline-block; margin-inline-start: 6px; padding: 2px 8px; border-radius: var(--pill);
+  background: var(--fill); color: var(--text-2); font-size: var(--t-micro); font-weight: 600; vertical-align: 1px;
+}
+.controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2) var(--s3); }
+.clockbox { text-align: end; }
+.clockbox small {
+  display: block; font-size: var(--t-micro); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+#clock { font-size: var(--t-number); font-weight: 600; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+#feed { min-height: 30px; white-space: normal; text-align: start; }
+
+/* ---------- Banner (stale feed, downtime) ---------- */
+#banner { display: flex; flex-direction: column; gap: var(--s2); }
+.notice {
+  display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: var(--radius-md);
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); font-size: var(--t-title); line-height: 1.4;
+}
+.notice.critical { background: var(--critical-weak); box-shadow: inset 0 0 0 1px var(--critical-line); }
+.notice.warning { background: var(--warning-weak); box-shadow: inset 0 0 0 1px var(--warning); }
+.notice b { font-weight: 700; }
+
+/* ---------- Empty state (no dashboard yet) ---------- */
+.emptystate {
+  display: grid; place-items: center; flex: 1; padding: 48px var(--s4);
+}
+.emptycard {
+  max-width: 560px; padding: 28px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm);
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.emptycard h2 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.02em; }
+.emptycard p { font-size: var(--t-title); color: var(--text-2); line-height: 1.5; }
+.emptycard ol { display: flex; flex-direction: column; gap: var(--s2); counter-reset: step; }
+.emptycard li { display: flex; gap: var(--s3); font-size: var(--t-title); line-height: 1.45; counter-increment: step; }
+.emptycard li::before {
+  content: counter(step); flex: none; width: 26px; height: 26px; border-radius: var(--pill); display: grid; place-items: center;
+  background: var(--accent-weak); color: var(--accent-fg); font-weight: 700; font-size: var(--t-small);
+}
+.waiting { display: flex; align-items: center; gap: var(--s2); color: var(--muted); }
+.waiting::before {
+  content: ""; width: 10px; height: 10px; border-radius: var(--pill); background: var(--neutral);
+}
+
+/* ---------- Layout ---------- */
+.grid {
+  display: grid; gap: var(--gap); align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+}
+.col { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+
+/* ---------- Panels ---------- */
+.panel { min-width: 0; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.ph {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3);
+  min-height: 52px; padding: var(--s3) var(--s4) var(--s2);
+}
+.ph h2 { font-size: 17px; font-weight: 650; letter-spacing: -.015em; }
+.meta { margin-inline-start: auto; font-size: var(--t-small); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pb { padding: 0 var(--s4) var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.empty { padding: 20px var(--s3); text-align: center; font-size: var(--t-title); color: var(--muted); border-radius: var(--radius-md); background: var(--surface-2); }
+.sect {
+  display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2);
+  font-size: var(--t-small); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.note {
+  display: flex; gap: var(--s2); padding: var(--s3); border-radius: var(--radius-md);
+  background: var(--surface-2); font-size: var(--t-body); color: var(--text-2); line-height: 1.45;
+}
+.note b { color: var(--text); }
+.note.info { background: var(--accent-weak); }
+.note.critical { background: var(--critical-weak); box-shadow: inset 0 0 0 1px var(--critical-line); color: var(--text); }
+
+/* ---------- Stock bar with par marker ---------- */
+.sbar { position: relative; height: 12px; margin: 6px 0 4px; border-radius: var(--pill); background: var(--fill); }
+.sbar > i { display: block; width: var(--w, 0%); max-width: 100%; height: 100%; border-radius: inherit; background: var(--good); }
+.sbar.warning > i { background: var(--warning); }
+.sbar.critical > i { background: var(--critical); }
+.sbar > b {                     /* par marker: a bar that stands proud of the track */
+  position: absolute; top: -5px; bottom: -5px; inset-inline-start: var(--p, 0%); width: 3px; margin-inline-start: -1px;
+  border-radius: 2px; background: var(--text); box-shadow: 0 0 0 1.5px var(--surface);
+}
+.sup { display: flex; flex-direction: column; gap: 4px; padding: var(--s3) var(--s4); border-radius: var(--radius-md); background: var(--surface-2); }
+.sup-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s2); }
+.sup-top h3 { font-size: var(--t-title); font-weight: 650; margin-inline-end: auto; }
+.qty { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.qty b { font-size: var(--t-number); font-weight: 650; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.qty span { font-size: var(--t-body); color: var(--text-2); }
+.facts { display: flex; flex-wrap: wrap; gap: 4px var(--s4); font-size: var(--t-body); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.facts b { color: var(--text); font-weight: 650; }
+.reason { font-size: var(--t-small); color: var(--muted); }
+.legend { display: flex; align-items: center; gap: 6px; font-size: var(--t-small); color: var(--muted); }
+.legend i { display: inline-block; width: 3px; height: 14px; border-radius: 2px; background: var(--text); }
+
+/* ---------- Blood standby ---------- */
+#p-blood.on { box-shadow: inset 0 0 0 1px var(--critical-line), var(--shadow-sm); }
+.blood-big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.blood-big b { font-size: 44px; font-weight: 700; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.blood-big span { font-size: var(--t-title); color: var(--text-2); }
+.why-list { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-body); color: var(--text-2); }
+.why-list li::before { content: "› "; color: var(--muted); }
+
+/* ---------- Request cards ---------- */
+.card {
+  position: relative; min-width: 0; display: flex; flex-direction: column; gap: var(--s2);
+  padding: var(--s3) var(--s4) var(--s4) 22px; border-radius: var(--radius-md); background: var(--surface-2);
+}
+.card::before {                 /* urgency marker */
+  content: ""; position: absolute; inset-block: 12px; inset-inline-start: 9px; width: 4px;
+  border-radius: var(--pill); background: var(--neutral);
+}
+.card.l1 { box-shadow: inset 0 0 0 1px var(--critical-line); }
+.card.l1::before { background: var(--critical); }
+.card.l2::before { background: var(--serious); }
+.card.l3::before { background: var(--accent); }
+.card.done { opacity: .82; }
+.ctype { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--t-small); font-weight: 500; color: var(--muted); }
+.ctype .rid { font-family: var(--mono); font-weight: 600; color: var(--text-2); }
+.card h3 { font-size: var(--t-title); font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
+.card p { font-size: var(--t-body); line-height: 1.45; color: var(--text-2); }
+.signed { font-size: var(--t-body); color: var(--text-2); }
+.signed b { color: var(--text); font-weight: 650; }
+
+/* Pipeline: Draft › Approved › (Second approval) › Sent › Delivered */
+.pipe { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.pipe li {
+  position: relative; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 3px 10px;
+  border-radius: var(--pill); background: transparent; box-shadow: inset 0 0 0 1px var(--border-strong);
+  font-size: var(--t-small); font-weight: 600; color: var(--muted); white-space: nowrap;
+}
+.pipe li + li::before {        /* › separator centred in the gap, outside the pill */
+  content: "›"; position: absolute; inset-inline-start: -16px; width: 16px; text-align: center;
+  color: var(--muted); font-size: 15px; font-weight: 400;
+}
+:root[dir="rtl"] .pipe li + li::before { content: "‹"; }
+.pipe li.done { color: var(--good-fg); box-shadow: inset 0 0 0 1px var(--good-line); }
+.pipe li.now { background: var(--accent-strong); box-shadow: none; color: var(--on-fill); }
+
+/* Approver tap list */
+.approve { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--border); }
+.ask { font-size: var(--t-body); font-weight: 650; color: var(--text); }
+.who { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.who .btn {
+  min-height: var(--touch); padding: 6px 10px; border-radius: var(--radius-sm);
+  font-size: var(--t-body); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong);
+  flex-direction: column; gap: 1px;
+}
+.who .btn small { font-size: var(--t-caption); font-weight: 500; color: var(--muted); }
+.who .btn[aria-pressed="true"] { background: var(--accent-weak); box-shadow: inset 0 0 0 2px var(--accent); color: var(--text); }
+.go { width: 100%; }
+.hint { font-size: var(--t-small); color: var(--muted); }
+.hint.bad { color: var(--critical-fg); font-weight: 600; }
+
+/* ---------- Footer ---------- */
+.foot {
+  margin-top: auto; padding: var(--s3) var(--s4); border-radius: var(--radius-md); background: var(--surface);
+  font-size: var(--t-body); color: var(--text-2); line-height: 1.5;
+}
+.foot b { color: var(--text); }
+
+/* ---------- Motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------- Windows high contrast ---------- */
+@media (forced-colors: active) {
+  .chip, .sbar, .pipe li, .card, .who .btn { border: 1px solid CanvasText; }
+  .sbar > i, .sbar > b { background: CanvasText; }
+  .who .btn[aria-pressed="true"], .pipe li.now { outline: 2px solid Highlight; }
+}
+
+/* ---------- ≤1100px: one column ---------- */
+@media (max-width: 1100px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- ≤640px: phone ---------- */
+@media (max-width: 640px) {
+  .app { padding: 0 var(--s3) var(--s3); }
+  .hdr { margin-inline: calc(-1 * var(--s3)); padding: var(--s2) var(--s3); }
+  .brand h1 { font-size: 19px; }
+  .controls { justify-content: flex-start; width: 100%; }
+  .clockbox { text-align: start; margin-inline-end: auto; order: -1; }
+  .ph, .pb { padding-inline: var(--s3); }
+  .sup, .card { padding-inline-end: var(--s3); }
+  .who { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .blood-big b { font-size: 38px; }
+  .emptycard { padding: var(--s5); }
+}
+</style>
+</head>
+<body>
+<noscript><p class="empty">This screen needs JavaScript to mirror the WASEL dashboard.</p></noscript>
+<div class="app">
+
+  <header class="hdr">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">+</div>
+      <div>
+        <h1>Stores &amp; blood bank</h1>
+        <p>WASEL · <span id="hospital">Waiting for the dashboard</span> <span class="simtag">Simulated data</span></p>
+      </div>
+    </div>
+    <div class="controls">
+      <span id="mode" class="chip mode" role="status" hidden></span>
+      <span id="feed" class="chip critical" role="status"><span aria-hidden="true">■</span> No feed (start the dashboard in another tab)</span>
+      <div class="clockbox">
+        <small>Sim time</small>
+        <div id="clock">--:--</div>
+      </div>
+      <button type="button" id="theme" class="btn icon" data-act="theme" data-key="theme" aria-label="Switch to light theme" title="Switch theme"><span aria-hidden="true">◐</span></button>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+
+  <section id="empty" class="emptystate" aria-labelledby="emptyTitle">
+    <div class="emptycard">
+      <h2 id="emptyTitle">Waiting for the WASEL dashboard</h2>
+      <p id="emptyLead">This screen mirrors the dashboard. It runs no simulation of its own, so it stays empty until the dashboard is open.</p>
+      <ol>
+        <li>Open the WASEL dashboard (index.html) in another tab of this browser.</li>
+        <li>Stock, supply requests and blood standby appear here within 2 seconds.</li>
+        <li>Approve orders by tapping who you are, then Approve. There is nothing to type.</li>
+      </ol>
+      <p class="waiting">Listening for the dashboard…</p>
+    </div>
+  </section>
+
+  <main id="main" class="grid" hidden>
+    <div class="col">
+      <section class="panel" id="p-blood" aria-labelledby="h-blood">
+        <header class="ph"><h2 id="h-blood">Blood standby</h2><span id="bloodChip"></span></header>
+        <div class="pb" id="blood"></div>
+      </section>
+      <section class="panel" id="p-stock" aria-labelledby="h-stock">
+        <header class="ph"><h2 id="h-stock">Stock vs par level</h2><span class="meta" id="stockMeta"></span></header>
+        <div class="pb" id="stock"></div>
+      </section>
+    </div>
+    <section class="panel" id="p-req" aria-labelledby="h-req">
+      <header class="ph"><h2 id="h-req">Supply requests</h2><span class="meta" id="reqMeta"></span></header>
+      <div class="pb" id="requests"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <b>WASEL never orders or dispatches anything without a human approval.</b>
+    Every request waits here until a named role taps Approve, and large or unusual orders need a second, different approver.
+    Only stock levels, request numbers and patient counts reach this screen, never names or records.
+  </footer>
+</div>
+<div id="live" class="sr-only" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+/* WASEL · stores, pharmacy and blood bank screen.
+ *
+ * Mirrors the dashboard through BroadcastChannel('wasel-state') (CHANNELS.md §4)
+ * and sends approvals back on BroadcastChannel('wasel-command') (§5). It runs no
+ * simulation and keeps nothing about patients: it sees stock, request ids and
+ * counts only, and nothing is written to storage except the theme choice.
+ *
+ * Every message is untrusted input: it is shape-checked, length-capped and
+ * rendered with textContent, never parsed as HTML.
+ *
+ * The rules on this screen are deliberately simple and shown to the user:
+ *   stock   Critical  = under 20 min of cover, or at most 10% of capacity
+ *           Below par = fewer units than the par level, or under 45 min of cover
+ *   blood   Standby ON = SURGE or MCI mode, or any ESI 1 / START red patient inbound
+ *   orders  qty >= 20 (or flagged unusual by the dashboard) needs a second approver,
+ *           who must be a different role from the first
+ */
+(function () {
+  const STALE_MS = 6000;            // no state for this long: the dashboard is gone
+  const CONFIRM_MS = 8000;          // how long a tap waits for the dashboard to reflect it
+  const RESTART_MS = 60000;         // a much older timestamp means the dashboard restarted
+  const KEEP_MS = 10 * 60000;       // finished requests stay visible this long (wall time)
+  const KEEP_MAX = 8;               // and at most this many of them
+  const LARGE_QTY = 20;             // CHANNELS.md §5: qty >= 20 needs a second approver
+  const PACK_UNITS = 4;             // O-negative units in one emergency-release pack
+  const THEME_KEY = 'ercc.theme';   // shared with the dashboard on the same origin
+  const ID_RE = /^[A-Za-z0-9_.:-]{1,40}$/;
+  const startedAt = Date.now();
+
+  const APPROVERS = ['Stores lead', 'Pharmacist', 'Blood bank officer', 'Charge nurse'];
+  const MODES = {
+    steady: ['good', '●', 'STEADY'], strain: ['warning', '◆', 'STRAIN'],
+    surge: ['serious', '▲', 'SURGE'], mci: ['critical', '■', 'MCI'],
+  };
+  const LEVELS = { 1: ['critical', '■', 'Urgent'], 2: ['serious', '▲', 'Soon'], 3: ['info', '●', 'Routine'] };
+
+  // Bridge status words → pipeline stage. Unknown words are inferred from the approvals.
+  const STATUS = {
+    draft: 'draft', pending: 'draft', open: 'draft', new: 'draft', suggested: 'draft',
+    'awaiting-second': 'second',
+    approved: 'approved',
+    accepted: 'sent', sent: 'sent', ordered: 'sent', dispatched: 'sent',
+    delivered: 'delivered', received: 'delivered', done: 'delivered',
+    dismissed: 'closed', rejected: 'closed', expired: 'closed', cancelled: 'closed',
+  };
+  const STAGE_CHIP = {
+    draft: ['warning', '◆', 'Needs approval'],
+    second: ['serious', '▲', 'Needs a second approver'],
+    approved: ['info', '●', 'Approved · sending'],
+    sent: ['info', '●', 'Sent · on the way'],
+    delivered: ['good', '✓', 'Delivered'],
+    closed: ['', '○', 'Closed on the dashboard'],
+  };
+  const ACTIONABLE = { draft: true, second: true };
+
+  const ui = {
+    state: null,          // last validated snapshot (see readState)
+    lastTs: 0,            // dashboard timestamp of that snapshot
+    lastAt: 0,            // local receipt time, for the feed chip
+    requests: [],         // current requests plus recently finished ones
+    known: new Map(),     // id -> {r, gone, doneAt}: lets a request be followed to delivery
+    pending: new Map(),   // id -> {action, approver, at}: taps not yet reflected by the dashboard
+    notes: new Map(),     // id -> message shown under a card (e.g. no confirmation)
+    chosen: new Map(),    // id -> approver picked on that card
+    lastApprover: '',     // pre-selects the same person on the next card (memory only)
+    sigs: {},             // region name -> inputs it was last drawn from (see render)
+    holdingSince: 0,      // when a finger or button went down: the request cards wait to redraw
+  };
+
+  /* ---------- Small helpers ---------- */
+  const $ = sel => document.querySelector(sel);
+  const str = (v, max) => (typeof v === 'string' ? v.slice(0, max || 160) : '');
+  const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const list = v => (Array.isArray(v) ? v : []);
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
+  const fmtNum = n => (Math.abs(n) < 10 && n % 1 ? n.toFixed(1) : String(Math.round(n)));
+  const pctOf = (a, b) => Math.max(0, Math.min(100, (a / b) * 100)).toFixed(1) + '%';
+
+  // Builds DOM without HTML parsing: strings become text nodes, `style` sets custom properties.
+  function el(tag, props, ...kids) {
+    const n = document.createElement(tag);
+    if (props) {
+      for (const k of Object.keys(props)) {
+        const v = props[k];
+        if (v == null || v === false) continue;
+        if (k === 'class') n.className = v;
+        else if (k === 'style') for (const p of Object.keys(v)) n.style.setProperty(p, v[p]);
+        else if (k === 'disabled') n.disabled = true;
+        else n.setAttribute(k, v === true ? '' : String(v));
+      }
+    }
+    for (const c of kids.flat(2)) {
+      if (c == null || c === false || c === '') continue;
+      n.append(typeof c === 'object' ? c : document.createTextNode(String(c)));
+    }
+    return n;
+  }
+  function chip(kind, glyph, text, small) {
+    return el('span', { class: 'chip' + (kind ? ' ' + kind : '') + (small ? ' sm' : '') },
+      glyph ? el('span', { 'aria-hidden': 'true' }, glyph) : null, glyph ? ' ' + text : text);
+  }
+  function fmtCover(min) {
+    if (min == null) return 'stable';
+    if (min < 1) return 'under 1 min';
+    if (min >= 24 * 60) return 'over 24 h';
+    const h = Math.floor(min / 60), m = Math.round(min % 60);
+    return h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
+  }
+  function announce(text) {
+    const live = $('#live');
+    live.textContent = '';
+    setTimeout(() => { live.textContent = text; }, 60);
+  }
+  function hexId(bytes) {
+    const a = new Uint8Array(bytes);
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') window.crypto.getRandomValues(a);
+    else for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256);
+    return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /* ---------- Reading the state snapshot (CHANNELS.md §4) ---------- */
+  function readSupply(o) {
+    if (!o || typeof o !== 'object') return null;
+    const key = str(o.key, 40), qty = num(o.qty);
+    if (!ID_RE.test(key) || qty == null) return null;
+    const par = num(o.par), cap = num(o.cap), perHour = num(o.perHour), minutesLeft = num(o.minutesLeft);
+    return {
+      key, label: str(o.label, 60) || key, unit: str(o.unit, 16) || 'units',
+      qty: Math.max(0, Math.round(qty)),
+      par: par != null && par > 0 ? Math.round(par) : null,
+      cap: cap != null && cap > 0 ? Math.round(cap) : null,
+      perHour: perHour != null && perHour >= 0 ? perHour : null,
+      minutesLeft: minutesLeft != null && minutesLeft >= 0 ? Math.round(minutesLeft) : null,
+      pending: o.pending === true,
+    };
+  }
+  function readRequest(o) {
+    if (!o || typeof o !== 'object') return null;
+    const id = str(o.id, 40);
+    if (!ID_RE.test(id)) return null;
+    const qty = num(o.qty);
+    const approvals = list(o.approvals).filter(a => typeof a === 'string' && a).map(a => a.slice(0, 40)).slice(0, 4);
+    const flagged = o.needsSecond === true || (qty != null && qty >= LARGE_QTY);
+    let stage = STATUS[str(o.status, 32).toLowerCase()];
+    if (!stage) stage = !approvals.length ? 'draft' : flagged && approvals.length === 1 ? 'second' : 'approved';
+    return {
+      id, item: str(o.item, 40), title: str(o.title, 200) || 'Supply request ' + id, why: str(o.why, 400),
+      level: o.level === 1 || o.level === 2 || o.level === 3 ? o.level : 2,
+      qty: qty != null && qty > 0 ? Math.round(qty) : null,
+      needsSecond: flagged || stage === 'second', large: qty != null && qty >= LARGE_QTY,
+      approvals, stage, gone: false,
+    };
+  }
+  function readState(m) {
+    const critical = list(m.inbound).filter(a => a && typeof a === 'object'
+      && (a.esi === 1 || (a.priority && typeof a.priority === 'object' && a.priority.level === 'red')));
+    const etas = critical.map(a => num(a.etaMin)).filter(v => v != null && v >= 0);
+    const cap = m.capacity && typeof m.capacity === 'object' ? m.capacity : {};
+    return {
+      simClock: str(m.simClock, 8),
+      hospital: str(m.hospital, 80),
+      mode: MODES[m.mode] ? m.mode : 'steady',
+      modeReason: str(m.modeReason, 200),
+      downtime: m.downtime === true,
+      supplies: list(m.supplies).map(readSupply).filter(Boolean).slice(0, 40),
+      requests: list(m.requests).map(readRequest).filter(Boolean).slice(0, 60),
+      criticalInbound: critical.length,
+      firstCriticalEta: etas.length ? Math.round(Math.min(...etas)) : null,
+      oNegCapacity: num(cap.oNeg),
+    };
+  }
+
+  /* ---------- Following requests through to delivery ----------
+   * After the final approval the dashboard may stop listing a request. While it is
+   * gone, its item's `pending` flag tells us it is on the way, and the flag clearing
+   * tells us it arrived. A request that vanishes with no restock pending was closed
+   * on the dashboard. */
+  function trackRequests(current, supplies) {
+    const now = Date.now(), seen = new Set();
+    for (const r of current) {
+      seen.add(r.id);
+      const done = r.stage === 'delivered' || r.stage === 'closed';
+      const prev = ui.known.get(r.id);
+      ui.known.set(r.id, { r, gone: false, doneAt: done ? (prev && prev.doneAt) || now : 0 });
+    }
+    for (const [id, k] of ui.known) {
+      if (seen.has(id)) continue;
+      const sp = supplies.find(s => s.key === k.r.item);
+      let stage = k.r.stage;
+      if (ACTIONABLE[stage] || stage === 'approved') stage = sp && sp.pending ? 'sent' : 'closed';
+      else if (stage === 'sent' && !(sp && sp.pending)) stage = 'delivered';
+      const done = stage === 'delivered' || stage === 'closed';
+      k.r = Object.assign({}, k.r, { stage, gone: true });
+      k.gone = true;
+      if (done && !k.doneAt) k.doneAt = now;
+      if (done && now - k.doneAt > KEEP_MS) ui.known.delete(id);
+    }
+    const finished = [...ui.known.values()].filter(k => k.gone || k.doneAt).sort((a, b) => (b.doneAt || now) - (a.doneAt || now));
+    for (const k of finished.slice(KEEP_MAX)) ui.known.delete(k.r.id);
+    return [...ui.known.values()].map(k => k.r);
+  }
+
+  // A tap is settled once the next snapshot shows the request has moved on.
+  function settlePending() {
+    for (const [id, p] of ui.pending) {
+      const r = ui.requests.find(x => x.id === id);
+      const moved = !r || r.gone || (p.action === 'approveRequest' ? r.stage !== 'draft' : r.stage !== 'second');
+      if (!moved) continue;
+      ui.pending.delete(id);
+      ui.notes.delete(id);
+      if (!r || r.stage === 'closed') announce(`${id} was closed on the dashboard.`);
+      else if (r.stage === 'second') announce(`${id} approved by ${p.approver}. A second, different approver is needed.`);
+      else announce(`${id} approved by ${p.approver}. The order is on its way.`);
+    }
+  }
+
+  /* ---------- Commands (CHANNELS.md §5) ---------- */
+  const canAct = () => !!ui.state && !isStale() && !ui.state.downtime;
+  const isStale = () => !ui.lastAt || Date.now() - ui.lastAt > STALE_MS;
+  // A press lasts well under 3 s; the cap stops a release outside the window from freezing the cards.
+  const isHolding = () => ui.holdingSince > 0 && Date.now() - ui.holdingSince < 3000;
+  const blockedFor = (r, who) => r.stage === 'second' && r.approvals.indexOf(who) !== -1;
+  function chosenFor(r) {
+    const picked = ui.chosen.get(r.id);
+    const who = picked || ui.lastApprover;
+    return who && !blockedFor(r, who) ? who : '';
+  }
+  function send(action, args, role) {
+    if (!commandChannel) return false;
+    commandChannel.postMessage({ type: 'command', v: 1, id: 'cmd-' + hexId(6), from: 'supply', role, action, args });
+    return true;
+  }
+  function approve(id) {
+    const r = ui.requests.find(x => x.id === id && !x.gone);
+    if (!r || !ACTIONABLE[r.stage] || ui.pending.has(id) || !canAct()) return;
+    const who = chosenFor(r);
+    if (!who) return;
+    const action = r.stage === 'second' ? 'secondApprove' : 'approveRequest';
+    if (!send(action, { id, approver: who }, who)) return;
+    ui.pending.set(id, { action, approver: who, at: Date.now() });
+    ui.notes.delete(id);
+    ui.chosen.delete(id);
+    ui.lastApprover = who;
+    announce(`Sending ${action === 'secondApprove' ? 'second approval' : 'approval'} for ${id} as ${who}.`);
+    render();
+  }
+  function pick(id, who) {
+    if (APPROVERS.indexOf(who) === -1) return;
+    const r = ui.requests.find(x => x.id === id);
+    if (!r || blockedFor(r, who)) return;
+    ui.chosen.set(id, who);
+    render();
+  }
+
+  /* ---------- Rendering ---------- */
+  function supplyStatus(s) {
+    const cover = coverOf(s);
+    if (s.qty <= 0) return ['critical', '■', 'Out of stock', 'Nothing left on the shelf'];
+    if (cover != null && cover < 20) return ['critical', '■', 'Critical', 'Under 20 min of cover at the current burn rate'];
+    if (s.cap && s.qty <= s.cap * 0.1) return ['critical', '■', 'Critical', 'At or below 10% of capacity'];
+    if (s.par != null && s.qty < s.par) return ['warning', '◆', 'Below par', `${plural(s.par - s.qty, 'unit')} under the par level of ${s.par}`];
+    if (cover != null && cover < 45) return ['warning', '◆', 'Low cover', 'Under 45 min of cover at the current burn rate'];
+    return ['good', '●', 'At par', s.par != null ? `At or above the par level of ${s.par}` : 'Stock is healthy'];
+  }
+  function coverOf(s) {
+    if (s.minutesLeft != null) return s.minutesLeft;
+    return s.perHour ? Math.round((s.qty / s.perHour) * 60) : null;
+  }
+  function stockBar(s, level) {
+    const scale = s.cap || Math.max(s.qty, s.par || 0, 1) * 1.25;
+    return el('div', { class: 'sbar ' + level, 'aria-hidden': 'true' },
+      el('i', { style: { '--w': pctOf(s.qty, scale) } }),
+      s.par != null ? el('b', { style: { '--p': pctOf(s.par, scale) } }) : null);
+  }
+  function burnFacts(s) {
+    const cover = coverOf(s);
+    return el('div', { class: 'facts' },
+      el('span', null, 'Burn ', el('b', null, s.perHour != null ? `${fmtNum(s.perHour)} ${s.unit}/h` : 'not reported')),
+      el('span', null, 'Cover ', el('b', null, cover == null ? 'stable (no recent use)' : fmtCover(cover))));
+  }
+
+  // 'live' | 'connecting' (first few seconds after opening) | 'none'
+  function feedState() {
+    if (!isStale()) return 'live';
+    return !ui.lastAt && Date.now() - startedAt < STALE_MS ? 'connecting' : 'none';
+  }
+  const FEED_CHIP = {
+    live: ['good', '●', 'Live'],
+    connecting: ['info', '●', 'Connecting…'],
+    none: ['critical', '■', 'No feed (start the dashboard in another tab)'],
+  };
+
+  function renderHeader() {
+    const s = ui.state;
+    $('#hospital').textContent = s && s.hospital ? s.hospital : 'Waiting for the dashboard';
+    $('#clock').textContent = s && s.simClock ? s.simClock : '--:--';
+
+    const [fk, fg, ft] = FEED_CHIP[feedState()];
+    const feed = $('#feed');
+    feed.className = 'chip ' + fk;
+    feed.replaceChildren(el('span', { 'aria-hidden': 'true' }, fg), ' ' + ft);
+
+    const mode = $('#mode');
+    mode.hidden = !s;
+    if (s) {
+      const [kind, glyph, word] = MODES[s.mode];
+      mode.className = 'chip mode ' + kind;
+      mode.replaceChildren(el('span', { 'aria-hidden': 'true' }, glyph), ' ' + word);
+      mode.title = s.modeReason || word + ' mode';
+      mode.setAttribute('aria-label', `Operating mode: ${word}` + (s.modeReason ? `. ${s.modeReason}` : ''));
+    }
+  }
+
+  function renderBanner() {
+    const s = ui.state, notes = [];
+    if (s && isStale()) {
+      notes.push(el('div', { class: 'notice warning' }, el('span', { 'aria-hidden': 'true' }, '◆'),
+        el('div', null, el('b', null, 'No feed from the dashboard. '),
+          `Showing the last snapshot${s.simClock ? ' from ' + s.simClock : ''}. Approvals are paused until the dashboard is running again.`)));
+    }
+    if (s && s.downtime) {
+      notes.push(el('div', { class: 'notice critical' }, el('span', { 'aria-hidden': 'true' }, '■'),
+        el('div', null, el('b', null, 'Downtime mode: WASEL is read-only. '),
+          'Use the paper requisition and phone the blood bank. Approvals on this screen are paused.')));
+    }
+    $('#banner').replaceChildren(...notes);
+  }
+
+  function findBlood(supplies) {
+    return supplies.find(x => x.key === 'blood') || supplies.find(x => /o.?neg/i.test(x.label)) || null;
+  }
+  function renderBlood() {
+    const s = ui.state;
+    const blood = findBlood(s.supplies);
+    const qty = blood ? blood.qty : s.oNegCapacity;
+    const surge = s.mode === 'surge' || s.mode === 'mci';
+    const reasons = [];
+    if (surge) reasons.push(`${MODES[s.mode][2]} mode is active`);
+    if (s.criticalInbound) {
+      reasons.push(`${plural(s.criticalInbound, 'critical patient')} inbound (ESI 1 / START red)`
+        + (s.firstCriticalEta != null ? `, first in ${s.firstCriticalEta} min` : ''));
+    }
+    const on = reasons.length > 0;
+    $('#p-blood').classList.toggle('on', on);
+    $('#bloodChip').replaceChildren(on ? chip('critical', '■', 'Standby ON') : chip('good', '●', 'Routine'));
+
+    const body = [];
+    if (qty == null) {
+      body.push(el('p', { class: 'empty' }, 'The dashboard is not reporting O-negative stock.'));
+    } else {
+      const packs = Math.floor(qty / PACK_UNITS);
+      const st = blood ? supplyStatus(blood) : null;
+      body.push(el('div', { class: 'blood-big' }, el('b', null, String(qty)), el('span', null, 'O-negative units on hand'),
+        st ? chip(st[0], st[1], st[2]) : null,
+        blood && blood.pending ? chip('info', '●', 'Restock on the way') : null));
+      if (blood) body.push(stockBar(blood, st[0]));
+      const facts = [el('span', null, el('b', null, `≈ ${plural(packs, 'emergency pack')}`), ` of ${PACK_UNITS} units`)];
+      if (blood && blood.par != null) facts.push(el('span', null, 'Par ', el('b', null, String(blood.par))));
+      if (blood) {
+        const cover = coverOf(blood);
+        facts.push(el('span', null, 'Cover ', el('b', null, cover == null ? 'stable (no recent use)' : fmtCover(cover))));
+      }
+      body.push(el('div', { class: 'facts' }, facts));
+      if (on && packs < s.criticalInbound) {
+        body.push(el('div', { class: 'note critical', role: 'alert' }, el('span', { 'aria-hidden': 'true' }, '■'),
+          el('span', null, el('b', null, 'Not enough O-negative for one pack per critical patient. '),
+            `${plural(packs, 'pack')} for ${plural(s.criticalInbound, 'critical patient')} inbound. Approve the blood request below or call the regional blood bank.`)));
+      }
+    }
+    body.push(on
+      ? el('ul', { class: 'why-list', 'aria-label': 'Why standby is on' }, reasons.map(r => el('li', null, r)))
+      : el('p', { class: 'reason' }, 'No critical patient inbound and the ED is not in surge. Normal issue rules apply.'));
+
+    const open = blood && ui.requests.find(r => r.item === blood.key && r.stage !== 'delivered' && r.stage !== 'closed');
+    if (open) {
+      const [k, g, t] = STAGE_CHIP[open.stage];
+      body.push(el('div', { class: 'facts' }, el('span', null, 'Blood request ', el('b', { class: 'num' }, open.id)), chip(k, g, t, true)));
+    }
+    body.push(el('p', { class: 'reason' },
+      `Rule: standby turns on in SURGE or MCI mode, or when any ESI 1 / START red patient is inbound. One emergency pack = ${PACK_UNITS} O-negative units.`));
+    $('#blood').replaceChildren(...body);
+  }
+
+  function renderStock() {
+    const s = ui.state, items = s.supplies;
+    let short = 0;
+    const cards = items.map(sp => {
+      const [kind, glyph, word, why] = supplyStatus(sp);
+      if (kind !== 'good') short++;
+      const limits = [sp.par != null ? `par ${sp.par}` : '', sp.cap != null ? `max ${sp.cap}` : ''].filter(Boolean).join(' · ');
+      return el('article', { class: 'sup', 'aria-label': `${sp.label}: ${sp.qty} ${sp.unit}, ${word}` },
+        el('div', { class: 'sup-top' }, el('h3', null, sp.label), chip(kind, glyph, word),
+          sp.pending ? chip('info', '●', 'Restock on the way', true) : null),
+        el('div', { class: 'qty' }, el('b', null, String(sp.qty)), el('span', null, sp.unit + (limits ? ' · ' + limits : ''))),
+        stockBar(sp, kind),
+        burnFacts(sp),
+        el('p', { class: 'reason' }, why));
+    });
+    $('#stockMeta').textContent = !items.length ? '' : short ? `${short} of ${items.length} need attention` : 'All at or above par';
+
+    const body = [];
+    if (s.mode === 'surge' || s.mode === 'mci') {
+      body.push(el('div', { class: 'note info' }, el('span', { 'aria-hidden': 'true' }, '▲'),
+        el('span', null, el('b', null, 'Surge burn-rate includes expected casualties. '),
+          'Burn and cover count the patients already inbound, not just what was used so far.')));
+    }
+    if (items.length) {
+      body.push(el('p', { class: 'legend' }, el('i', { 'aria-hidden': 'true' }), 'marks the par level; the bar shows stock against capacity'));
+      body.push(...cards);
+    } else {
+      body.push(el('p', { class: 'empty' }, 'The dashboard is not reporting any stock yet.'));
+    }
+    $('#stock').replaceChildren(...body);
+  }
+
+  function pipeline(r) {
+    const steps = ['Draft', 'Approved'];
+    if (r.needsSecond) steps.push('Second approval');
+    steps.push('Sent', 'Delivered');
+    // The highlighted step is where the request is now; 'approved' and 'sent' both sit at Sent.
+    const at = { draft: 0, second: 2, approved: steps.length - 2, sent: steps.length - 2, delivered: steps.length, closed: -1 }[r.stage];
+    return el('ol', { class: 'pipe', 'aria-label': 'Request progress' }, steps.map((name, i) => {
+      const cls = i < at ? 'done' : i === at ? 'now' : '';
+      return el('li', { class: cls || null, 'aria-current': i === at ? 'step' : null },
+        el('span', { 'aria-hidden': 'true' }, i < at ? '✓' : i === at ? '●' : '○'), ' ' + name,
+        el('span', { class: 'sr-only' }, i < at ? ' (done)' : i === at ? ' (current)' : ''));
+    }));
+  }
+
+  function approvePanel(r) {
+    const second = r.stage === 'second';
+    const first = r.approvals[0] || '';
+    const who = chosenFor(r);
+    const pending = ui.pending.get(r.id);
+    const askId = 'ask-' + r.id.replace(/[^A-Za-z0-9_-]/g, '_');
+    const live = canAct();
+    const buttons = APPROVERS.map(name => {
+      const same = second && r.approvals.indexOf(name) !== -1;
+      return el('button', {
+        type: 'button', class: 'btn', 'data-act': 'pick', 'data-id': r.id, 'data-who': name,
+        'data-key': `pick:${r.id}:${name}`, 'aria-pressed': String(who === name),
+        disabled: same || !!pending || !live,
+      }, name, same ? el('small', null, 'gave 1st approval') : null);
+    });
+    const label = pending ? 'Sending to the dashboard…'
+      : !who ? (second ? 'Pick a different person to approve' : 'Pick who is approving')
+      : `${second ? 'Second approve' : 'Approve'} ${r.qty ? r.qty + ' ' : ''}as ${who}`;
+    const hints = [];
+    if (second && first) hints.push(el('p', { class: 'hint' }, `${first} gave the first approval, so a different person must give the second.`));
+    if (!live && ui.state && ui.state.downtime) hints.push(el('p', { class: 'hint bad' }, 'Paused: downtime mode. Use the paper requisition.'));
+    else if (!live) hints.push(el('p', { class: 'hint bad' }, 'Paused: no feed from the dashboard.'));
+    if (ui.notes.has(r.id)) hints.push(el('p', { class: 'hint bad', role: 'alert' }, ui.notes.get(r.id)));
+    return el('div', { class: 'approve' },
+      el('p', { class: 'ask', id: askId }, second ? 'Who is giving the second approval?' : 'Who is approving?'),
+      el('div', { class: 'who', role: 'group', 'aria-labelledby': askId }, buttons),
+      el('button', {
+        type: 'button', class: 'btn primary go', 'data-act': 'approve', 'data-id': r.id, 'data-key': 'approve:' + r.id,
+        disabled: !who || !!pending || !live,
+      }, label),
+      hints);
+  }
+
+  function requestCard(r, itemLabel, unit) {
+    const [lk, lg, lt] = LEVELS[r.level];
+    const [sk, sg, st] = STAGE_CHIP[r.stage];
+    const done = r.stage === 'delivered' || r.stage === 'closed';
+    const tags = [];
+    if (r.qty) tags.push(chip('', '', `${r.qty} ${unit}`, true));
+    if (r.needsSecond) tags.push(chip('warning', '◆', r.large ? 'Large order · 2 approvers' : 'Unusual order · 2 approvers', true));
+    return el('article', { class: `card l${r.level}${done ? ' done' : ''}`, 'aria-labelledby': 'rt-' + r.id.replace(/[^A-Za-z0-9_-]/g, '_') },
+      el('div', { class: 'ctype' }, el('span', { class: 'rid' }, r.id), itemLabel ? '· ' + itemLabel : null,
+        done ? null : chip(lk, lg, lt, true), chip(sk, sg, st, true)),
+      el('h3', { id: 'rt-' + r.id.replace(/[^A-Za-z0-9_-]/g, '_') }, r.title),
+      r.why ? el('p', null, r.why) : null,
+      tags.length ? el('div', { class: 'ctype' }, tags) : null,
+      pipeline(r),
+      r.approvals.length ? el('p', { class: 'signed' }, 'Approved by ', el('b', null, r.approvals.join(' and '))) : null,
+      ACTIONABLE[r.stage] && !r.gone ? approvePanel(r) : null);
+  }
+
+  function renderRequests() {
+    const s = ui.state;
+    const bySupply = new Map(s.supplies.map(sp => [sp.key, sp]));
+    const rank = { second: 0, draft: 1, approved: 2, sent: 3, delivered: 4, closed: 5 };
+    const reqs = ui.requests.slice().sort((a, b) => rank[a.stage] - rank[b.stage] || a.level - b.level || (a.id < b.id ? -1 : 1));
+    const groups = [
+      ['Waiting for approval', reqs.filter(r => ACTIONABLE[r.stage])],
+      ['On the way', reqs.filter(r => r.stage === 'approved' || r.stage === 'sent')],
+      ['Finished', reqs.filter(r => r.stage === 'delivered' || r.stage === 'closed')],
+    ];
+    const waiting = groups[0][1].length;
+    $('#reqMeta').textContent = waiting ? `${waiting} waiting for approval` : 'Nothing to approve';
+
+    const body = [el('div', { class: 'note' }, el('span', { 'aria-hidden': 'true' }, '◆'),
+      el('span', null, el('b', null, 'Large or unusual orders need a second approver. '),
+        `Orders of ${LARGE_QTY} or more units, or ones the dashboard flags as unusual, need two different people: the same role cannot approve twice. Smaller orders go out after one approval.`))];
+    if (!reqs.length) {
+      body.push(el('p', { class: 'empty' }, 'No supply requests. WASEL drafts one here when stock runs low or burns faster than it can be restocked.'));
+    }
+    for (const [title, items] of groups) {
+      if (!items.length) continue;
+      body.push(el('h3', { class: 'sect' }, `${title} (${items.length})`));
+      for (const r of items) {
+        const sp = bySupply.get(r.item);
+        body.push(requestCard(r, sp ? sp.label : r.item, sp ? sp.unit : 'units'));
+      }
+    }
+    $('#requests').replaceChildren(...body);
+  }
+
+  // Each region is rebuilt only when its own inputs change. The request cards hold
+  // the buttons, so they must not be rebuilt by the 2-second clock or stock ticks:
+  // a tap that straddles a rebuild would be lost. Focus is handed back to the same
+  // control, so keyboard and switch users are not thrown out either.
+  function region(name, inputs, draw) {
+    const sig = JSON.stringify(inputs);
+    if (ui.sigs[name] === sig || (name === 'requests' && isHolding())) return;
+    ui.sigs[name] = sig;
+    draw();
+  }
+  function render() {
+    const s = ui.state, feed = feedState();
+    const active = document.activeElement;
+    const focusKey = active && active.dataset ? active.dataset.key || '' : '';
+
+    region('header', [s && [s.hospital, s.simClock, s.mode, s.modeReason, s.downtime], feed], () => {
+      renderHeader();
+      renderBanner();
+      $('#empty').hidden = !!s;
+      $('#main').hidden = !s;
+    });
+    if (s) {
+      region('blood', [s.mode, s.criticalInbound, s.firstCriticalEta, s.oNegCapacity, findBlood(s.supplies),
+        ui.requests.map(r => [r.id, r.item, r.stage])], renderBlood);
+      region('stock', [s.mode, s.supplies], renderStock);
+      region('requests', [ui.requests, s.supplies.map(sp => [sp.key, sp.label, sp.unit]), canAct(), s.downtime,
+        [...ui.pending.keys()], [...ui.chosen], [...ui.notes], ui.lastApprover], renderRequests);
+    }
+    if (focusKey && document.activeElement !== active) {
+      const again = Array.from(document.querySelectorAll('[data-key]')).find(n => n.dataset.key === focusKey);
+      if (again && !again.disabled) again.focus({ preventScroll: true });
+    }
+  }
+
+  /* ---------- Feed ---------- */
+  function onState(ev) {
+    const m = ev.data;
+    if (!m || typeof m !== 'object' || m.type !== 'state' || m.v !== 1) return;
+    const ts = num(m.ts);
+    if (ts == null) return;
+    if (ui.lastTs && ts <= ui.lastTs && ui.lastTs - ts < RESTART_MS) return;   // duplicate or out of order
+    ui.lastTs = ts;
+    ui.lastAt = Date.now();
+    ui.state = readState(m);
+    ui.requests = trackRequests(ui.state.requests, ui.state.supplies);
+    settlePending();
+    render();
+  }
+
+  // Once a second: feed freshness and taps the dashboard never confirmed.
+  function tick() {
+    const now = Date.now();
+    for (const [id, p] of ui.pending) {
+      if (now - p.at < CONFIRM_MS) continue;
+      ui.pending.delete(id);
+      ui.notes.set(id, 'The dashboard did not confirm this approval. Check it is running, then tap Approve again.');
+      announce(`${id}: the dashboard did not confirm the approval.`);
+    }
+    render();
+  }
+
+  /* ---------- Theme (same stored choice as the dashboard) ---------- */
+  function applyTheme(theme) {
+    const light = theme === 'light';
+    document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+    const b = $('#theme');
+    b.setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
+  }
+  function storedTheme() {
+    try { return window.localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; }
+  }
+  function toggleTheme() {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    try { window.localStorage.setItem(THEME_KEY, next); } catch (e) { /* storage blocked: the choice lasts this visit */ }
+  }
+
+  /* ---------- Wiring ---------- */
+  document.addEventListener('click', ev => {
+    const b = ev.target instanceof Element ? ev.target.closest('button[data-act]') : null;
+    if (!b || b.disabled) return;
+    const act = b.dataset.act;
+    if (act === 'theme') toggleTheme();
+    else if (act === 'pick') pick(b.dataset.id, b.dataset.who);
+    else if (act === 'approve') approve(b.dataset.id);
+  });
+  // Hold redraws of the request cards while a pointer is down, so the button under the
+  // finger survives until its click. The deferred render runs after that click.
+  document.addEventListener('pointerdown', () => { ui.holdingSince = Date.now(); }, true);
+  const release = () => { ui.holdingSince = 0; setTimeout(render, 0); };
+  document.addEventListener('pointerup', release, true);
+  document.addEventListener('pointercancel', release, true);
+
+  applyTheme(storedTheme());
+  let commandChannel = null;
+  if (typeof BroadcastChannel === 'function') {
+    const stateChannel = new BroadcastChannel('wasel-state');
+    stateChannel.onmessage = onState;
+    commandChannel = new BroadcastChannel('wasel-command');
+  } else {
+    $('#emptyLead').textContent = 'This browser cannot talk to the dashboard (no BroadcastChannel support). Open this screen in a current version of Chrome, Edge, Safari or Firefox.';
+  }
+  render();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

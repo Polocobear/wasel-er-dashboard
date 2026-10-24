@@ -80,6 +80,11 @@ const UI_API = Object.freeze({
   // Engine conveniences beyond the spec; this layer has its own fallback for each
   placeOrder: typeof waselOrder === 'function' ? waselOrder : null,
   declareMci: typeof waselDeclareMci === 'function' ? waselDeclareMci : null,
+  // v3 low-friction flow (CHANNELS.md)
+  receiveIncident: typeof receiveIncident === 'function' ? receiveIncident : null,
+  capacitySnapshot: typeof capacitySnapshot === 'function' ? capacitySnapshot : null,
+  routedAway: typeof waselRoutedAway === 'function' ? waselRoutedAway : null,
+  triageWhy: typeof waselTriageWhy === 'function' ? waselTriageWhy : null,
 });
 // Calls an optional helper; a missing or failing helper returns undefined so one bad frame never stops the loop.
 function uiCall(name, ...args) {
@@ -200,6 +205,19 @@ const I18N = {
     't.glass': 'Break-glass access granted. Reason logged.', 't.noChart': 'IT / Admin: no chart rights. Attempt logged.',
     't.wallBlocked': 'Wall display: no access to patient records. Attempt logged.', 't.recordClosed': 'Patient record closed: {role} has no access to it.',
     't.gone': 'That patient is no longer in the department.', 't.signedIn': 'Signed in as {role}', 't.roleNA': 'This role is not available in this build.',
+    // v3: focus / calm views, responder sliders, routed elsewhere, dispatch incidents
+    'view.focus': 'Focus', 'view.calm': 'Calm view',
+    'view.tipFocus': 'Focus view: only pre-alerts, decisions, patients and beds. Press again for the full board.',
+    'view.tipCalm': 'Calm wall view: journey, beds and inbound only. Press again for the full board.',
+    'pa.sliders': 'Priority by responder sliders:', 'pa.noFlags': 'all sliders in normal range', 'pa.whyHere': 'Why here: {r}',
+    'pa.live': 'LIVE', 'pa.liveTip': 'Updated by the responder in the last 20 seconds',
+    'in.routed': 'Routed elsewhere', 'in.routedN': '{n} routed elsewhere', 'in.noBed': 'no bed reserved here',
+    'j.unconfirmed': 'unconfirmed',
+    'dec.more': '+{n} more in the full view', 'dec.showAll': 'Show all',
+    't.routed': 'Pre-alert {enc} routed elsewhere: no bed reserved here',
+    't.incident': 'Dispatch call {id} received: {name}', 't.incidentUpd': 'Dispatch call {id} updated',
+    't.incidentClosed': 'Dispatch call {id} has already stood down', 't.incidentBad': 'Dispatch call rejected: {err}',
+    't.incidentNA': 'Dispatch receiver is not available in this build.',
   },
   ar: {
     'app.title': 'لوحة قيادة الطوارئ', 'app.sub': 'لوحة قيادة الطوارئ · المستشفى العام التجريبي', 'app.sim': 'بيانات محاكاة',
@@ -306,6 +324,18 @@ const I18N = {
     't.glass': 'مُنح الوصول الطارئ وسُجّل السبب.', 't.noChart': 'تقنية المعلومات / الإدارة: لا صلاحية لفتح السجل الطبي. سُجّلت المحاولة.',
     't.wallBlocked': 'شاشة العرض: لا وصول إلى سجلات المرضى. سُجّلت المحاولة.', 't.recordClosed': 'أُغلق سجل المريض: لا صلاحية لدور {role}.',
     't.gone': 'لم يعد هذا المريض في القسم.', 't.signedIn': 'تم الدخول بدور {role}', 't.roleNA': 'هذا الدور غير متاح في هذا الإصدار.',
+    'view.focus': 'تركيز', 'view.calm': 'عرض هادئ',
+    'view.tipFocus': 'وضع التركيز: الإنذارات المسبقة والقرارات والمرضى والأسرّة فقط. اضغط مجددًا لعرض اللوحة كاملة.',
+    'view.tipCalm': 'عرض هادئ لشاشة الحائط: المسار والأسرّة والقادمون فقط. اضغط مجددًا لعرض اللوحة كاملة.',
+    'pa.sliders': 'الأولوية حسب مؤشرات المسعف:', 'pa.noFlags': 'كل المؤشرات ضمن المعدل الطبيعي', 'pa.whyHere': 'سبب التوجيه إلى هنا: {r}',
+    'pa.live': 'مباشر', 'pa.liveTip': 'حدّثه المسعف خلال آخر 20 ثانية',
+    'in.routed': 'وُجّه إلى مستشفى آخر', 'in.routedN': 'موجّهون إلى مستشفى آخر: {n}', 'in.noBed': 'لم يُحجز سرير هنا',
+    'j.unconfirmed': 'غير مؤكد',
+    'dec.more': '+{n} أخرى في العرض الكامل', 'dec.showAll': 'عرض الكل',
+    't.routed': 'الإنذار المسبق {enc} وُجّه إلى مستشفى آخر: لم يُحجز سرير هنا',
+    't.incident': 'استُلم بلاغ الإسعاف {id}: {name}', 't.incidentUpd': 'حُدّث بلاغ الإسعاف {id}',
+    't.incidentClosed': 'بلاغ الإسعاف {id} أُغلق بالفعل', 't.incidentBad': 'رُفض بلاغ الإسعاف: {err}',
+    't.incidentNA': 'مستقبِل بلاغات الإسعاف غير متاح في هذا الإصدار.',
   },
 };
 // Translate a static label; {name} placeholders are filled from vars. Unknown keys fall back to English, then the key.
@@ -329,6 +359,10 @@ const UI_LOCK_MS = 5 * 60 * 1000;      // automatic logoff for clinical roles
 const UI_CHART_MS = 1500;              // occupancy chart redraw throttle
 const UI_THEME_KEY = 'ercc.theme';
 const UI_LANG_KEY = 'wasel.lang';      // only UI preferences are ever stored, never patient data
+const UI_VIEW_KEY = 'wasel.view';      // 'focus' | 'full' for clinical roles; the wall display opens in its calm view
+const UI_LIVE_MS = 20 * 1000;          // a pre-alert the responder updated this recently shows a LIVE dot
+const UI_CAPACITY_MS = 5 * 1000;       // capacity broadcast to responders and dispatch (CHANNELS.md §3)
+const UI_FOCUS_CARDS = 5;              // decision cards shown in the focus view
 const UI_MINUS = '−';
 const UI_REASON_MIN = 10;              // break-glass and override reasons
 const UI_REASON_MAX = 200;
@@ -347,6 +381,10 @@ const UI = {
   glass: new Set(),        // patient ids opened by break-glass in this sign-in
   order: null,             // {pid, drug, kind, reason}: last medication check in the drawer
   demoSeq: 0, channel: null,
+  focus: false,            // focus view for clinical roles (persisted preference)
+  wallFull: false,         // wall display showing the full board instead of its calm view (this sign-in only)
+  live: new Map(),         // encounter id -> wall-clock ms of the responder's last update (LIVE dot)
+  incChannel: null, capChannel: null, capMode: null,
 };
 
 /* ---------- Small helpers ---------- */
@@ -387,6 +425,11 @@ function bedView() {
 }
 function byPriority(list) {
   return list.map(p => [p, priority(p)]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+}
+// Board layout: 'full' (every panel), 'focus' (what a clinician acts on) or 'calm' (read-only wall display)
+function uiLayout() {
+  if (prefs.role === 'wall') return UI.wallFull ? 'full' : 'calm';
+  return UI.focus ? 'focus' : 'full';
 }
 
 /* ---------- Privacy: name & MRN masking by role (minimum necessary) ---------- */
@@ -495,9 +538,11 @@ function renderJourney() {
   const boost = S.walkBoost && now < S.walkBoost.until ? S.walkBoost.rate : 0;
   const every = 1 / (1 / 7 + boost);
   const walk = t('j.walk', { n: every >= 2 ? Math.round(every) : every.toFixed(1) }) + (boost ? t('j.surgeTag') : '');
+  // A dispatch call stays "unconfirmed" until the first crew reaches the scene
+  const incName = inc ? inc.name + (inc.unconfirmed ? ' (' + t('j.unconfirmed') + ')' : '') : '';
   let subs1;
-  if (mci) subs1 = [t('j.mci', { name: inc ? inc.name : t('j.mciNoInc') }), inc ? inc.place + ' · ' + t('j.via', { via: inc.via }) : walk];
-  else if (inc) subs1 = [inc.name + ' · ' + inc.place, t('j.via', { via: inc.via })];
+  if (mci) subs1 = [t('j.mci', { name: inc ? incName : t('j.mciNoInc') }), inc ? inc.place + ' · ' + t('j.via', { via: inc.via }) : walk];
+  else if (inc) subs1 = [incName + ' · ' + inc.place, t('j.via', { via: inc.via })];
   else subs1 = [t('j.noIncident'), walk];
   const t1 = journeyTile(1, t('j.1'), inc || mci ? 'critical' : 'good', S.incidents.length, tn('j.inc', S.incidents.length), subs1);
 
@@ -613,13 +658,44 @@ function atmistFull(p) {
   if (!a) return condInfo(p).label;
   return [a.mechanism, a.injuries, atmistSigns(a, p), a.treatment].filter(Boolean).join(' · ');
 }
+// "● LIVE" while the responder app updated this pre-alert in the last 20 s (text + colour)
+function liveDot(enc) {
+  const at = UI.live.get(enc);
+  if (!at || Date.now() - at >= UI_LIVE_MS) return '';
+  return html`<span class="live" title="${t('pa.liveTip')}"><i aria-hidden="true"></i>${t('pa.live')}</span>`;
+}
+// The responder's own priority ({system, level}) as text + status colour, e.g. RED or ESI 2
+function fieldPriorityText(fp) {
+  if (!fp) return '';
+  const START_LVL = { red: 'critical', yellow: 'warning', green: 'good', black: 'muted' };
+  const ESI_LVL = { 1: 'critical', 2: 'serious', 3: 'warning', 4: 'good', 5: 'muted' };
+  if (fp.system === 'START' && START_LVL[fp.level]) return html`<b class="tx-${START_LVL[fp.level]}">${t('st.' + fp.level)}</b>`;
+  if (fp.system === 'ESI' && ESI_LVL[fp.level]) return html`<b class="tx-${ESI_LVL[fp.level]}">ESI ${fp.level}</b>`;
+  return '';
+}
+// "Priority by responder sliders: RED · responds to voice only · breathing laboured · …" (sliders sent only)
+function slidersLine(fp, triage) {
+  const label = fieldPriorityText(fp);
+  if (!label || !triage) return '';
+  const why = uiCall('triageWhy', triage);
+  const reasons = Array.isArray(why) && why.length ? why.slice(0, 3).join(' · ') : t('pa.noFlags');
+  return html`<span class="pa-why" dir="auto">${t('pa.sliders')} ${label} · ${reasons}</span>`;
+}
 // Brief view (wall display, IT): encounter id + priority only; ETA sits on the ambulance row.
 function preAlertRow(p, brief) {
   const enc = uiEnc(p);
-  if (brief) return html`<span class="pa">${priorityChip(p)} <b>${enc}</b></span>`;
+  if (brief) return html`<span class="pa">${priorityChip(p)} <b>${enc}</b>${liveDot(enc)}</span>`;
   const flags = safetyChips(p);
   const line = atmistLine(p) || condInfo(p).label;
-  return html`<button type="button" class="pa" data-act="patient" data-id="${p.id}" aria-label="${enc}, ${atmistFull(p)}. ${t('pt.open')}"><span class="pa-top">${priorityChip(p)}<b>${enc}</b>${identityChip(p)}</span><span class="pa-line" dir="auto" title="${atmistFull(p)}">${line}</span>${flags.length ? html`<span class="pa-flags">${flags}</span>` : ''}</button>`;
+  const dest = p.destination && p.destination.reason ? html`<span class="pa-dest" dir="auto">${t('pa.whyHere', { r: p.destination.reason })}</span>` : '';
+  return html`<button type="button" class="pa" data-act="patient" data-id="${p.id}" aria-label="${enc}, ${atmistFull(p)}. ${t('pt.open')}"><span class="pa-top">${priorityChip(p)}<b>${enc}</b>${identityChip(p)}${liveDot(enc)}</span>${slidersLine(p.fieldPriority, p.triage)}${dest}<span class="pa-line" dir="auto" title="${atmistFull(p)}">${line}</span>${flags.length ? html`<span class="pa-flags">${flags}</span>` : ''}</button>`;
+}
+// Pre-alert the responder routed to another hospital: shown for awareness, nothing is reserved here
+function routedCard(r, brief) {
+  const dest = r.destination || {};
+  const etaMin = mins(r.eta - S.t);
+  const to = html`<div class="pa-dest" dir="auto">→ ${dest.hospital}${!brief && dest.reason ? ' · ' + dest.reason : ''}</div>`;
+  return html`<div class="amb routed"><div class="amb-top"><b>${r.encounter}</b>${liveDot(r.encounter)}<span class="muted">○ ${t('in.routed')} · ${t('in.noBed')}</span><span class="eta">${etaMin < 1 ? t('in.arriving') : t('in.eta', { n: etaMin })}</span></div>${to}${brief ? '' : slidersLine(r.priority, r.triage)}</div>`;
 }
 function ambCard(a, brief) {
   const inc = S.incidents.find(i => i.id === a.incident);
@@ -643,15 +719,19 @@ function ambCard(a, brief) {
   return html`<div class="amb"><div class="amb-top"><b>${a.id}</b><span class="muted">${state}${inc ? ' · ' + inc.id : ''}</span><span class="eta">${etaMin < 1 ? t('in.arriving') : t('in.eta', { n: etaMin })}</span></div><div class="bar" aria-hidden="true"><i style="width:${Math.round(progress)}%"></i></div><div class="pas${brief ? ' brief' : ''}">${pts.map(p => preAlertRow(p, brief))}</div>${prep}</div>`;
 }
 function renderInbound() {
-  const list = S.ambulances.filter(a => a.status !== 'arrived')
+  // A pre-alert rerouted by the responder shows once, as its routed-elsewhere card
+  const list = S.ambulances.filter(a => a.status !== 'arrived' && !a.routedTo)
     .sort((a, b) => (a.status === 'diverted') - (b.status === 'diverted') || a.eta - b.eta);
   const active = list.filter(a => a.status !== 'diverted');
+  const routed = (uiCall('routedAway') || []).slice().sort((a, b) => a.eta - b.eta);
   const nPts = active.reduce((s, a) => s + a.pts.length, 0);
-  setText($('#inboundMeta'), active.length ? tn('in.pts', nPts) + ' · ' + tn('in.ambs', active.length) : t('in.none'));
+  const meta = active.length ? tn('in.pts', nPts) + ' · ' + tn('in.ambs', active.length) : t('in.none');
+  setText($('#inboundMeta'), meta + (routed.length ? ' · ' + t('in.routedN', { n: routed.length }) : ''));
   const emsLive = S.src.ems && S.src.ems.status === 'live';
   const brief = !ROLES[prefs.role].detail;   // wall display and IT: no clinical detail
-  setHTML($('#inbound'), list.length
-    ? html`${list.map(a => ambCard(a, brief))}`
+  for (const [enc, at] of UI.live) if (Date.now() - at >= UI_LIVE_MS) UI.live.delete(enc);
+  setHTML($('#inbound'), list.length || routed.length
+    ? html`${list.map(a => ambCard(a, brief))}${routed.map(r => routedCard(r, brief))}`
     : html`<p class="empty">${t('in.empty')} ${emsLive ? t('in.emsLive') : t('in.emsOff')}</p>`);
 }
 
@@ -868,8 +948,14 @@ function renderDecisions() {
     showEl(btn, nPlace > 0 && canAct('placement'));
     setText(btn, t('dec.acceptAll', { n: nPlace }));
   }
+  // Focus view: the most urgent cards only, with a one-tap way back to the whole queue
+  const shown = uiLayout() === 'focus' ? list.slice(0, UI_FOCUS_CARDS) : list;
+  const more = list.length - shown.length;
+  const moreRow = more > 0
+    ? html`<p class="more">${t('dec.more', { n: more })} <button type="button" class="btn ghost sm" data-act="view" data-id="full">${t('dec.showAll')}</button></p>`
+    : '';
   setHTML($('#decisions'), list.length
-    ? html`<div class="cards">${list.map(decisionCard)}</div>`
+    ? html`<div class="cards">${shown.map(decisionCard)}</div>${moreRow}`
     : html`<p class="empty">${t('dec.empty', { p: S.patients.length, b: S.beds.length, f: SOURCES.length })}</p>`);
 }
 
@@ -959,7 +1045,7 @@ function renderChart(force) {
   svg.setAttribute('aria-label', 'Bed occupancy over the last 60 minutes and 30-minute forecast. Now ' + Math.round(nowPt.v) + '%.' +
     (peak != null ? ' Forecast peak ' + peak + '%.' : '') +
     (fc.fullIn == null ? ' No overflow forecast.' : fc.fullIn === 0 ? ' At capacity now.' : ' Full in about ' + fc.fullIn + ' minutes.'));
-  setHTML(svg, html`${grid.map(v => html`<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}" style="stroke:var(--grid);stroke-width:1"/><text x="${pad.l - 6}" y="${f1(Y(v) + 3.5)}" text-anchor="end" style="${axisStyle}">${v}%</text>`)}${xTicks.map(m => html`<text x="${f1(X(m))}" y="${H - 6}" text-anchor="${m === -60 ? 'start' : m === 30 ? 'end' : 'middle'}" style="${axisStyle}">${xLabel(m)}</text>`)}${histArea ? html`<path d="${histArea}" style="fill:var(--accent);opacity:.12"/>` : ''}${overflow ? html`<path d="${overflow}" style="fill:var(--critical-weak)"/>` : ''}<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(100))}" y2="${f1(Y(100))}" style="stroke:var(--critical);stroke-width:1.5;stroke-dasharray:2 3"/><text x="${W - pad.r - 2}" y="${f1(Y(100) - 4)}" text-anchor="end" style="fill:var(--critical);font-size:10px;font-weight:600">${t('ch.cap')}</text><line x1="${f1(X(0))}" x2="${f1(X(0))}" y1="${pad.t}" y2="${H - pad.b}" style="stroke:var(--text-2);stroke-width:1;stroke-dasharray:3 3"/><path d="${path(hist)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round"/>${fcp.length ? html`<path d="${path(fcp)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round"/>` : ''}<circle cx="${f1(X(0))}" cy="${f1(Y(nowPt.v))}" r="3.5" style="fill:var(--accent)"/>`);
+  setHTML(svg, html`${grid.map(v => html`<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}" style="stroke:var(--grid);stroke-width:1"/><text x="${pad.l - 6}" y="${f1(Y(v) + 3.5)}" text-anchor="end" style="${axisStyle}">${v}%</text>`)}${xTicks.map(m => html`<text x="${f1(X(m))}" y="${H - 6}" text-anchor="${m === -60 ? 'start' : m === 30 ? 'end' : 'middle'}" style="${axisStyle}">${xLabel(m)}</text>`)}${histArea ? html`<path d="${histArea}" style="fill:var(--accent);opacity:.12"/>` : ''}${overflow ? html`<path d="${overflow}" style="fill:var(--critical-weak)"/>` : ''}<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(100))}" y2="${f1(Y(100))}" style="stroke:var(--critical);stroke-width:1.5;stroke-dasharray:2 3"/><text x="${W - pad.r - 2}" y="${f1(Y(100) - 4)}" text-anchor="end" style="fill:var(--critical-fg);font-size:10px;font-weight:600">${t('ch.cap')}</text><line x1="${f1(X(0))}" x2="${f1(X(0))}" y1="${pad.t}" y2="${H - pad.b}" style="stroke:var(--text-2);stroke-width:1;stroke-dasharray:3 3"/><path d="${path(hist)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round"/>${fcp.length ? html`<path d="${path(fcp)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round"/>` : ''}<circle cx="${f1(X(0))}" cy="${f1(Y(nowPt.v))}" r="3.5" style="fill:var(--accent)"/>`);
 
   UI.geo = { X, Y, pad, pw, W, H, hist, fc: fcp };
   positionHover();
@@ -1316,7 +1402,7 @@ function dataMapModal() {
       : chipHTML('critical', s.id === 'beds' && S.bedsFallback ? '○ Offline · backup sensors' : '○ Offline', 'sm');
     return html`<tr><th scope="row">${s.name}</th><td>${s.std}</td><td>${s.feeds}</td><td>${s.panel}</td><td>${status}</td></tr>`;
   });
-  return [t('dm.title', { n: live, m: SOURCES.length }), html`<p>Ten hospital systems → integration gateway (normalised to HL7 FHIR R4, coded with LOINC and ICD-10-CM) → this dashboard. Nothing is entered twice; every panel cites its source.</p><table><thead><tr><th scope="col">${t('dm.src')}</th><th scope="col">${t('dm.std')}</th><th scope="col">${t('dm.data')}</th><th scope="col">${t('dm.shown')}</th><th scope="col">${t('dm.status')}</th></tr></thead><tbody>${rows}</tbody></table><p class="muted">Responder app (face-ID): pre-alerts arrive on the same-origin BroadcastChannel "wasel-prealert" or through window.WASEL.receivePreAlert(), in the documented ATMIST message shape. Names, images and Emirates ID numbers are never accepted.</p>`];
+  return [t('dm.title', { n: live, m: SOURCES.length }), html`<p>Ten hospital systems → integration gateway (normalised to HL7 FHIR R4, coded with LOINC and ICD-10-CM) → this dashboard. Nothing is entered twice; every panel cites its source.</p><table><thead><tr><th scope="col">${t('dm.src')}</th><th scope="col">${t('dm.std')}</th><th scope="col">${t('dm.data')}</th><th scope="col">${t('dm.shown')}</th><th scope="col">${t('dm.status')}</th></tr></thead><tbody>${rows}</tbody></table><p class="muted">Responder app (face-ID): pre-alerts arrive on the same-origin BroadcastChannel "wasel-prealert" or through window.WASEL.receivePreAlert(), in the documented ATMIST message shape. Names, images and Emirates ID numbers are never accepted.</p><p class="muted">Dispatch (call-taker): confirmed calls arrive on "wasel-incident" with no caller identity. Capacity out: every 5 s and on each mode change this dashboard broadcasts free beds, ICU, O-negative blood, CT and diversion on "wasel-capacity", never patient data.</p>`];
 }
 function renderModal() {
   if (!UI.modal) return;
@@ -1467,8 +1553,10 @@ function uiReceivePreAlert(msg) {
     return { ok: false, error: 'not an object' };
   }
   const r = uiCall('receivePreAlert', msg) || { ok: false, error: 'invalid message' };
-  if (r.ok) toast(t(r.updated ? 't.prealertUpd' : 't.prealert', { enc: r.encounter || '' }));
-  else toast(t('t.prealertBad', { err: String(r.error || 'invalid message').slice(0, 120) }));
+  if (r.ok) {
+    if (r.encounter) UI.live.set(r.encounter, Date.now());
+    toast(t(r.routed ? 't.routed' : r.updated ? 't.prealertUpd' : 't.prealert', { enc: r.encounter || '' }));
+  } else toast(t('t.prealertBad', { err: String(r.error || 'invalid message').slice(0, 120) }));
   if (S) render();
   return r;
 }
@@ -1492,6 +1580,10 @@ function demoPreAlert() {
     priority: { system: 'ESI', level: 2 },
     etaMin: 8,
     safety: { allergies: ['Penicillin'], anticoagulant: false, bloodType: 'O+', source: 'Riayati', asOf: '2026-03-14' },
+    // CHANNELS.md §2: the responder's sliders and the destination the responder app chose
+    triage: { avpu: 'V', breathing: 'laboured', bleeding: 'heavy-controlled', perfusion: 'weak-fast', pain: 7,
+      regions: ['chest', 'pelvis'], burnsPct: 0, ageBand: 'adult' },
+    destination: { hospital: 'Demo General Hospital', reason: 'Trauma bay free · O-neg ' + S.sup.blood.qty + ' · 8 min', etaMin: 8 },
   };
 }
 function wirePreAlerts() {
@@ -1499,7 +1591,55 @@ function wirePreAlerts() {
     UI.channel = new BroadcastChannel('wasel-prealert');
     UI.channel.onmessage = e => uiReceivePreAlert(e.data);
   } catch (err) { /* BroadcastChannel unavailable (e.g. some file:// contexts): window.WASEL still works */ }
-  window.WASEL = Object.freeze({ receivePreAlert: msg => uiReceivePreAlert(msg) });
+  window.WASEL = Object.freeze({
+    receivePreAlert: msg => uiReceivePreAlert(msg),
+    receiveIncident: msg => uiReceiveIncident(msg),
+    capacity: () => uiCall('capacitySnapshot', Date.now()) || null,
+  });
+}
+
+/* ---------- Dispatch calls in, capacity out (CHANNELS.md §1 and §3) ---------- */
+// receiveIncident() validates the call and ignores undocumented fields (no caller identity); this only reports.
+function uiReceiveIncident(msg) {
+  if (!UI_API.receiveIncident) {
+    toast(t('t.incidentNA'));
+    return { ok: false, error: 'incident receiver not available' };
+  }
+  if (!msg || typeof msg !== 'object') {
+    toast(t('t.incidentBad', { err: 'not an object' }));
+    return { ok: false, error: 'not an object' };
+  }
+  const r = uiCall('receiveIncident', msg) || { ok: false, error: 'invalid message' };
+  if (r.ok) {
+    const inc = S.incidents.find(i => i.id === r.id);
+    const key = r.updated === false ? 't.incidentClosed' : r.updated ? 't.incidentUpd' : 't.incident';
+    toast(t(key, { id: r.id, name: inc ? inc.name + ' · ' + inc.place : '' }));
+  } else toast(t('t.incidentBad', { err: String(r.error || 'invalid message').slice(0, 120) }));
+  if (S) render();
+  return r;
+}
+// Only capacity leaves the hospital: the §3 snapshot has no patient fields at all
+function broadcastCapacity() {
+  if (!UI.capChannel || !S) return;
+  const snap = uiCall('capacitySnapshot', Date.now());
+  if (!snap) return;
+  try { UI.capChannel.postMessage(snap); } catch (err) { /* channel closed or message not cloneable: next tick retries */ }
+}
+// Mode changes go out at once, not at the next 5 s tick
+function broadcastOnModeChange() {
+  if (UI.capMode === S.mode) return;
+  UI.capMode = S.mode;
+  broadcastCapacity();
+}
+function wireDispatch() {
+  try {
+    UI.incChannel = new BroadcastChannel('wasel-incident');
+    UI.incChannel.onmessage = e => uiReceiveIncident(e.data);
+  } catch (err) { /* BroadcastChannel unavailable: window.WASEL.receiveIncident still works */ }
+  try {
+    UI.capChannel = new BroadcastChannel('wasel-capacity');
+  } catch (err) { UI.capChannel = null; /* responders fall back to their own simulated capacity */ }
+  setInterval(broadcastCapacity, UI_CAPACITY_MS);
 }
 
 /* ---------- Controls, theme, language, auto-lock ---------- */
@@ -1540,6 +1680,31 @@ function toggleLang() {
   applyLang(UI.lang === 'ar' ? 'en' : 'ar');
   try { localStorage.setItem(UI_LANG_KEY, UI.lang); } catch (err) { /* storage blocked: language applies to this session only */ }
 }
+// Header "Focus" (clinical roles) / "Calm view" (wall display) toggle; want 'full' always shows the whole board
+function toggleView(want) {
+  if (prefs.role === 'wall') {
+    UI.wallFull = want === 'full' ? true : !UI.wallFull;
+    return;
+  }
+  UI.focus = want === 'full' ? false : !UI.focus;
+  try { localStorage.setItem(UI_VIEW_KEY, UI.focus ? 'focus' : 'full'); } catch (err) { /* storage blocked: view applies to this session only */ }
+}
+// body[data-view] drives the layout in the shell CSS; the button states what is on, in text
+function applyView() {
+  const view = uiLayout();
+  if (document.body && document.body.dataset.view !== view) {
+    document.body.dataset.view = view;
+    UI.chartAt = 0;
+  }
+  const b = $('#view');
+  if (!b) return;
+  const wall = prefs.role === 'wall';
+  setText(b, t(wall ? 'view.calm' : 'view.focus'));
+  const pressed = String(view !== 'full');
+  if (b.getAttribute('aria-pressed') !== pressed) b.setAttribute('aria-pressed', pressed);
+  const tip = t(wall ? 'view.tipCalm' : 'view.tipFocus');
+  if (b.title !== tip) b.title = tip;
+}
 function syncControls() {
   const sp = $('#speed');
   if (sp && document.activeElement !== sp && sp.value !== String(S.speed)) sp.value = String(S.speed);
@@ -1552,12 +1717,15 @@ function syncControls() {
     au.title = au.disabled ? 'Policy can be changed by ' + approverLabels('placement') : '';
   }
   if (document.body && document.body.dataset.role !== prefs.role) document.body.dataset.role = prefs.role;
+  applyView();
 }
-// Sign-out: a role change ends any break-glass grants and pending order state
+// Sign-out: a role change ends any break-glass grants and pending order state.
+// The wall display always comes back in its calm view.
 function setRole(role) {
   prefs.role = role;
   UI.glass.clear();
   UI.order = null;
+  UI.wallFull = false;
 }
 function checkAutoLock() {
   if (!ROLES[prefs.role].detail) return;
@@ -1588,6 +1756,9 @@ function handleAction(el) {
     case 'lang':
       toggleLang();
       break;
+    case 'view':
+      toggleView(id === 'full' ? 'full' : null);
+      break;
     case 'scenario':
       if (!SCEN[id]) return;
       runScenario(id);
@@ -1597,6 +1768,7 @@ function handleAction(el) {
       if (UI.modal) closeModal();
       init();
       UI.glass.clear();
+      UI.live.clear();
       UI.lastTick = Date.now();
       UI.chartAt = 0;
       toast('Simulation reset');
@@ -1789,6 +1961,7 @@ function wireEvents() {
   }
   window.addEventListener('resize', () => renderChart(true));
   wirePreAlerts();
+  wireDispatch();
 }
 
 /* ---------- Loop & render ---------- */
@@ -1808,6 +1981,7 @@ function render() {
   renderAnnouncements();
   renderModal();
   syncControls();
+  broadcastOnModeChange();
 }
 function loop() {
   const now = Date.now();
@@ -1827,7 +2001,8 @@ function readPref(key, allowed, fallback) {
 }
 function boot() {
   UI.lang = readPref(UI_LANG_KEY, ['en', 'ar'], 'en');
-  applyTheme(readPref(UI_THEME_KEY, ['light', 'dark'], 'dark'));
+  UI.focus = readPref(UI_VIEW_KEY, ['focus', 'full'], 'full') === 'focus';
+  applyTheme(readPref(UI_THEME_KEY, ['light', 'dark'], 'light'));
   applyLang(UI.lang);
   init();
   wireEvents();

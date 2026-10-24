@@ -229,6 +229,7 @@ function stillValid(s) {
     case 'needvent': return !!p && p.needsVent && !p.vent;
     case 'outage': return S.bedsOffline && !S.bedsFallback;
     case 'identity': case 'lwbs': case 'surge': return waselStillValid(s);
+    case 'trauma': case 'transfer': return typeof readinessStillValid === 'function' && readinessStillValid(s);
     default: return false;
   }
 }
@@ -432,6 +433,8 @@ function aiPlan() {
 
   // 12b. WASEL: confirm candidate identities at the door; lobby leave-without-being-seen risk
   waselPlan();
+  // 12c. Readiness: trauma activation rules and burns transfers (16-readiness.js)
+  if (typeof readinessPlan === 'function') readinessPlan();
 
   // 13. Auto-accept policy covers bed placements only
   if (prefs.autoAccept) for (const s of S.sugg.slice()) if (s.type === 'placement') accept(s, 'auto');
@@ -541,6 +544,9 @@ function accept(s, actor) {
     }
     case 'identity': case 'lwbs': case 'surge':
       if (!waselAccept(s, actor)) return false;
+      break;
+    case 'trauma': case 'transfer':
+      if (typeof readinessAccept !== 'function' || !readinessAccept(s, actor)) return false;
       break;
     default: return false;
   }

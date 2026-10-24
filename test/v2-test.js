@@ -59,14 +59,14 @@ const MODES = MODE_RULES.order;
 const rank = m => MODES.indexOf(m);
 const OWNERS = ['Receiving nurse', 'Charge nurse', 'Physician', 'ED coordinator'];
 const OWNER0 = { placement: 'Receiving nurse', prearrival: 'Receiving nurse', identity: 'Receiving nurse', lwbs: 'Receiving nurse',
-  retriage: 'Physician', needvent: 'Physician' };
+  retriage: 'Physician', needvent: 'Physician', trauma: 'Physician' };   // trauma: 16-readiness.js
 const NEXT_OWNER = { 'Receiving nurse': 'Charge nurse', 'Charge nurse': 'ED coordinator', 'Physician': 'ED coordinator' };
 const ownerAfter = (o, n) => { for (let i = 0; i < n && NEXT_OWNER[o]; i++) o = NEXT_OWNER[o]; return o; };
 const ID_STATUS = ['confirmed', 'candidate', 'temporary'], ID_METHOD = ['face', 'fingerprint', 'nfc', 'emirates-id', 'none'];
 const SAFETY_KEYS = ['allergies', 'anticoagulant', 'bloodType', 'source', 'asOf', 'restricted'];
 const ATMIST_KEYS = ['age', 'time', 'mechanism', 'injuries', 'signs', 'treatment'];
 const SIGN_KEYS = ['hr', 'sbp', 'rr', 'spo2', 'gcs'];
-const FAMILY_STATUS = ['Arriving', 'Waiting', 'In treatment', 'In surgery', 'ICU', 'Admitted to ward', 'Discharged'];
+const FAMILY_STATUS = ['Arriving', 'Waiting', 'In treatment', 'In surgery', 'ICU', 'Admitted to ward', 'Discharged', 'Transferred'];
 const FAMILY_KEYS = ['enc', 'initials', 'status', 'since'];
 const START_COL = ['red', 'yellow', 'green', 'black'];
 const WASEL_TYPES = ['identity', 'lwbs', 'surge'];
@@ -560,6 +560,162 @@ fresh(105);
   ok(!MED_WORDS.some(w => txt.includes(w)), 'familyBoard has no medical words', MED_WORDS.filter(w => txt.includes(w)).join(','));
   ok(rows.every(r => FAMILY_STATUS.includes(r.status)), 'familyBoard statuses from the contract');
   ok(!S.patients.some(p => p.identity.status !== 'confirmed' && p.incident && rows.find(r => r.enc === p.enc && r.initials !== '—')), 'unconfirmed identities show no initials');
+}
+
+/* ============ Part D: v3 low-friction flow (CHANNELS.md) ============ */
+const CALL = (id, extra) => Object.assign({ type: 'incident', v: 1, id, kind: 'rtc', place: 'E311 highway, km 42', casualties: 6,
+  severity: 'major', trapped: true, hazards: ['fuel'], units: { ambulances: 3, rescue: 1, fire: 1 }, ts: 1729780000000 }, extra);
+const callAmbs = id => S.ambulances.filter(a => a.incident === id);
+const callPts = id => S.patients.filter(p => p.incident === id);
+
+// --- receiveIncident: creates an unconfirmed incident, then staggered ambulances ---
+fresh(201);
+{
+  const i0 = S.incidents.length, a0 = S.ambulances.length;
+  const r = receiveIncident(CALL('CALL-4821'));
+  ok(r.ok === true && r.id === 'CALL-4821' && r.dispatched === 3, 'incident accepted', JSON.stringify(r));
+  const inc = S.incidents.find(i => i.id === 'CALL-4821');
+  ok(S.incidents.length === i0 + 1 && inc && inc.name === 'Road traffic collision' && inc.place === 'E311 highway, km 42'
+    && inc.via === '998 call · WASEL Dispatch' && inc.est === 6 && inc.kind === 'rtc' && inc.unconfirmed === true, 'incident shape', JSON.stringify(inc));
+  ok(S.audit.some(x => x.text === 'Incident received from dispatch: CALL-4821'), 'incident audited', S.audit[0].text);
+  ok(S.feed.some(x => x.src === 'ems' && x.std === 'CAD' && x.text.startsWith('CALL-4821 from WASEL Dispatch: Road traffic collision')), 'incident CAD line', S.feed[0].text);
+  ok(S.ambulances.length === a0, 'ambulances are scheduled, not instant');
+  step(70);
+  ok(callAmbs('CALL-4821').length === 1 && inc.unconfirmed === false, 'first crew on scene confirms the incident');
+  step(3 * 60);
+  const ambs = callAmbs('CALL-4821');
+  ok(ambs.length === 3 && ambs.every(a => a.pts.length === 2), '3 ambulances carry 2 casualties each', ambs.map(a => a.pts.length).join(','));
+  const at = ambs.map(a => a.dispatchedAt).sort((x, y) => x - y);
+  ok(at[1] - at[0] >= 50 && at[2] - at[1] >= 50 && at[1] - at[0] <= 70, 'ambulances staggered ~60 s apart', at.join(','));
+  ok(callPts('CALL-4821').length === 6 && callPts('CALL-4821').every(p => p.src === 'EMS' && MIX.pileup.some(e => e[0] === p.cond)), 'rtc casualties drawn from the pile-up mix');
+  ok(callPts('CALL-4821').every(p => /^T-\d+$/.test(p.enc) && p.atmist && WASEL_MECHANISM.rtc.includes(p.atmist.mechanism)), 'rtc casualties carry T- encounters and collision ATMIST');
+
+  // same id = update, never a duplicate; extra ambulances carry only the new casualties
+  const r2 = receiveIncident(CALL('CALL-4821', { casualties: 9, units: { ambulances: 4 } }));
+  ok(r2.ok && r2.updated === true && r2.dispatched === 1 && S.incidents.filter(i => i.id === 'CALL-4821').length === 1, 'repeat id updates the incident', JSON.stringify(r2));
+  ok(inc.est === 9 && inc.place === 'E311 highway, km 42' && inc.trapped === true, 'update refreshes est, keeps omitted fields');
+  step(90);
+  ok(callAmbs('CALL-4821').length === 4 && callAmbs('CALL-4821').reduce((n, a) => n + a.pts.length, 0) === 9, 'extra ambulance carries the 3 new casualties');
+  const r3 = receiveIncident(CALL('CALL-4821', { casualties: 9, units: { ambulances: 4 } }));
+  step(90);
+  ok(r3.ok && r3.dispatched === 0 && callAmbs('CALL-4821').length === 4, 'identical repeat dispatches nothing more');
+
+  // kind → mix, zero ambulances, a large call switches the mode at once
+  receiveIncident(CALL('CALL-100', { kind: 'fire', casualties: 3, units: { ambulances: 1 } }));
+  receiveIncident(CALL('CALL-101', { kind: 'chemical', casualties: 2, units: { ambulances: 0 } }));
+  step(70);
+  ok(callPts('CALL-100').length === 3 && callPts('CALL-100').every(p => MIX.fire.some(e => e[0] === p.cond)), 'fire casualties drawn from the fire mix');
+  ok(callAmbs('CALL-101').length === 0 && S.incidents.find(i => i.id === 'CALL-101').name === 'Chemical exposure', 'zero ambulances: incident only');
+  receiveIncident(CALL('CALL-102', { casualties: 14, units: { ambulances: 5 } }));
+  ok(S.mode === 'mci' && /CALL-102/.test(S.modeReason), 'incident of 10+ casualties switches to MCI at once', S.mode + ' · ' + S.modeReason);
+
+  // malformed: rejected, nothing changes
+  const good = CALL('CALL-200');
+  const bad = [null, undefined, 'incident', 7, [], {},
+    Object.assign(clone(good), { type: 'prealert' }), Object.assign(clone(good), { v: 2 }),
+    Object.assign(clone(good), { id: undefined }), Object.assign(clone(good), { id: 'INC-1' }), Object.assign(clone(good), { id: 'CALL-' }),
+    Object.assign(clone(good), { id: 'CALL-12<script>' }), Object.assign(clone(good), { id: 4821 }),
+    Object.assign(clone(good), { kind: 'flood' }), Object.assign(clone(good), { kind: undefined }),
+    Object.assign(clone(good), { casualties: -1 }), Object.assign(clone(good), { casualties: '6' }), Object.assign(clone(good), { casualties: 1.5 }),
+    Object.assign(clone(good), { casualties: 1e6 }), Object.assign(clone(good), { casualties: NaN }),
+    Object.assign(clone(good), { units: undefined }), Object.assign(clone(good), { units: { ambulances: -1 } }),
+    Object.assign(clone(good), { units: { ambulances: 'three' } }), Object.assign(clone(good), { units: { ambulances: 99 } }),
+  ];
+  const nI = S.incidents.length, nS = S.sched.length, nAud = S.audit.length;
+  let rejected = 0;
+  for (const m of bad) {
+    let res;
+    try { res = receiveIncident(m); } catch (e) { res = { threw: String(e) }; }
+    if (res && res.ok === false && typeof res.error === 'string' && res.error) rejected++;
+    else ok(false, 'malformed incident rejected', JSON.stringify(m) + ' → ' + JSON.stringify(res));
+  }
+  ok(rejected === bad.length, `malformed incidents rejected (${rejected}/${bad.length})`);
+  ok(S.incidents.length === nI && S.sched.length === nS && S.audit.length === nAud, 'malformed incidents change nothing');
+
+  // no caller identity is ever stored; invalid optional fields ignored and audited
+  const CALLER = 'Qwxyz Caller', PHONE = '+971501234567';
+  const ev = receiveIncident(CALL('CALL-300', { caller: CALLER, phone: PHONE, name: CALLER, severity: 'apocalyptic',
+    hazards: ['fuel', 'zombies'], place: 'Al Wahda St\u0000 exit 3', trapped: 'yes', units: { ambulances: 1, fire: -2 } }));
+  const ie = S.incidents.find(i => i.id === 'CALL-300');
+  ok(ev.ok && ie.severity === null && ie.trapped === false && JSON.stringify(ie.hazards) === '["fuel"]' && ie.units.fire === 0
+    && ie.place === 'Al Wahda St exit 3', 'invalid optional incident fields ignored', JSON.stringify(ie));
+  ok(/ignored invalid severity, trapped, hazards, units\.fire/.test(S.audit[0].text), 'ignored incident fields audited', S.audit[0].text);
+  const dumpI = JSON.stringify(S);
+  ok(!dumpI.includes('Qwxyz') && !dumpI.includes(PHONE), 'no caller name or phone anywhere in state');
+}
+
+// --- capacitySnapshot: the §3 message, capacity only ---
+fresh(202);
+{
+  const CAP_KEYS = ['type', 'v', 'hospital', 'mode', 'edBedsFree', 'resusFree', 'traumaFree', 'icuFree', 'oNeg', 'ctOnline', 'diversion', 'ts'];
+  const c = capacitySnapshot(1729780000000);
+  ok(JSON.stringify(Object.keys(c)) === JSON.stringify(CAP_KEYS), 'capacity carries exactly the contract keys', Object.keys(c).join(','));
+  const freeIn = z => S.beds.filter(b => b.status === 'free' && !b.hold && (!z || b.zone === z)).length;
+  ok(c.type === 'capacity' && c.v === 1 && c.hospital === 'Demo General Hospital' && c.mode === S.mode && c.ts === 1729780000000, 'capacity envelope');
+  ok(c.edBedsFree === freeIn() && c.resusFree === freeIn('R') && c.traumaFree === freeIn('T') && c.icuFree === S.icu.cap - S.icu.used
+    && c.oNeg === S.sup.blood.qty && c.ctOnline === 2 && c.diversion === false, 'capacity values match the board', JSON.stringify(c));
+  ok(JSON.stringify(capacitySnapshot(5)) === JSON.stringify(capacitySnapshot(5)), 'capacitySnapshot is pure for a given ts');
+  const txt = JSON.stringify(c);
+  ok(!S.patients.some(p => txt.includes(p.id) || txt.includes(p.enc) || txt.includes(p.last)), 'capacity carries no patient data');
+  runScenario('equipment');
+  ok(capacitySnapshot(0).ctOnline === 1, 'capacity follows CT outage');
+  waselDeclareMci(true);
+  ok(capacitySnapshot(0).mode === 'mci', 'capacity follows the mode');
+}
+
+// --- pre-alert triage sliders + destination (CHANNELS.md §2) ---
+fresh(203);
+{
+  const TRIAGE = { avpu: 'V', breathing: 'laboured', bleeding: 'heavy-controlled', perfusion: 'weak-fast', pain: 7, regions: ['chest', 'pelvis'], burnsPct: 0, ageBand: 'adult' };
+  const HERE = { hospital: 'Demo General Hospital', reason: 'Trauma bay free · O-neg 18 · 12 min', etaMin: 12 };
+  const m = Object.assign(SAMPLE('T-970'), { priority: { system: 'START', level: 'yellow' }, triage: clone(TRIAGE), destination: clone(HERE) });
+  m.triage.evil = '<img src=x>'; m.destination.name = 'Zqxwv Bnmlk';
+  const r = receivePreAlert(m), p = byEnc('T-970')[0];
+  ok(r.ok && !r.routed && p && p.stage === 'inbound', 'pre-alert with triage + destination accepted', JSON.stringify(r));
+  ok(JSON.stringify(p.triage) === JSON.stringify(TRIAGE), 'triage stored, whitelisted keys only', JSON.stringify(p.triage));
+  ok(JSON.stringify(p.destination) === JSON.stringify(HERE), 'destination stored, whitelisted keys only', JSON.stringify(p.destination));
+  ok(p.fieldPriority.system === 'START' && p.fieldPriority.level === 'yellow', 'responder priority kept', JSON.stringify(p.fieldPriority));
+  const why = waselTriageWhy(p.triage);
+  ok(why[0] === 'responds to voice only' && why.includes('bleeding heavy, controlled') && why.includes('chest, pelvis') && !why.some(w => /adult|burns/.test(w)),
+    'triage reasons, most urgent first', JSON.stringify(why));
+  ok(waselTriageWhy(null).length === 0 && waselTriageWhy({ avpu: 'A', breathing: 'normal' }).length === 0, 'normal sliders give no reasons');
+  const bt = Object.assign(SAMPLE('T-971'), { triage: { avpu: 'X', breathing: 'Laboured!', pain: 11, regions: 'chest', burnsPct: -3, bleeding: 'minor' }, destination: { reason: 'no hospital' } });
+  const rb = receivePreAlert(bt), pb = byEnc('T-971')[0];
+  ok(rb.ok && JSON.stringify(pb.triage) === '{"bleeding":"minor"}' && pb.destination === null && !rb.routed, 'invalid sliders dropped, no hospital = here', JSON.stringify(pb.triage));
+  ok(/ignored invalid .*triage\.avpu.*destination/.test(S.audit[0].text), 'invalid sliders audited', S.audit[0].text);
+
+  // update: sliders refreshed; a more urgent field priority is a one-tap re-triage card, never a silent change
+  const u = Object.assign(clone(m), { priority: { system: 'START', level: 'red' }, triage: Object.assign(clone(TRIAGE), { avpu: 'U', breathing: 'absent' }) });
+  const ru = receivePreAlert(u);
+  ok(ru.ok && ru.updated && p.esi === 3 && p.triage.avpu === 'U' && p.fieldPriority.level === 'red', 'update refreshes sliders, keeps ED triage', `esi ${p.esi}`);
+  const card = S.sugg.find(s => s.key === 'retriage:' + p.id);
+  ok(card && card.type === 'retriage' && card.to === 1 && card.level === 1 && /T-970 from ESI 3 to ESI 1/.test(card.title) && /RED: unresponsive/.test(card.why), 'raised field priority → re-triage card', card && card.title + ' | ' + card.why);
+  ok(accept(card, 'manual') === true && p.esi === 1, 'one tap applies the re-triage');
+
+  // routed elsewhere: shown, but no patient, ambulance or bed here
+  const nP = S.patients.length, nA = S.ambulances.length, freeB = S.beds.filter(b => b.status === 'free').length;
+  const away = Object.assign(SAMPLE('T-980'), { triage: clone(TRIAGE), destination: { hospital: 'Al Noor Trauma Centre (demo)', reason: 'Neurosurgery on call', etaMin: 15 } });
+  const ra = receivePreAlert(away);
+  ok(ra.ok && ra.routed === true && S.patients.length === nP && S.ambulances.length === nA && S.beds.filter(b => b.status === 'free').length === freeB, 'routed elsewhere: no patient, ambulance or bed', JSON.stringify(ra));
+  const row = waselRoutedAway().find(x => x.encounter === 'T-980');
+  ok(row && row.destination.hospital === 'Al Noor Trauma Centre (demo)' && row.eta === S.t + 12 * 60 && !('identity' in row) && !('safety' in row) && !('atmist' in row), 'routed row keeps the minimum', JSON.stringify(row));
+  ok(S.audit[0].text === 'Pre-alert received: T-980 · routed elsewhere', 'routed pre-alert audited', S.audit[0].text);
+  receivePreAlert(Object.assign(clone(away), { etaMin: 4 }));
+  ok(waselRoutedAway().filter(x => x.encounter === 'T-980').length === 1 && waselRoutedAway().find(x => x.encounter === 'T-980').eta === S.t + 4 * 60, 'repeat routed pre-alert updates, no duplicate');
+  ok(receivePreAlert(Object.assign(clone(away), { destination: clone(HERE) })).ok && byEnc('T-980').length === 1 && !waselRoutedAway().some(x => x.encounter === 'T-980'), 'routed → here becomes a normal pre-alert');
+
+  // an inbound pre-alert rerouted elsewhere releases the bed reserved here
+  receivePreAlert(Object.assign(SAMPLE('T-990'), { priority: { system: 'ESI', level: 1 }, etaMin: 6 }));
+  const q = byEnc('T-990')[0];
+  aiPlan();
+  const prep = S.sugg.find(s => s.type === 'prearrival' && s.pid === q.id);
+  ok(prep && accept(prep, 'manual') && q.reservedBed && bed(q.reservedBed).status === 'reserved', 'pre-arrival bed reserved', prep && prep.title);
+  const rbId = q.reservedBed;
+  const rr = receivePreAlert(Object.assign(SAMPLE('T-990'), { priority: { system: 'ESI', level: 1 }, destination: { hospital: 'Al Noor Trauma Centre (demo)', reason: 'Closer', etaMin: 5 } }));
+  ok(rr.ok && rr.routed && rr.updated && bed(rbId).status === 'free' && bed(rbId).pid === null && q.stage === 'done', 'reroute releases the reserved bed', `${bed(rbId).status} ${q.stage}`);
+  ok(amb(q.amb).status === 'diverted' && amb(q.amb).routedTo === 'Al Noor Trauma Centre (demo)' && waselRoutedAway().some(x => x.encounter === 'T-990'), 'rerouted ambulance leaves the inbound flow');
+  step(20 * 60);
+  ok(!waselRoutedAway().length && !byEnc('T-990').length && !S.sugg.some(s => s.pid === q.id), 'routed notes expire after their ETA; nothing left behind');
 }
 
 /* ---------- Summary ---------- */

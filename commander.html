@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: no third-party code and no network. This screen talks to the
+     WASEL dashboard only over same-origin BroadcastChannel (CHANNELS.md sections 4 and 5). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="WASEL Commander: the incident commander's single screen during a mass-casualty incident. Incoming RED patients, capacity, staff call-back, diversion, task ownership and family reunification status, mirrored live from the ER dashboard. Demo data.">
+<title>WASEL Commander</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d70015'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * WASEL Commander · incident commander screen (MCI only)
+ * Same design tokens as the ER dashboard (src/shell.html), so every WASEL
+ * screen reads as one product. Dark by default; light via
+ * :root[data-theme="light"], shared with the dashboard's theme choice.
+ * Status colour is always paired with a word and a glyph (WCAG 1.4.1).
+ * Every control is a tap target of at least 44px. Nothing is typed.
+ * One screen: no tabs, no navigation, no second analytics page.
+ * ========================================================================= */
+
+/* ---------- Theme tokens (shared with the dashboard) ---------- */
+:root {
+  color-scheme: dark;
+  --page: #000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --raised: #3a3a3c;
+  --hover: #48484a;
+  --fill: rgba(120, 120, 128, .24);
+  --fill-strong: rgba(120, 120, 128, .36);
+  --text: #f5f5f7;
+  --text-2: #aeaeb2;
+  --muted: #98989f;
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .15);
+  --accent: #0a84ff;
+  --accent-strong: #0071e3;
+  --accent-strong-hover: #0064cf;
+  --accent-fg: #409cff;
+  --accent-weak: rgba(10, 132, 255, .18);
+  --critical: #d70015;
+  --serious: #ff9f0a;
+  --warning: #ffd60a;
+  --good: #30d158;
+  --neutral: #8e8e93;
+  --on-fill: #fff;
+  --on-light-fill: #1a1a1a;
+  --critical-weak: rgba(255, 69, 58, .17);
+  --serious-weak: rgba(255, 159, 10, .16);
+  --warning-weak: rgba(255, 214, 10, .14);
+  --good-weak: rgba(48, 209, 88, .15);
+  --critical-line: rgba(255, 69, 58, .5);
+  --good-line: rgba(48, 209, 88, .55);
+  --critical-fg: #ff7a72;
+  --serious-fg: #ffb340;
+  --warning-fg: #ffd426;
+  --good-fg: #30db5b;
+  --shadow-sm: none;
+  --shadow: 0 24px 60px rgba(0, 0, 0, .6);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --t-micro: 10.5px;
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-title: 15px;
+  --t-sheet: 19px;
+  --t-large: 22px;
+  --t-number: 28px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --gap: 10px;
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius: 16px;
+  --radius-xl: 22px;
+  --pill: 999px;
+  --h-control: 44px;          /* every tap target on this screen is at least 44px */
+  --h-chip: 22px;
+  --h-chip-sm: 18px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f2f2f7;
+  --surface: #fff;
+  --surface-2: #f5f5f7;
+  --raised: #e8e8ed;
+  --hover: #dedee3;
+  --fill: rgba(120, 120, 128, .12);
+  --fill-strong: rgba(120, 120, 128, .2);
+  --text: #1d1d1f;
+  --text-2: #424245;
+  --muted: #6e6e73;
+  --border: rgba(0, 0, 0, .08);
+  --border-strong: rgba(0, 0, 0, .14);
+  --accent: #007aff;
+  --accent-fg: #0066cc;
+  --accent-weak: rgba(0, 122, 255, .1);
+  --serious: #ff9500;
+  --warning: #ffcc00;
+  --good: #34c759;
+  --critical-weak: rgba(255, 59, 48, .1);
+  --serious-weak: rgba(255, 149, 0, .12);
+  --warning-weak: rgba(255, 204, 0, .18);
+  --good-weak: rgba(52, 199, 89, .13);
+  --critical-line: rgba(215, 0, 21, .4);
+  --good-line: rgba(30, 123, 52, .5);
+  --critical-fg: #d70015;
+  --serious-fg: #c2410c;
+  --warning-fg: #946200;
+  --good-fg: #1e7b34;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .04), 0 2px 12px rgba(0, 0, 0, .04);
+  --shadow: 0 24px 60px rgba(0, 0, 0, .18);
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; min-height: 100vh;
+  background: var(--page); color: var(--text);
+  font: var(--t-body)/1.4 var(--font); letter-spacing: -.006em;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button { font: inherit; color: inherit; letter-spacing: inherit; }
+::selection { background: var(--accent-weak); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--fill-strong) transparent; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--h-control); padding: 0 16px; border: 0; border-radius: var(--pill);
+  background: var(--fill); color: var(--text); text-decoration: none;
+  font-size: var(--t-body); font-weight: 600; line-height: 1.15; cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+.btn:hover { background: var(--fill-strong); }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: var(--accent-strong); color: var(--on-fill); }
+.btn.primary:hover { background: var(--accent-strong-hover); }
+.btn.ghost { background: transparent; color: var(--accent-fg); }
+.btn.ghost:hover { background: var(--fill); }
+.btn.danger { background: var(--critical-weak); color: var(--critical-fg); }
+.btn.danger:hover { background: color-mix(in srgb, var(--critical) 28%, transparent); }
+.btn.big { min-height: 52px; padding: 0 26px; font-size: var(--t-title); font-weight: 700; }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+/* First tap arms a high-impact command; a second tap within 4 s sends it */
+.btn.armed, .btn.armed:hover {
+  background: var(--critical); color: var(--on-fill);
+  box-shadow: 0 0 0 4px var(--critical-weak);
+}
+
+/* ---------- Chips (status: colour + glyph + word) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; height: var(--h-chip); padding: 0 9px;
+  border-radius: var(--pill); background: var(--fill); color: var(--text-2);
+  font-size: var(--t-small); font-weight: 600; line-height: 1; white-space: nowrap;
+  font-variant-numeric: tabular-nums; vertical-align: middle;
+}
+.chip.sm { height: var(--h-chip-sm); padding: 0 7px; font-size: var(--t-caption); gap: 4px; }
+.chip.critical { background: var(--critical); color: var(--on-fill); }
+.chip.serious { background: var(--serious-weak); color: var(--serious-fg); }
+.chip.warning { background: var(--warning-weak); color: var(--warning-fg); }
+.chip.good { background: var(--good-weak); color: var(--good-fg); }
+.chip.info { background: var(--accent-weak); color: var(--accent-fg); }
+.chip.st-red { background: var(--critical); color: var(--on-fill); letter-spacing: .04em; }
+.esi {
+  display: inline-flex; align-items: center; gap: 3px; height: var(--h-chip-sm); padding: 0 6px;
+  border-radius: 5px; font-size: var(--t-caption); font-weight: 700; white-space: nowrap; vertical-align: middle;
+}
+.esi.e1 { background: var(--critical); color: var(--on-fill); }
+.esi.e2 { background: var(--serious); color: var(--on-light-fill); }
+.esi.e3 { background: var(--warning); color: var(--on-light-fill); }
+.esi.e4 { background: var(--good); color: var(--on-light-fill); }
+.esi.e5 { background: var(--neutral); color: var(--on-light-fill); }
+
+/* ---------- Sticky header ---------- */
+.hdr {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px;
+  padding: 10px max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+  background: var(--page);
+  background: color-mix(in srgb, var(--page) 86%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow: 0 1px 0 var(--border);
+}
+.brand { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.logo {
+  flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(180deg, #ff5b50, var(--critical));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 1px 3px rgba(0, 0, 0, .25);
+  color: var(--on-fill); font-size: 28px; font-weight: 600; line-height: 1; padding-bottom: 3px;
+}
+.brand > div { min-width: 0; }
+.brand h1 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.022em; line-height: 1.1; }
+.brand p { margin-top: 2px; font-size: var(--t-small); color: var(--text-2); }
+.simtag {
+  display: inline-block; margin-inline-start: 6px; padding: 2px 8px; border-radius: var(--pill);
+  background: var(--fill); color: var(--text-2);
+  font-size: var(--t-micro); font-weight: 600; letter-spacing: .01em; vertical-align: 3px;
+}
+.hdr-right {
+  margin-inline-start: auto; min-width: 0;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px;
+}
+.chip.mode { height: 32px; padding: 0 14px; font-weight: 700; letter-spacing: .06em; }
+.chip.mode.good { color: var(--good-fg); }
+/* The feed chip carries a full sentence when the feed is down: let it wrap */
+.chip.feed { height: auto; min-height: 32px; padding: 6px 12px; white-space: normal; line-height: 1.25; max-width: 100%; }
+.clockbox { text-align: end; }
+#clock { font-size: var(--t-number); font-weight: 600; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+#clockSub { margin-top: 4px; font-size: var(--t-micro); font-weight: 600; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- Page ---------- */
+.app {
+  display: flex; flex-direction: column; gap: var(--gap);
+  max-width: 1920px; margin: 0 auto;
+  padding: var(--s4) max(16px, env(safe-area-inset-right)) 28px max(16px, env(safe-area-inset-left));
+}
+
+/* ---------- Empty state (no dashboard yet) ---------- */
+.emptystate {
+  width: 100%; max-width: 660px; margin: 6vh auto 0; padding: 28px;
+  display: flex; flex-direction: column; gap: 14px;
+  background: var(--surface); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm);
+}
+.emptystate h2 { font-size: var(--t-sheet); font-weight: 700; letter-spacing: -.015em; }
+.emptystate p { color: var(--text-2); font-size: var(--t-title); line-height: 1.45; }
+.steps { display: flex; flex-direction: column; gap: 10px; counter-reset: step; }
+.steps li { display: flex; gap: 12px; align-items: baseline; font-size: var(--t-title); line-height: 1.4; counter-increment: step; }
+.steps li::before {
+  content: counter(step); flex: none; width: 26px; height: 26px; border-radius: 50%;
+  display: inline-grid; place-items: center; background: var(--fill); color: var(--text);
+  font-size: var(--t-small); font-weight: 700;
+}
+.emptystate .warnline { color: var(--warning-fg); font-weight: 600; }
+
+/* ---------- Banners ---------- */
+.banner {
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 14px 24px;
+  padding: 18px 22px 18px 30px; border-radius: var(--radius);
+  background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.banner::before {
+  content: ""; position: absolute; inset-block: 16px; inset-inline-start: 12px; width: 5px;
+  border-radius: var(--pill); background: var(--neutral);
+}
+.banner.mci { background: var(--critical-weak); box-shadow: inset 0 0 0 1px var(--critical-line); }
+.banner.mci::before { background: var(--critical); }
+.b-text { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.b-title { font-size: var(--t-large); font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+.banner.mci .b-title { color: var(--critical-fg); }
+.b-sub { font-size: var(--t-title); color: var(--text-2); line-height: 1.4; }
+.b-inc { display: flex; flex-wrap: wrap; gap: 6px; }
+.b-inc .chip { height: auto; min-height: 26px; padding: 4px 11px; white-space: normal; line-height: 1.25; }
+.b-act { flex: 0 1 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 0; }
+.notice {
+  padding: 12px 16px; border-radius: var(--radius-md); font-size: var(--t-title); font-weight: 600; line-height: 1.35;
+}
+.notice.warning { background: var(--warning-weak); color: var(--warning-fg); }
+.notice.critical { background: var(--critical-weak); color: var(--critical-fg); box-shadow: inset 0 0 0 1px var(--critical-line); }
+
+/* ---------- Receipts: what this screen sent and whether the dashboard shows it ---------- */
+.rcpt { font-size: var(--t-small); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rcpt:empty { display: none; }
+.rcpt.ok { color: var(--good-fg); }
+.rcpt.late { color: var(--warning-fg); }
+.cmdnote { font-size: var(--t-small); font-weight: 600; color: var(--warning-fg); }
+.cmdnote:empty { display: none; }
+
+/* ---------- Grid ---------- */
+.grid {
+  display: grid; gap: var(--gap); align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "red" "act" "cap" "tasks" "fam";
+}
+@media (min-width: 760px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "red red" "cap act" "tasks fam"; }
+}
+@media (min-width: 1280px) {
+  .grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "red cap act" "tasks tasks fam";
+  }
+  /* Wall display: long lists scroll inside their panel so the screen stays one view */
+  .a-red .pb { max-height: 58vh; }
+  .a-tasks .pb, .a-fam .pb { max-height: 36vh; }
+}
+.a-red { grid-area: red; }
+.a-cap { grid-area: cap; }
+.a-act { grid-area: act; }
+.a-tasks { grid-area: tasks; }
+.a-fam { grid-area: fam; }
+.stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+#board { display: flex; flex-direction: column; gap: var(--gap); }
+#board.stale .grid, #board.stale .banner { filter: grayscale(.85); opacity: .72; }
+
+/* ---------- Panels ---------- */
+.panel {
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+}
+.ph { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 46px; padding: 12px 16px 6px; }
+.ph h2 { font-size: var(--t-title); font-weight: 600; letter-spacing: -.012em; }
+.meta { margin-inline-start: auto; font-size: var(--t-small); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pb { overflow: auto; overscroll-behavior: contain; padding: 4px 12px 14px; }
+.pb:focus-visible { outline-offset: -2px; }
+.empty { padding: 20px 10px; text-align: center; font-size: var(--t-body); color: var(--muted); }
+.foot-note { margin-top: 10px; padding: 0 4px; font-size: var(--t-small); color: var(--muted); }
+
+/* ---------- Incoming RED patients ---------- */
+.reds { display: flex; flex-direction: column; gap: var(--s2); }
+.red {
+  position: relative; display: flex; flex-direction: column; gap: 7px;
+  padding: 12px 14px 12px 24px; border-radius: var(--radius-md); background: var(--surface-2);
+}
+.red::before {
+  content: ""; position: absolute; inset-block: 12px; inset-inline-start: 10px; width: 4px;
+  border-radius: var(--pill); background: var(--critical);
+}
+.red-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.enc { font-size: var(--t-title); font-weight: 700; font-variant-numeric: tabular-nums; }
+.eta { margin-inline-start: auto; font-size: var(--t-large); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.eta.now { color: var(--critical-fg); }
+.red-label { color: var(--text-2); font-size: var(--t-body); }
+.red-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: var(--t-small); color: var(--muted); }
+.red-meta b { color: var(--text); font-weight: 600; }
+.ready { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tick {
+  display: inline-flex; align-items: center; gap: 4px; height: var(--h-chip); padding: 0 9px;
+  border-radius: var(--pill); font-size: var(--t-small); font-weight: 600; white-space: nowrap;
+}
+.tick.ok { background: var(--good-weak); color: var(--good-fg); }
+.tick.no { background: var(--critical-weak); color: var(--critical-fg); }
+
+/* ---------- Capacity gauges ---------- */
+.gauges { display: flex; flex-direction: column; }
+.gauge { padding: 9px 4px 10px; border-bottom: 1px solid var(--border); }
+.gauge:last-child { border-bottom: 0; }
+.g-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+.g-name { flex: 1 1 8em; min-width: 0; font-weight: 500; }
+.g-val { font-size: var(--t-title); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.g-val small { font-size: var(--t-small); font-weight: 500; color: var(--text-2); }
+.bar { position: relative; height: 8px; margin: 7px 0 3px; border-radius: var(--pill); background: var(--fill); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: inherit; background: var(--neutral); }
+.bar.good > i { background: var(--good); }
+.bar.warning > i { background: var(--warning); }
+.bar.critical > i { background: var(--critical); }
+.bar > .par { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: .75; }
+.g-note { font-size: var(--t-small); color: var(--muted); }
+.legend { margin-top: 6px; padding: 0 4px; font-size: var(--t-small); color: var(--muted); }
+
+/* ---------- Staff call-back ---------- */
+.staffsum { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.skills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.btn.skill {
+  min-height: 66px; padding: 10px 14px; border-radius: var(--radius-md);
+  flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; text-align: start;
+}
+.skill .bl { font-size: var(--t-title); font-weight: 650; }
+.skill .bs { font-size: var(--t-small); font-weight: 500; color: var(--text-2); }
+.skill.done .bs { color: var(--good-fg); }
+.receipts { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.receipts:empty { display: none; }
+
+/* ---------- Diversion ---------- */
+.divstate { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+.divq { margin-bottom: 10px; font-size: var(--t-title); font-weight: 600; line-height: 1.35; }
+.divs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
+.divs .btn { min-height: 52px; border-radius: var(--radius-md); font-size: var(--t-title); }
+.hint { margin-top: 10px; font-size: var(--t-small); color: var(--muted); line-height: 1.4; }
+
+/* ---------- Ownership checklist ---------- */
+.tasks { display: flex; flex-direction: column; gap: 2px; }
+.task {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 14px;
+  padding: 10px 12px 10px 24px; border-radius: var(--radius-md);
+}
+.task + .task { box-shadow: inset 0 1px 0 var(--border); }
+.task::before {
+  content: ""; position: absolute; inset-block: 12px; inset-inline-start: 10px; width: 4px;
+  border-radius: var(--pill); background: var(--accent);
+}
+.task.l1::before { background: var(--critical); }
+.task.l2::before { background: var(--serious); }
+.task.esc { background: var(--critical-weak); box-shadow: none; }
+.t-title { font-size: var(--t-body); font-weight: 600; line-height: 1.35; }
+.t-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+.t-clock { text-align: end; font-size: var(--t-title); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.t-clock small { display: block; font-size: var(--t-caption); font-weight: 500; color: var(--muted); }
+
+/* ---------- Family reunification ---------- */
+.fsum { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 10px; }
+.frows { display: flex; flex-direction: column; }
+.frow {
+  display: grid; grid-template-columns: minmax(5em, auto) minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  min-height: 40px; padding: 6px 4px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums;
+}
+.frow:last-child { border-bottom: 0; }
+.frow b { font-weight: 600; }
+.frow time { color: var(--muted); font-size: var(--t-small); }
+
+/* ---------- Narrow screens (phones) ---------- */
+@media (max-width: 520px) {
+  .brand h1 { font-size: var(--t-sheet); }
+  .hdr-right { margin-inline-start: 0; justify-content: flex-start; }
+  .b-act { align-items: stretch; width: 100%; }
+  .b-act .btn { width: 100%; }
+  .skills { grid-template-columns: minmax(0, 1fr); }
+  .task { grid-template-columns: minmax(0, 1fr); }
+  .t-clock { text-align: start; }
+  .t-clock small { display: inline; margin-inline-start: 6px; }
+  .emptystate { padding: 20px; margin-top: 2vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">+</div>
+    <div>
+      <h1>WASEL Commander<span class="simtag">Demo</span></h1>
+      <p id="hospital">Incident command · MCI only</p>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <span id="modeChip" class="chip mode" title="Operating mode, from the dashboard" hidden></span>
+    <span id="feedChip" class="chip feed warning" role="status"><span aria-hidden="true">○</span> <span id="feedText">No feed (start the dashboard in another tab)</span></span>
+    <div class="clockbox">
+      <div id="clock" aria-label="Simulation clock">--:--</div>
+      <div id="clockSub">SIM CLOCK · WAITING</div>
+    </div>
+    <button id="themeBtn" type="button" class="btn ghost">Light theme</button>
+  </div>
+</header>
+
+<main class="app">
+  <!-- Shown until the first snapshot arrives -->
+  <section id="empty" class="emptystate" aria-labelledby="emptyH">
+    <h2 id="emptyH">Waiting for the ER dashboard</h2>
+    <p>This screen mirrors the WASEL ER dashboard. It runs no simulation of its own and holds no patient records.</p>
+    <ol class="steps">
+      <li>Open the WASEL dashboard in another tab of this browser.</li>
+      <li>Keep both tabs open. This screen updates every 2 seconds.</li>
+      <li>Declare MCI here or on the dashboard to open full incident command.</li>
+    </ol>
+    <p id="emptyWarn" class="warnline" hidden></p>
+    <div><a class="btn primary big" href="index.html" target="_blank" rel="noopener noreferrer">Open the dashboard in a new tab</a></div>
+  </section>
+
+  <div id="board" hidden>
+    <!-- Mode: standby until MCI, then the incident -->
+    <section id="banner" class="banner standby" aria-labelledby="bTitle">
+      <div class="b-text">
+        <h2 id="bTitle" class="b-title">Standby · opens in MCI</h2>
+        <p id="bSub" class="b-sub"></p>
+        <div id="bInc" class="b-inc"></div>
+      </div>
+      <div class="b-act">
+        <button id="mciBtn" type="button" class="btn danger big">Declare MCI</button>
+        <span id="mciRcpt" class="rcpt" aria-live="polite"></span>
+        <span class="cmdnote" data-cmdnote></span>
+      </div>
+    </section>
+
+    <div id="staleBar" class="notice warning" role="status" hidden></div>
+    <div id="downBar" class="notice critical" role="alert" hidden>■ Downtime: the dashboard is read-only. Switch to paper and radio procedures. Commands from this screen are paused.</div>
+
+    <div class="grid">
+      <section class="panel a-red" aria-labelledby="redH">
+        <div class="ph"><h2 id="redH">Incoming RED patients</h2><span id="redMeta" class="meta"></span></div>
+        <div class="pb" tabindex="0" aria-label="Incoming RED patients list"><ul id="redList" class="reds"></ul><p id="redOthers" class="foot-note" hidden></p></div>
+      </section>
+
+      <section class="panel a-cap" aria-labelledby="capH">
+        <div class="ph"><h2 id="capH">Capacity</h2><span class="meta">Free now</span></div>
+        <div class="pb">
+          <ul id="gauges" class="gauges"></ul>
+          <p class="legend">Bars show what is free. ● OK · ◆ Low · ■ None free. Hover a row for its rule.</p>
+        </div>
+      </section>
+
+      <div class="stack a-act">
+        <section class="panel" aria-labelledby="callH">
+          <div class="ph"><h2 id="callH">Staff call-back</h2><span class="meta">Pages on-call staff · ETA about 25 min</span></div>
+          <div class="pb">
+            <div id="staffSum" class="staffsum"></div>
+            <div id="skills" class="skills"></div>
+            <span class="cmdnote" data-cmdnote></span>
+            <ul id="callRcpts" class="receipts" aria-live="polite"></ul>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="divH">
+          <div class="ph"><h2 id="divH">Diversion</h2></div>
+          <div class="pb">
+            <div id="divState" class="divstate"></div>
+            <p class="divq" id="divQ">Divert walking ESI 4–5 to sister hospital for</p>
+            <div id="divs" class="divs" role="group" aria-labelledby="divQ"></div>
+            <span class="cmdnote" data-cmdnote></span>
+            <p id="divRcpt" class="rcpt" aria-live="polite"></p>
+            <p class="hint">Only ESI 4–5 arrivals go to the sister hospital. ESI 1–3 still come here. A new choice replaces the current end time.</p>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel a-tasks" aria-labelledby="taskH">
+        <div class="ph"><h2 id="taskH">Ownership checklist</h2><span id="taskMeta" class="meta"></span></div>
+        <div class="pb" tabindex="0" aria-label="Ownership checklist"><ul id="tasks" class="tasks"></ul></div>
+      </section>
+
+      <section class="panel a-fam" aria-labelledby="famH">
+        <div class="ph"><h2 id="famH">Family reunification</h2><span class="chip sm info">No medical details</span><span id="famMeta" class="meta"></span></div>
+        <div class="pb" tabindex="0" aria-label="Family reunification status">
+          <div id="famSum" class="fsum"></div>
+          <ul id="famRows" class="frows"></ul>
+        </div>
+      </section>
+    </div>
+  </div>
+  <p id="announce" class="sr-only" aria-live="assertive"></p>
+</main>
+
+<script>
+/* =========================================================================
+ * WASEL Commander · logic
+ * Mirrors the dashboard through BroadcastChannel('wasel-state') (CHANNELS.md
+ * section 4) and sends requests on BroadcastChannel('wasel-command')
+ * (section 5). It runs no simulation, stores nothing about patients and puts
+ * nothing in the URL. Rendering uses textContent only, never innerHTML.
+ *   onState()     validates one snapshot, keeps only the fields this screen
+ *                 uses (never audit or break-glass), then renders
+ *   render*()     paint one panel each
+ *   send()        posts one command; the next snapshots are checked for its
+ *                 effect, so the commander sees "Confirmed" or "check it"
+ * Explainable rules only: every colour on this screen comes from a written
+ * threshold shown on the row, never from a black-box score.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  // ---------- Settings ----------
+  const FEED_STALE_MS = 6000;      // the dashboard sends state every 2 s; silent for 6 s = no feed
+  const CONFIRM_WAIT_MS = 10000;   // a command not visible in the state by then is flagged for a check
+  const RECEIPT_KEEP_MS = 300000;  // receipts older than 5 min drop off the screen
+  const ARM_MS = 4000;             // second-tap window for MCI and diversion
+  const COOLDOWN_MS = 2500;        // a call-in button rests after a tap, so a double tap is not two pages
+  const THEME_KEY = 'ercc.theme';  // shared with the dashboard; a UI preference, never patient data
+  const FROM = 'commander';
+  const ROLE = 'Incident commander';
+  const LIMIT = { incidents: 12, inbound: 80, supplies: 40, tasks: 100, family: 300, items: 12, receipts: 5 };
+
+  // Operating mode: colour + glyph + word, as on the dashboard header
+  const MODES = {
+    steady: { tone: 'good', glyph: '●', word: 'STEADY' },
+    strain: { tone: 'warning', glyph: '◆', word: 'STRAIN' },
+    surge: { tone: 'serious', glyph: '▲', word: 'SURGE' },
+    mci: { tone: 'critical', glyph: '■', word: 'MCI' },
+  };
+  const TONE_GLYPH = { good: '●', warning: '◆', serious: '▲', critical: '■', neutral: '○', info: '●' };
+  // Call-back skills; `skill` is the value sent in callIn args (CHANNELS.md section 5)
+  const SKILLS = [
+    { skill: 'Trauma surgeon', count: 1, label: 'Trauma surgeon' },
+    { skill: 'Anaesthetist', count: 1, label: 'Anaesthetist' },
+    { skill: 'ED nurse', count: 2, label: 'ED nurse ×2' },
+    { skill: 'Respiratory therapist', count: 1, label: 'Respiratory therapist' },
+  ];
+  const DIVERT_MINUTES = [30, 45, 60];
+  // Readiness items arrive as {k, ok}; these are their short display names
+  const READY_LABEL = {
+    bed: 'Bay', bay: 'Bay', team: 'Team', blood: 'Blood', oneg: 'O-neg', ct: 'CT', vent: 'Ventilator',
+    ventilator: 'Ventilator', or: 'OR', theatre: 'OR', identity: 'ID', id: 'ID', allergy: 'Allergies',
+    allergies: 'Allergies', prealert: 'Pre-alert', atmist: 'ATMIST', monitor: 'Monitor', staff: 'Staff',
+    nurse: 'Nurse', icu: 'ICU', equipment: 'Kit', kit: 'Kit', consent: 'Consent', xray: 'X-ray',
+  };
+  const LEVEL = { 1: { word: 'Urgent', tone: 'critical' }, 2: { word: 'High', tone: 'serious' }, 3: { word: 'Routine', tone: '' } };
+  const FAMILY_ORDER = ['Arriving', 'Waiting', 'In treatment', 'In surgery', 'ICU', 'Admitted to ward', 'Discharged'];
+  const FAMILY_TONE = { Arriving: 'info', Discharged: 'good' };
+  const NOT_INBOUND = new Set(['diverted', 'routed', 'cancelled']);
+
+  // ---------- Channels ----------
+  function openChannel(name) {
+    try { return typeof BroadcastChannel === 'function' ? new BroadcastChannel(name) : null; }
+    catch (err) { return null; }
+  }
+  const stateChannel = openChannel('wasel-state');
+  const commandChannel = openChannel('wasel-command');
+
+  // ---------- View state (memory only) ----------
+  const view = {
+    snap: null,        // last normalised snapshot: encounter numbers only, no names, no audit
+    lastTs: 0,         // dashboard timestamp of that snapshot; older or repeated ones are ignored
+    receivedAt: 0,     // when it arrived, by this page's clock
+    divertEnds: '',    // sim time the diversion this screen last requested should end
+  };
+  const sent = [];     // commands this screen sent, newest first
+  const armed = { btn: null, timer: 0 };
+  const cooling = new Set();
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    hospital: $('hospital'), mode: $('modeChip'), feed: $('feedChip'), feedText: $('feedText'),
+    clock: $('clock'), clockSub: $('clockSub'), theme: $('themeBtn'),
+    empty: $('empty'), emptyWarn: $('emptyWarn'), board: $('board'),
+    banner: $('banner'), bTitle: $('bTitle'), bSub: $('bSub'), bInc: $('bInc'), mciBtn: $('mciBtn'), mciRcpt: $('mciRcpt'),
+    stale: $('staleBar'), down: $('downBar'),
+    redMeta: $('redMeta'), redList: $('redList'), redOthers: $('redOthers'),
+    gauges: $('gauges'),
+    staffSum: $('staffSum'), skills: $('skills'), callRcpts: $('callRcpts'),
+    divState: $('divState'), divs: $('divs'), divRcpt: $('divRcpt'),
+    taskMeta: $('taskMeta'), tasks: $('tasks'),
+    famMeta: $('famMeta'), famSum: $('famSum'), famRows: $('famRows'),
+    announce: $('announce'),
+  };
+
+  // ---------- Small helpers ----------
+  const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const list = (v, max) => (Array.isArray(v) ? v.slice(0, max).filter(isObj) : []);
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const count = (v) => { const n = num(v); return n == null ? null : Math.max(0, Math.round(n)); };
+  const pad = (n) => String(n).padStart(2, '0');
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+  const clampPct = (x) => Math.max(0, Math.min(100, x));
+
+  // Text from the feed: strings or numbers only, control characters removed, length capped
+  function str(v, max) {
+    if (typeof v !== 'string' && typeof v !== 'number') return '';
+    return String(v).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, max || 80);
+  }
+  function clockStr(v) {
+    const s = typeof v === 'string' ? v.trim() : '';
+    return /^\d{1,2}:\d{2}(:\d{2})?$/.test(s) ? s : '';
+  }
+  function addMinutes(clock, minutes) {
+    const m = /^(\d{1,2}):(\d{2})/.exec(clock);
+    if (!m) return '';
+    const t = (((Number(m[1]) * 60 + Number(m[2]) + minutes) % 1440) + 1440) % 1440;
+    return pad(Math.floor(t / 60)) + ':' + pad(t % 60);
+  }
+  function duration(sec) {
+    if (sec == null) return '—';
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
+  }
+  function titleCase(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+  function h(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = String(text);
+    return node;
+  }
+  // Write only on change: live regions then announce real changes, not the once-a-second refresh
+  function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+  function setClass(node, cls) { if (node.className !== cls) node.className = cls; }
+  function chip(tone, text, small) {
+    return h('span', 'chip' + (small ? ' sm' : '') + (tone ? ' ' + tone : ''), text);
+  }
+  // Status chip: glyph + word + colour, so colour is never the only signal
+  function statusChip(tone, word) {
+    return chip(tone === 'neutral' ? '' : tone, (TONE_GLYPH[tone] || '○') + ' ' + word);
+  }
+  function announce(text) {
+    el.announce.textContent = '';
+    window.setTimeout(() => { el.announce.textContent = text; }, 30);
+  }
+
+  // ---------- Snapshot validation (CHANNELS.md section 4) ----------
+  function isRed(p) {
+    const pr = isObj(p.priority) ? p.priority : null;
+    if (pr && typeof pr.level === 'string') return pr.level.toLowerCase() === 'red';
+    if (pr && pr.system === 'ESI' && pr.level === 1) return true;
+    return p.esi === 1;
+  }
+  function readyLabel(item) {
+    const own = str(item.label, 20);
+    if (own) return own;
+    const key = str(item.k, 16);
+    return READY_LABEL[key.toLowerCase()] || titleCase(key) || 'Item';
+  }
+  function normReadiness(r) {
+    if (!isObj(r)) return null;
+    const items = list(r.items, LIMIT.items).map((it) => ({ label: readyLabel(it), ok: it.ok === true }));
+    let of = count(r.of), score = count(r.score);
+    if (!of && items.length) of = items.length;
+    if (score == null && items.length) score = items.filter((it) => it.ok).length;
+    if (!of || score == null) return null;
+    return { score: Math.min(score, of), of, items };
+  }
+  function normInbound(p) {
+    const esi = [1, 2, 3, 4, 5].includes(p.esi) ? p.esi : null;
+    return {
+      enc: str(p.enc, 16) || '—', amb: str(p.amb, 16), status: str(p.status, 20).toLowerCase(),
+      etaMin: num(p.etaMin), red: isRed(p), esi, label: str(p.label, 90),
+      bed: str(p.bed, 12), team: str(p.team, 40), readiness: normReadiness(p.readiness),
+    };
+  }
+  function normBlood(supplies, capacity) {
+    const b = supplies.find((x) => x.key === 'blood');
+    if (b) {
+      return { qty: count(b.qty), par: count(b.par), cap: count(b.cap), minutesLeft: count(b.minutesLeft), pending: b.pending === true };
+    }
+    const qty = count(capacity.oNeg);
+    return qty == null ? null : { qty, par: null, cap: null, minutesLeft: null, pending: false };
+  }
+  // Keeps only what this screen shows. `audit` and `breakGlass` are for admin.html and are never read here.
+  function normalise(m) {
+    const cap = isObj(m.capacity) ? m.capacity : {};
+    const beds = isObj(m.beds) ? m.beds : {};
+    const byZone = isObj(beds.byZone) ? beds.byZone : {};
+    const zone = (z) => (isObj(byZone[z]) ? { free: count(byZone[z].free), total: count(byZone[z].total) } : { free: null, total: null });
+    const staff = isObj(m.staff) ? m.staff : {};
+    const load = num(staff.avgLoad);
+    return {
+      simClock: clockStr(m.simClock),
+      hospital: str(m.hospital, 60),
+      mode: Object.prototype.hasOwnProperty.call(MODES, m.mode) ? m.mode : 'steady',
+      modeReason: str(m.modeReason, 160),
+      downtime: m.downtime === true,
+      incidents: list(m.incidents, LIMIT.incidents).map((i) => ({
+        name: str(i.name, 60) || 'Incident', place: str(i.place, 60), est: count(i.est), unconfirmed: i.unconfirmed === true,
+      })),
+      inbound: list(m.inbound, LIMIT.inbound).map(normInbound),
+      beds: { free: count(beds.free), total: count(beds.total), R: zone('R'), T: zone('T') },
+      cap: {
+        edBedsFree: count(cap.edBedsFree), resusFree: count(cap.resusFree), traumaFree: count(cap.traumaFree),
+        icuFree: count(cap.icuFree), icuTotal: count(cap.icuTotal), orFree: count(cap.orFree), orTotal: count(cap.orTotal),
+        ctOnline: count(cap.ctOnline), ctTotal: count(cap.ctTotal), ctQueue: count(cap.ctQueue),
+        ventsFree: count(cap.ventsFree), ventsTotal: count(cap.ventsTotal), diversion: cap.diversion === true,
+      },
+      blood: normBlood(list(m.supplies, LIMIT.supplies), cap),
+      staff: {
+        onDuty: count(staff.onDuty), incoming: count(staff.incoming), fatigued: count(staff.fatigued),
+        doctors: count(staff.doctors), avgLoad: load == null ? null : Math.max(0, Math.min(2, load)),
+      },
+      tasks: list(m.tasks, LIMIT.tasks).map((t) => ({
+        title: str(t.title, 160) || 'Task', owner: str(t.owner, 40), openSec: count(t.openSec),
+        escalated: count(t.escalated) || 0, level: [1, 2, 3].includes(t.level) ? t.level : 3,
+      })),
+      family: list(m.family, LIMIT.family).map((f) => ({
+        enc: str(f.enc, 16) || '—', status: str(f.status, 40) || 'Unknown', since: clockStr(f.since),
+      })),
+    };
+  }
+
+  function onState(msg) {
+    if (!isObj(msg) || msg.type !== 'state' || msg.v !== 1) return;
+    const ts = num(msg.ts);
+    if (ts == null || ts <= view.lastTs) return;
+    view.lastTs = ts;
+    view.receivedAt = Date.now();
+    view.snap = normalise(msg);
+    settle(view.snap);
+    renderAll();
+  }
+
+  // ---------- Commands (CHANNELS.md section 5) ----------
+  function commandId() {
+    const bytes = new Uint8Array(6);
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') window.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    return 'cmd-' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  function feedLive() { return view.receivedAt > 0 && Date.now() - view.receivedAt <= FEED_STALE_MS; }
+  function canSend() { return !!commandChannel && !!view.snap && feedLive() && !view.snap.downtime; }
+  function blockedReason() {
+    if (!commandChannel) return 'This browser cannot reach the dashboard, so commands are off.';
+    if (view.snap && view.snap.downtime) return 'Downtime: commands are paused. Use paper and radio.';
+    if (!feedLive()) return 'Commands pause until the dashboard feed is live again.';
+    return '';
+  }
+
+  // Posts one command, then watches the next snapshots for its effect (receipt.check)
+  function send(action, args, receipt) {
+    if (!canSend()) { announce('Not sent. ' + blockedReason()); return false; }
+    const msg = { type: 'command', v: 1, id: commandId(), from: FROM, role: ROLE, action, args };
+    try { commandChannel.postMessage(msg); }
+    catch (err) { announce('Not sent: this browser could not reach the dashboard.'); return false; }
+    sent.unshift({
+      id: msg.id, kind: receipt.kind, text: receipt.text, simAt: view.snap.simClock || '--:--',
+      at: Date.now(), status: 'sent', check: receipt.check, lateText: receipt.lateText, okText: receipt.okText,
+    });
+    if (sent.length > 30) sent.length = 30;
+    announce(receipt.text + ': sent to the dashboard.');
+    renderReceipts();
+    return true;
+  }
+  // A snapshot that shows a command's effect confirms it; one that never does is flagged after 10 s
+  function settle(snap) {
+    for (const c of sent) {
+      if ((c.status === 'sent' || c.status === 'late') && c.check(snap)) {
+        c.status = 'ok';
+        c.okAt = snap.simClock;
+      }
+    }
+  }
+  function expire() {
+    const now = Date.now();
+    for (const c of sent) if (c.status === 'sent' && now - c.at > CONFIRM_WAIT_MS) c.status = 'late';
+  }
+  function receiptText(c) {
+    if (c.status === 'ok') return '✓ ' + c.text + ' · ' + (c.okText || 'confirmed by the dashboard') + (c.okAt ? ' at ' + c.okAt : '');
+    if (c.status === 'late') return '◆ ' + c.text + ' · sent ' + c.simAt + ', ' + (c.lateText || 'not shown yet: check the dashboard');
+    return '○ ' + c.text + ' · sent ' + c.simAt + ', waiting for the dashboard';
+  }
+  function recent(kind) {
+    const now = Date.now();
+    return sent.filter((c) => c.kind === kind && now - c.at <= RECEIPT_KEEP_MS);
+  }
+  function receiptClass(c) { return 'rcpt' + (c.status === 'ok' ? ' ok' : c.status === 'late' ? ' late' : ''); }
+  function paintReceipt(node, c) {
+    setClass(node, c ? receiptClass(c) : 'rcpt');
+    setText(node, c ? receiptText(c) : '');
+  }
+  let callReceiptsKey = '';
+  function renderReceipts() {
+    paintReceipt(el.mciRcpt, recent('mci')[0]);
+    paintReceipt(el.divRcpt, recent('divert')[0]);
+    const calls = recent('callin').slice(0, LIMIT.receipts);
+    const key = calls.map((c) => c.id + c.status).join('|');
+    if (key === callReceiptsKey) return;
+    callReceiptsKey = key;
+    el.callRcpts.replaceChildren(...calls.map((c) => h('li', receiptClass(c), receiptText(c))));
+  }
+
+  // ---------- Two-tap confirm for high-impact commands ----------
+  function idleLabel(btn) {
+    if (btn === el.mciBtn) return view.snap && view.snap.mode === 'mci' ? 'Stand down MCI' : 'Declare MCI';
+    return btn.dataset.idle || '';
+  }
+  function disarm() {
+    if (!armed.btn) return;
+    const btn = armed.btn;
+    armed.btn = null;
+    window.clearTimeout(armed.timer);
+    btn.classList.remove('armed');
+    btn.textContent = idleLabel(btn);
+  }
+  function armOrFire(btn, armedText, fire) {
+    if (armed.btn === btn) { disarm(); fire(); return; }
+    disarm();
+    armed.btn = btn;
+    btn.classList.add('armed');
+    btn.textContent = armedText;
+    announce(armedText + '. It cancels itself in 4 seconds.');
+    armed.timer = window.setTimeout(disarm, ARM_MS);
+  }
+
+  function onMciTap() {
+    if (!view.snap) return;
+    const on = view.snap.mode !== 'mci';
+    armOrFire(el.mciBtn, on ? 'Tap again to declare MCI' : 'Tap again to stand down', () => {
+      send('declareMci', { on }, on
+        ? { kind: 'mci', text: 'Declare MCI', okText: 'MCI is active', check: (s) => s.mode === 'mci' }
+        : { kind: 'mci', text: 'Stand down MCI', okText: 'MCI stood down', check: (s) => s.mode !== 'mci',
+            lateText: 'still MCI: an active incident rule may keep it on' });
+    });
+  }
+  function onDivertTap(btn, minutes) {
+    armOrFire(btn, 'Tap again: ' + minutes + ' min', () => {
+      const ends = addMinutes(view.snap.simClock, minutes);
+      if (send('divert', { minutes }, {
+        kind: 'divert', text: 'Divert ESI 4–5 for ' + minutes + ' min', okText: 'diversion active',
+        check: (s) => s.cap.diversion,
+      })) view.divertEnds = ends;
+    });
+  }
+  function onCallTap(btn, s) {
+    if (cooling.has(btn)) return;
+    const baseline = view.snap ? view.snap.staff.incoming : null;
+    const ok = send('callIn', { count: s.count, skill: s.skill }, {
+      kind: 'callin', text: 'Call in ' + s.label, okText: 'on the way',
+      check: (snap) => snap.staff.incoming != null && (baseline == null ? snap.staff.incoming > 0 : snap.staff.incoming > baseline),
+    });
+    if (!ok) return;
+    cooling.add(btn);
+    btn.classList.add('done');
+    btn.querySelector('.bs').textContent = '✓ Paged · ETA about 25 min';
+    btn.disabled = true;
+    window.setTimeout(() => {
+      cooling.delete(btn);
+      btn.classList.remove('done');
+      btn.querySelector('.bs').textContent = skillSub(s);
+      renderControls();
+    }, COOLDOWN_MS);
+  }
+
+  // ---------- Static controls (built once, so focus never jumps) ----------
+  function skillSub(s) { return s.count > 1 ? 'Page ' + s.count + ' on-call' : 'Page on-call'; }
+  function buildControls() {
+    for (const s of SKILLS) {
+      const btn = h('button', 'btn skill');
+      btn.type = 'button';
+      btn.dataset.cmd = '1';
+      btn.append(h('span', 'bl', s.label), h('span', 'bs', skillSub(s)));
+      btn.addEventListener('click', () => onCallTap(btn, s));
+      el.skills.append(btn);
+    }
+    for (const minutes of DIVERT_MINUTES) {
+      const btn = h('button', 'btn', minutes + ' min');
+      btn.type = 'button';
+      btn.dataset.cmd = '1';
+      btn.dataset.idle = minutes + ' min';
+      btn.setAttribute('aria-label', 'Divert ESI 4–5 for ' + minutes + ' minutes');
+      btn.addEventListener('click', () => onDivertTap(btn, minutes));
+      el.divs.append(btn);
+    }
+    el.mciBtn.dataset.cmd = '1';
+    el.mciBtn.addEventListener('click', onMciTap);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') disarm(); });
+  }
+  function renderControls() {
+    const ok = canSend();
+    if (!ok) disarm();
+    for (const btn of document.querySelectorAll('[data-cmd]')) btn.disabled = !ok || cooling.has(btn);
+    const why = ok ? '' : blockedReason();
+    for (const note of document.querySelectorAll('[data-cmdnote]')) setText(note, why);
+  }
+
+  // ---------- Header ----------
+  function renderHeader() {
+    const live = feedLive(), s = view.snap;
+    setClass(el.feed, 'chip feed ' + (live ? 'good' : 'warning'));
+    setText(el.feed.firstElementChild, live ? '●' : '○');
+    setText(el.feedText, live ? 'Live' : 'No feed (start the dashboard in another tab)');
+    setText(el.clock, s && s.simClock ? s.simClock : '--:--');
+    if (live) setText(el.clockSub, 'SIM CLOCK · LIVE');
+    else if (s) setText(el.clockSub, 'SIM CLOCK · LAST UPDATE ' + Math.round((Date.now() - view.receivedAt) / 1000) + ' S AGO');
+    else setText(el.clockSub, 'SIM CLOCK · WAITING');
+    if (s) {
+      const m = MODES[s.mode];
+      el.mode.hidden = false;
+      setClass(el.mode, 'chip mode ' + m.tone);
+      setText(el.mode, m.glyph + ' ' + m.word);
+      setText(el.hospital, 'Incident command · ' + (s.hospital || 'ER'));
+    }
+  }
+
+  // ---------- Board frame: empty, live, stale, downtime ----------
+  function renderFrame() {
+    const s = view.snap, live = feedLive();
+    el.empty.hidden = !!s;
+    el.board.hidden = !s;
+    if (!stateChannel) {
+      el.emptyWarn.hidden = false;
+      setText(el.emptyWarn, '◆ This browser cannot connect WASEL screens (BroadcastChannel is unavailable). Open both pages from the same http address, for example after running python3 serve.py, in a current browser.');
+    }
+    if (!s) return;
+    el.board.classList.toggle('stale', !live);
+    el.stale.hidden = live;
+    if (!live) {
+      setText(el.stale, '◆ No feed from the dashboard. Showing the last update' + (s.simClock ? ' (sim ' + s.simClock + ')' : '') +
+        '. Start or reopen the dashboard in another tab.');
+    }
+    el.down.hidden = !s.downtime;
+  }
+
+  // ---------- Mode banner ----------
+  function renderBanner(s) {
+    const mci = s.mode === 'mci';
+    el.banner.className = 'banner ' + (mci ? 'mci' : 'standby');
+    el.bTitle.textContent = mci ? '■ MCI active · incident command open' : 'Standby · opens in MCI';
+    if (mci) {
+      el.bSub.textContent = s.modeReason || 'Mass-casualty incident declared.';
+    } else {
+      const m = MODES[s.mode];
+      el.bSub.textContent = 'Current mode: ' + m.word + (s.modeReason ? ' · ' + s.modeReason : '') +
+        '. Declare MCI when casualties exceed what normal operations can absorb.';
+    }
+    el.bInc.replaceChildren(...s.incidents.map((i) => {
+      const parts = [i.name];
+      if (i.place) parts.push(i.place);
+      if (i.est != null) parts.push('about ' + plural(i.est, 'casualty', 'casualties'));
+      return chip(i.unconfirmed ? 'warning' : 'info', (i.unconfirmed ? '◆ Unconfirmed: ' : '● ') + parts.join(' · '));
+    }));
+    if (armed.btn !== el.mciBtn) setText(el.mciBtn, idleLabel(el.mciBtn));
+  }
+
+  // ---------- Incoming RED patients ----------
+  function etaInfo(p) {
+    if (p.status === 'arrived') return { text: 'Arrived', now: true };
+    if (p.etaMin == null) return { text: 'ETA —', now: false };
+    if (p.etaMin <= 0) return { text: 'Arriving', now: true };
+    const m = Math.round(p.etaMin);
+    return { text: m + ' min', now: m <= 2 };
+  }
+  function field(name, value) {
+    const span = h('span', null, name + ' ');
+    span.append(h('b', null, value));
+    return span;
+  }
+  function readinessRow(r) {
+    const row = h('div', 'ready');
+    if (!r) { row.append(h('span', 'muted', 'Readiness not reported yet')); return row; }
+    const ratio = r.score / r.of;
+    const tone = r.score === r.of ? 'good' : ratio >= 0.6 ? 'warning' : 'critical';
+    const c = statusChip(tone, 'Ready ' + r.score + '/' + r.of);
+    c.title = 'Readiness: ' + r.score + ' of ' + r.of + ' checks done. Green when all done, amber at 60% or more, red below.';
+    row.append(c);
+    for (const it of r.items) {
+      const t = h('span', 'tick ' + (it.ok ? 'ok' : 'no'));
+      const g = h('span', null, it.ok ? '✓' : '✗');
+      g.setAttribute('aria-hidden', 'true');
+      t.append(g, document.createTextNode(it.label), h('span', 'sr-only', it.ok ? ' ready' : ' not ready'));
+      row.append(t);
+    }
+    return row;
+  }
+  function redCard(p) {
+    const li = h('li', 'red');
+    const top = h('div', 'red-top');
+    const eta = etaInfo(p);
+    top.append(h('span', 'enc', p.enc), chip('st-red', 'RED'));
+    if (p.esi) top.append(h('span', 'esi e' + p.esi, 'ESI ' + p.esi));
+    top.append(h('span', 'eta' + (eta.now ? ' now' : ''), eta.text));
+    li.append(top);
+    if (p.label) li.append(h('p', 'red-label', p.label));
+    const meta = h('div', 'red-meta');
+    if (p.amb) meta.append(field('Unit', p.amb));
+    meta.append(p.bed ? field('Bay', p.bed) : statusChip('warning', 'No bay yet'));
+    meta.append(p.team ? field('Team', p.team) : statusChip('warning', 'No team yet'));
+    li.append(meta, readinessRow(p.readiness));
+    return li;
+  }
+  function renderRed(s) {
+    const active = s.inbound.filter((p) => !NOT_INBOUND.has(p.status));
+    const reds = active.filter((p) => p.red).sort((a, b) => (a.etaMin == null ? 1e9 : a.etaMin) - (b.etaMin == null ? 1e9 : b.etaMin));
+    const others = active.length - reds.length;
+    if (reds.length) {
+      const unready = reds.filter((p) => !p.bed || !p.team).length;
+      el.redMeta.textContent = plural(reds.length, 'RED patient', 'RED patients') + ' · next ' + etaInfo(reds[0]).text +
+        (unready ? ' · ' + unready + ' without bay or team' : '');
+    } else {
+      el.redMeta.textContent = 'None inbound';
+    }
+    if (!reds.length) {
+      el.redList.replaceChildren(h('li', 'empty', s.mode === 'mci'
+        ? 'No RED patients inbound right now.'
+        : 'No RED patients inbound. Each one appears here with ETA, bay, team and readiness checks.'));
+    } else {
+      el.redList.replaceChildren(...reds.map(redCard));
+    }
+    el.redOthers.hidden = others <= 0;
+    el.redOthers.textContent = others > 0 ? 'Also inbound: ' + plural(others, 'non-RED patient', 'non-RED patients') + ', shown on the dashboard.' : '';
+  }
+
+  // ---------- Capacity (explainable thresholds, written on each row) ----------
+  function bedGauge(label, free, total, low) {
+    const g = { label, value: free == null ? '—' : String(free), of: '', pct: null, parPct: null, note: '' };
+    if (free != null) g.of = total ? 'free of ' + total : 'free';
+    if (free != null && total) g.pct = clampPct((free / total) * 100);
+    if (free == null) { g.tone = 'neutral'; g.status = 'No data'; }
+    else if (free === 0) { g.tone = 'critical'; g.status = 'None free'; }
+    else if (free <= low) { g.tone = 'warning'; g.status = 'Low'; }
+    else { g.tone = 'good'; g.status = 'OK'; }
+    g.rule = label + ': red at 0 free, amber at ' + low + ' or fewer.';
+    return g;
+  }
+  function ctGauge(c) {
+    const g = { label: 'CT scanners', value: c.ctOnline == null ? '—' : String(c.ctOnline), pct: null, parPct: null };
+    g.of = c.ctOnline == null ? '' : c.ctTotal ? 'online of ' + c.ctTotal : 'online';
+    if (c.ctOnline != null && c.ctTotal) g.pct = clampPct((c.ctOnline / c.ctTotal) * 100);
+    g.note = c.ctQueue != null ? 'Queue: ' + plural(c.ctQueue, 'scan', 'scans') : '';
+    if (c.ctOnline == null) { g.tone = 'neutral'; g.status = 'No data'; }
+    else if (c.ctOnline === 0) { g.tone = 'critical'; g.status = 'Offline'; }
+    else if (c.ctQueue != null && c.ctQueue > 2 * c.ctOnline) { g.tone = 'warning'; g.status = 'Long queue'; }
+    else { g.tone = 'good'; g.status = 'OK'; }
+    g.rule = 'CT: red when no scanner is online, amber when the queue is more than 2 scans per scanner.';
+    return g;
+  }
+  function bloodGauge(b) {
+    const g = { label: 'O-negative blood', value: '—', of: '', pct: null, parPct: null, note: '' };
+    g.rule = 'O-neg: red below half of par or under 30 min of use left, amber below par or under 60 min.';
+    if (!b || b.qty == null) { g.tone = 'neutral'; g.status = 'No data'; return g; }
+    g.value = String(b.qty);
+    g.of = 'units';
+    if (b.cap) {
+      g.pct = clampPct((b.qty / b.cap) * 100);
+      if (b.par != null) g.parPct = clampPct((b.par / b.cap) * 100);
+    }
+    const notes = [];
+    if (b.par != null) notes.push('Par ' + b.par);
+    if (b.minutesLeft != null) notes.push('about ' + b.minutesLeft + ' min at current use');
+    if (b.pending) notes.push('resupply requested');
+    g.note = titleCase(notes.join(' · '));
+    const mins = b.minutesLeft;
+    if (b.qty === 0 || (b.par != null && b.qty < b.par / 2) || (mins != null && mins < 30)) { g.tone = 'critical'; g.status = 'Critical'; }
+    else if ((b.par != null && b.qty < b.par) || (mins != null && mins < 60)) { g.tone = 'warning'; g.status = 'Below par'; }
+    else { g.tone = 'good'; g.status = 'OK'; }
+    return g;
+  }
+  function gaugeRow(g) {
+    const li = h('li', 'gauge');
+    li.title = g.rule;
+    const top = h('div', 'g-top');
+    const val = h('span', 'g-val', g.value);
+    if (g.of) val.append(h('small', null, ' ' + g.of));
+    top.append(h('span', 'g-name', g.label), val, statusChip(g.tone, g.status));
+    li.append(top);
+    if (g.pct != null) {
+      const bar = h('div', 'bar' + (g.tone === 'neutral' ? '' : ' ' + g.tone));
+      bar.setAttribute('aria-hidden', 'true');
+      const fill = h('i');
+      fill.style.width = g.pct.toFixed(1) + '%';
+      bar.append(fill);
+      if (g.parPct != null) {
+        const par = h('span', 'par');
+        par.style.left = g.parPct.toFixed(1) + '%';
+        bar.append(par);
+      }
+      li.append(bar);
+    }
+    if (g.note) li.append(h('p', 'g-note', g.note));
+    return li;
+  }
+  function renderCapacity(s) {
+    const c = s.cap, b = s.beds;
+    const edTotal = b.total;
+    const rows = [
+      bedGauge('Resus bays', c.resusFree != null ? c.resusFree : b.R.free, b.R.total, 1),
+      bedGauge('Trauma bays', c.traumaFree != null ? c.traumaFree : b.T.free, b.T.total, 1),
+      bedGauge('ED beds', c.edBedsFree != null ? c.edBedsFree : b.free, edTotal, edTotal ? Math.max(2, Math.ceil(edTotal * 0.15)) : 2),
+      bedGauge('ICU beds', c.icuFree, c.icuTotal, 1),
+      bedGauge('Operating theatres', c.orFree, c.orTotal, 1),
+      ctGauge(c),
+      bedGauge('Ventilators', c.ventsFree, c.ventsTotal, 2),
+      bloodGauge(s.blood),
+    ];
+    el.gauges.replaceChildren(...rows.map(gaugeRow));
+  }
+
+  // ---------- Staff call-back ----------
+  function renderStaff(s) {
+    const st = s.staff, items = [];
+    if (st.onDuty != null) items.push(chip('', 'On duty ' + st.onDuty));
+    if (st.doctors != null) items.push(chip('', 'Doctors ' + st.doctors));
+    if (st.incoming != null) items.push(chip(st.incoming > 0 ? 'info' : '', (st.incoming > 0 ? '● ' : '') + 'Incoming ' + st.incoming));
+    if (st.fatigued != null) items.push(chip(st.fatigued > 0 ? 'warning' : '', (st.fatigued > 0 ? '◆ ' : '') + 'Fatigued ' + st.fatigued));
+    if (st.avgLoad != null) {
+      const pct = Math.round(st.avgLoad * 100);
+      const tone = pct >= 85 ? 'critical' : pct >= 70 ? 'warning' : '';
+      const c = chip(tone, (tone ? TONE_GLYPH[tone] + ' ' : '') + 'Load ' + pct + '%');
+      c.title = 'Average nurse workload: red at 85% or more, amber at 70% or more.';
+      items.push(c);
+    }
+    if (!items.length) items.push(h('span', 'muted', 'Staffing figures not reported'));
+    el.staffSum.replaceChildren(...items);
+  }
+
+  // ---------- Diversion ----------
+  function renderDiversion(s) {
+    const on = s.cap.diversion;
+    const pendingDivert = recent('divert').some((c) => c.status === 'sent');
+    if (!on && !pendingDivert) view.divertEnds = '';
+    const items = [on ? statusChip('warning', 'Diverting ESI 4–5 now') : statusChip('good', 'Not diverting')];
+    if (on && view.divertEnds) items.push(h('span', 'muted', 'until about ' + view.divertEnds + ' (sim time)'));
+    el.divState.replaceChildren(...items);
+  }
+
+  // ---------- Ownership checklist ----------
+  function renderTasks(s) {
+    const tasks = s.tasks.slice().sort((a, b) =>
+      a.level - b.level || b.escalated - a.escalated || (b.openSec || 0) - (a.openSec || 0));
+    const esc = tasks.filter((t) => t.escalated > 0).length;
+    const unowned = tasks.filter((t) => !t.owner).length;
+    el.taskMeta.textContent = tasks.length
+      ? plural(tasks.length, 'open task', 'open tasks') + ' · ' + esc + ' escalated' + (unowned ? ' · ' + unowned + ' without owner' : '')
+      : 'All clear';
+    if (!tasks.length) {
+      el.tasks.replaceChildren(h('li', 'empty', 'No open tasks. Every new task arrives here with an owner and a clock.'));
+      return;
+    }
+    el.tasks.replaceChildren(...tasks.map((t) => {
+      const li = h('li', 'task l' + t.level + (t.escalated ? ' esc' : ''));
+      const main = h('div');
+      main.append(h('h3', 't-title', t.title));
+      const meta = h('div', 't-meta');
+      meta.append(t.owner ? chip('', 'Owner: ' + t.owner) : statusChip('critical', 'No owner'));
+      const lv = LEVEL[t.level];
+      meta.append(chip(lv.tone, lv.word, true));
+      if (t.escalated) meta.append(statusChip('critical', 'Escalated' + (t.escalated > 1 ? ' ×' + t.escalated : '')));
+      main.append(meta);
+      const clock = h('div', 't-clock', duration(t.openSec));
+      clock.append(h('small', null, 'open'));
+      li.append(main, clock);
+      return li;
+    }));
+  }
+
+  // ---------- Family reunification (status only) ----------
+  function renderFamily(s) {
+    const rows = s.family;
+    el.famMeta.textContent = rows.length ? plural(rows.length, 'patient', 'patients') : '';
+    const counts = new Map();
+    for (const r of rows) counts.set(r.status, (counts.get(r.status) || 0) + 1);
+    const order = FAMILY_ORDER.filter((k) => counts.has(k)).concat([...counts.keys()].filter((k) => !FAMILY_ORDER.includes(k)));
+    el.famSum.replaceChildren(...order.map((k) => chip(FAMILY_TONE[k] || '', k + ' ' + counts.get(k))));
+    if (!rows.length) {
+      el.famRows.replaceChildren(h('li', 'empty', 'No incident patients yet. Families are told where a patient is, never why.'));
+      return;
+    }
+    el.famRows.replaceChildren(...rows.map((r) => {
+      const li = h('li', 'frow');
+      li.append(h('b', null, r.enc), chip(FAMILY_TONE[r.status] || '', r.status));
+      const t = h('time', null, r.since ? 'since ' + r.since : '');
+      li.append(t);
+      return li;
+    }));
+  }
+
+  // ---------- Render ----------
+  function renderAll() {
+    renderHeader();
+    renderFrame();
+    const s = view.snap;
+    if (s) {
+      renderBanner(s);
+      renderRed(s);
+      renderCapacity(s);
+      renderStaff(s);
+      renderDiversion(s);
+      renderTasks(s);
+      renderFamily(s);
+    }
+    renderReceipts();
+    renderControls();
+  }
+  // Once a second: feed freshness, stale banner, receipt timeouts, command availability
+  function tick() {
+    expire();
+    renderHeader();
+    renderFrame();
+    if (view.snap) renderDiversion(view.snap);
+    renderReceipts();
+    renderControls();
+  }
+
+  // ---------- Theme (shared preference with the dashboard) ----------
+  function applyTheme(theme) {
+    const t = theme === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    el.theme.textContent = t === 'dark' ? 'Light theme' : 'Dark theme';
+    el.theme.setAttribute('aria-label', 'Switch to the ' + (t === 'dark' ? 'light' : 'dark') + ' theme');
+  }
+  function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (err) { /* storage blocked: default theme */ }
+    applyTheme(saved);
+    el.theme.addEventListener('click', () => {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (err) { /* storage blocked: theme applies to this tab only */ }
+    });
+    window.addEventListener('storage', (e) => { if (e.key === THEME_KEY) applyTheme(e.newValue); });
+  }
+
+  // ---------- Start ----------
+  initTheme();
+  buildControls();
+  if (stateChannel) stateChannel.onmessage = (e) => onState(e.data);
+  renderAll();
+  window.setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

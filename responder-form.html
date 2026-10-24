@@ -1,0 +1,1943 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: no third-party code or network. The page may only talk to
+     its own origin (serve.py proxies /face/* to the face-ID service). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src blob: mediastream:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="WASEL Responder: paramedic tablet app. Opens a temporary encounter, optionally identifies the patient by face, shows a simulated emergency summary and sends an ATMIST pre-alert to the WASEL ER dashboard. Demo data.">
+<title>WASEL Responder</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d03b3b'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * WASEL Responder · paramedic tablet app (Nexus 26 demo)
+ * Same design tokens as the ER Command Center dashboard (src/shell.html) so
+ * both screens read as one product. Dark by default; light theme via
+ * :root[data-theme="light"] (useful in sunlight). Status colour is always
+ * paired with text or a glyph (WCAG 1.4.1). Touch targets >= 44px.
+ * ========================================================================= */
+
+/* ---------- Theme tokens (shared with the dashboard) ---------- */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --raised: #2a2a28;
+  --hover: #33332f;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, .10);
+  --border-strong: rgba(255, 255, 255, .18);
+  --accent: #3987e5;
+  --accent-strong: #1f6fd1;
+  --accent-fg: #6aa6f0;
+  --accent-weak: rgba(57, 135, 229, .16);
+  --shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  --backdrop: rgba(0, 0, 0, .62);
+
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-weak: rgba(208, 59, 59, .16);
+  --serious-weak: rgba(236, 131, 90, .15);
+  --warning-weak: rgba(250, 178, 25, .13);
+  --good-weak: rgba(12, 163, 12, .15);
+  --critical-fg: #f47067;
+  --serious-fg: #ec835a;
+  --warning-fg: #fab219;
+  --good-fg: #4cc44c;
+
+  --radius: 12px;
+  --tap: 44px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --raised: #ebeae5;
+  --hover: #e2e1db;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #6b6a65;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, .10);
+  --border-strong: rgba(11, 11, 11, .18);
+  --accent: #2a78d6;
+  --accent-strong: #1f6fd1;
+  --accent-fg: #1f63b8;
+  --accent-weak: rgba(42, 120, 214, .12);
+  --shadow: 0 10px 30px rgba(11, 11, 11, .16);
+  --backdrop: rgba(11, 11, 11, .45);
+  --critical-fg: #b42318;
+  --serious-fg: #b54708;
+  --warning-fg: #8a5a00;
+  --good-fg: #0a7a0a;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--page); color: var(--text);
+  font: 15px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, p, ul, ol, dl, dd { margin: 0; }
+button, select, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: var(--accent-weak); }
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.muted { color: var(--muted); }
+.fine { font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: var(--tap); padding: 0 16px; border-radius: 9px;
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--text);
+  font-size: 15px; font-weight: 600; line-height: 1.15; text-align: center; cursor: pointer;
+  touch-action: manipulation; transition: background-color .15s ease, border-color .15s ease;
+}
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent-strong); border-color: transparent; color: #fff; }
+.btn.primary:hover { background: var(--accent); }
+.btn.ghost { background: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--raised); color: var(--text); }
+.btn.lg { min-height: 52px; padding: 0 22px; font-size: 16px; }
+.btn.sm { min-height: 36px; padding: 0 12px; font-size: 13.5px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.btnrow.end { justify-content: flex-end; }
+
+/* ---------- Chips (status as text + colour) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 10px;
+  border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--text-2);
+  font-size: 13px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums;
+}
+.chip.sm { min-height: 22px; padding: 1px 8px; font-size: 11.5px; }
+.chip.critical { background: var(--critical); border-color: var(--critical); color: #fff; }
+.chip.offline { background: var(--critical-weak); border-color: rgba(208, 59, 59, .6); color: var(--critical-fg); }
+.chip.serious { background: var(--serious-weak); border-color: rgba(236, 131, 90, .55); color: var(--serious-fg); }
+.chip.warning { background: var(--warning-weak); border-color: rgba(250, 178, 25, .5); color: var(--warning-fg); }
+.chip.good { background: var(--good-weak); border-color: rgba(12, 163, 12, .5); color: var(--good-fg); }
+.chip.info { background: var(--accent-weak); border-color: rgba(57, 135, 229, .5); color: var(--accent-fg); }
+button.chip { cursor: pointer; font-family: inherit; }
+button.chip:hover { border-color: var(--text-2); }
+
+/* ---------- Sticky header ---------- */
+.top {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding: 10px 16px; background: var(--page);
+  border-bottom: 1px solid var(--border); box-shadow: 0 6px 18px rgba(0, 0, 0, .22);
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo {
+  flex: none; width: 40px; height: 40px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--critical); color: #fff; font-size: 30px; font-weight: 800; line-height: 1; padding-bottom: 3px;
+}
+.brand h1 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; line-height: 1.15; white-space: nowrap; }
+.brand p { margin-top: 2px; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+.simtag {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid var(--border-strong); color: var(--muted);
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: 2px;
+}
+.enc { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lbl { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.encid { font: 700 26px/1 var(--mono); letter-spacing: -.01em; }
+.hstat { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.hact { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* ---------- Page & steps ---------- */
+.wrap { max-width: 1180px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.step {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  scroll-margin-top: 150px;
+}
+.sh {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.num {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--raised); color: var(--text); font-weight: 800; font-size: 16px;
+}
+.step.done .num { background: var(--good); color: #0b0b0b; }
+.sh h2 { font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.meta { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meta.good { color: var(--good-fg); }
+.meta.warning { color: var(--warning-fg); }
+.sb { padding: 16px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; }
+@media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* Step 1 */
+.s1b { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.bigid { display: flex; flex-direction: column; gap: 4px; padding: 10px 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.bigid strong { font: 800 34px/1 var(--mono); }
+.s1b p { flex: 1 1 360px; color: var(--text-2); }
+.s1b p strong { color: var(--text); }
+
+/* ---------- Status lines & notes ---------- */
+.msg { min-height: 1.45em; margin-top: 10px; font-size: 14px; color: var(--text-2); }
+.msg:empty { min-height: 0; margin: 0; }
+.msg.good { color: var(--good-fg); }
+.msg.warning { color: var(--warning-fg); }
+.msg.critical { color: var(--critical-fg); font-weight: 600; }
+.msg.busy::before, .busy-inline::before {
+  content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px;
+  border-radius: 50%; border: 2px solid var(--border-strong); border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.note {
+  margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; color: var(--text);
+  background: var(--warning-weak); border-left: 4px solid var(--warning);
+}
+.note.info { background: var(--accent-weak); border-left-color: var(--accent); }
+.note.critical { background: var(--critical-weak); border-left-color: var(--critical); }
+.note:first-child { margin-top: 0; }
+
+/* ---------- Camera / photo capture ---------- */
+.stage {
+  position: relative; height: clamp(220px, 34vw, 380px); display: grid; place-items: center;
+  border-radius: 10px; overflow: hidden; background: var(--surface-2); border: 1px dashed var(--border-strong);
+}
+.capture.small .stage { height: 220px; }
+.stage video, .stage img { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.stage-empty { padding: 16px; text-align: center; color: var(--muted); }
+
+/* ---------- Candidates ---------- */
+.cands { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.cands:empty { display: none; }
+.cand {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 14px;
+  padding: 12px 14px; border-radius: 10px; background: var(--surface-2);
+  border: 1px solid var(--border); border-left: 4px solid var(--muted);
+}
+.cand.match { border-left-color: var(--good); }
+.cand.chosen { border-color: var(--accent); border-left-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.ctop { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.rank { font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cname { font-size: 17px; overflow-wrap: anywhere; }
+.pct { margin-left: auto; font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.simbar { position: relative; height: 10px; margin-top: 8px; border-radius: 5px; background: var(--raised); }
+.simbar > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.simbar.match > i { background: var(--good); }
+.simbar > .cut { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); }
+.cand .fine { margin-top: 6px; }
+@media (max-width: 560px) { .cand { grid-template-columns: minmax(0, 1fr); } }
+.choice:empty { display: none; }
+.choice {
+  margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+  background: var(--accent-weak); border: 1px solid rgba(57, 135, 229, .45);
+}
+.choice.temp { background: var(--surface-2); border-color: var(--border-strong); }
+.choice .who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 16px; }
+.choice p { margin-top: 6px; font-size: 14px; color: var(--text-2); }
+
+/* ---------- Emergency summary ---------- */
+.sumhead { font-size: 15px; color: var(--text-2); }
+.sumhead.busy-inline { color: var(--text); }
+.sumrows { margin-top: 8px; }
+.srow {
+  display: grid; grid-template-columns: 190px minmax(0, 1fr) auto; align-items: baseline; gap: 4px 16px;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.srow:last-child { border-bottom: 0; }
+.srow dt { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.srow .v { font-size: 17px; font-weight: 650; overflow-wrap: anywhere; }
+.srow .src { font-size: 13px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.srow.critical .v { color: var(--critical-fg); }
+.srow.warning .v { color: var(--warning-fg); }
+.srow.unknown .v { color: var(--warning-fg); font-style: italic; }
+@media (max-width: 760px) {
+  .srow { grid-template-columns: 150px minmax(0, 1fr); }
+  .srow .src { grid-column: 2; white-space: normal; }
+}
+
+/* ---------- ATMIST form ---------- */
+.atm { display: flex; flex-direction: column; gap: 18px; }
+.arow { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; align-items: start; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 860px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+.letter {
+  width: 48px; height: 48px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--raised); font-size: 22px; font-weight: 800; color: var(--text);
+}
+.letter.alt { background: transparent; border: 1px dashed var(--border-strong); color: var(--muted); font-size: 16px; }
+.lab {
+  display: block; margin-bottom: 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.lab .unit, .lab .auto { text-transform: none; letter-spacing: 0; font-weight: 600; }
+.lab .auto { margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--accent-weak); color: var(--accent-fg); }
+input[type="text"], input[type="number"], input[type="time"], textarea {
+  width: 100%; min-height: var(--tap); padding: 9px 12px; border-radius: 9px;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+  font-size: 16px; /* >= 16px stops iOS zooming on focus */
+}
+textarea { min-height: 84px; resize: vertical; line-height: 1.4; }
+input::placeholder, textarea::placeholder { color: var(--muted); }
+.inl { display: flex; gap: 8px; }
+.inl input { flex: 1 1 auto; min-width: 0; }
+.short { max-width: 220px; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+legend { padding: 0; }
+
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.pill {
+  appearance: none; min-height: var(--tap); padding: 0 16px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--text);
+  font-size: 14.5px; font-weight: 600; touch-action: manipulation;
+}
+.pill:hover { background: var(--hover); }
+.pill[aria-pressed="true"] { background: var(--accent-weak); border-color: var(--accent); }
+.pill[aria-pressed="true"]::before { content: "✓ "; font-weight: 800; }
+
+/* Vital signs */
+.vitals { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 980px) { .vitals { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.vital {
+  padding: 10px; border-radius: 10px; background: var(--surface-2);
+  border: 1px solid var(--border); border-top: 5px solid var(--border-strong);
+}
+.vital input { min-height: 56px; text-align: center; font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.vs { margin-top: 6px; min-height: 1.3em; font-size: 13px; font-weight: 600; color: var(--muted); }
+.vital.s0 { border-top-color: var(--good); }
+.vital.s0 .vs { color: var(--good-fg); }
+.vital.s1 { border-top-color: var(--warning); }
+.vital.s1 .vs { color: var(--warning-fg); }
+.vital.s2 { border-top-color: var(--serious); background: linear-gradient(var(--serious-weak), var(--serious-weak)), var(--surface-2); }
+.vital.s2 .vs { color: var(--serious-fg); }
+.vital.s3 { border-top-color: var(--critical); background: linear-gradient(var(--critical-weak), var(--critical-weak)), var(--surface-2); }
+.vital.s3 .vs { color: var(--critical-fg); font-weight: 750; }
+.vital.bad { border: 1px dashed var(--critical); border-top: 5px dashed var(--critical); }
+.vital.bad .vs { color: var(--critical-fg); }
+.newsline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+/* Priority radios rendered as big chips */
+.opts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.opt { position: relative; display: inline-flex; }
+.opt input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.opt span {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 16px; border-radius: 10px;
+  border: 2px solid var(--border-strong); background: var(--raised); color: var(--text);
+  font-size: 15px; font-weight: 600; cursor: pointer; user-select: none; touch-action: manipulation;
+}
+.opt span:hover { background: var(--hover); }
+.opt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.opt input:checked + span { border-color: var(--text); }
+.opt input:checked + span::before { content: "✓"; font-weight: 900; }
+.seg .opt span { min-height: var(--tap); font-size: 14px; }
+.seg .opt input:checked + span { background: var(--accent-weak); border-color: var(--accent); }
+.sw { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border-strong); }
+.opt.esi-1 span { box-shadow: inset 5px 0 0 var(--critical); }
+.opt.esi-2 span { box-shadow: inset 5px 0 0 var(--serious); }
+.opt.esi-3 span { box-shadow: inset 5px 0 0 var(--warning); }
+.opt.esi-4 span { box-shadow: inset 5px 0 0 var(--good); }
+.opt.esi-5 span { box-shadow: inset 5px 0 0 #898781; }
+.opt.esi-1 input:checked + span, .opt.st-red input:checked + span { background: var(--critical); border-color: var(--critical); color: #fff; }
+.opt.esi-2 input:checked + span { background: var(--serious); border-color: var(--serious); color: #0b0b0b; }
+.opt.esi-3 input:checked + span, .opt.st-yellow input:checked + span { background: var(--warning); border-color: var(--warning); color: #0b0b0b; }
+.opt.esi-4 input:checked + span, .opt.st-green input:checked + span { background: var(--good); border-color: var(--good); color: #0b0b0b; }
+.opt.esi-5 input:checked + span { background: #898781; border-color: #898781; color: #0b0b0b; }
+.opt.st-black input:checked + span { background: #000; border-color: #fff; color: #fff; }
+.st-red .sw { background: var(--critical); }
+.st-yellow .sw { background: var(--warning); }
+.st-green .sw { background: var(--good); }
+.st-black .sw { background: #000; border-color: #fff; }
+
+/* Send area */
+.sendbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+  margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+.sendbar .msg { margin: 0; flex: 1 1 300px; }
+.ack {
+  margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--muted);
+}
+.ack.good { background: var(--good-weak); border-left-color: var(--good); }
+.ack.critical { background: var(--critical-weak); border-left-color: var(--critical); }
+.ack-title { font-size: 16px; font-weight: 700; }
+.ack.good .ack-title { color: var(--good-fg); }
+.ack.critical .ack-title { color: var(--critical-fg); }
+.ack p + p, .ack p + ul { margin-top: 6px; }
+.sendlog { list-style: none; padding: 0; font-size: 14px; color: var(--text-2); }
+.sendlog li { padding: 2px 0; }
+.sendlog time { display: inline-block; min-width: 3.4em; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+details.json { margin-top: 14px; }
+details.json summary, details.log summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; font-weight: 600; color: var(--text-2); }
+pre {
+  margin: 8px 0 0; padding: 12px; max-height: 360px; overflow: auto; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  font: 13px/1.45 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* ---------- Demo setup drawer ---------- */
+details.drawer { background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius); scroll-margin-top: 150px; }
+details.drawer > summary {
+  display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 16px;
+  cursor: pointer; font-weight: 700; color: var(--text-2); list-style: none;
+}
+details.drawer > summary::-webkit-details-marker { display: none; }
+details.drawer > summary::before { content: "▸"; font-size: 14px; transition: transform .15s ease; }
+details.drawer[open] > summary::before { transform: rotate(90deg); }
+details.drawer[open] > summary { border-bottom: 1px solid var(--border); }
+.dbody { padding: 16px; }
+.check { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); cursor: pointer; }
+.check input { flex: none; width: 24px; height: 24px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.field { margin-top: 14px; }
+.ph2 { display: flex; align-items: center; gap: 10px; }
+.ph2 h3 { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.ph2 .btn { margin-left: auto; }
+.ptable { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 14px; }
+.ptable th { text-align: left; font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border-strong); }
+.ptable td { padding: 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.ptable td.n { text-align: right; font-variant-numeric: tabular-nums; }
+.ptable th.n { text-align: right; }
+
+/* ---------- Footer ---------- */
+.foot { padding: 4px 4px 24px; font-size: 13.5px; color: var(--muted); }
+.foot p + p { margin-top: 6px; }
+.loglist { list-style: none; padding: 0; margin-top: 6px; font-size: 13px; }
+.loglist li { padding: 5px 0; border-bottom: 1px solid var(--border); color: var(--text-2); }
+.loglist time { display: inline-block; min-width: 3.6em; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------- Confirm dialog ---------- */
+dialog {
+  width: min(540px, calc(100% - 32px)); padding: 0; border-radius: 14px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+}
+dialog::backdrop { background: var(--backdrop); }
+.dlg-in { padding: 20px; }
+.dlg-in h2 { font-size: 19px; }
+.dlg-in > p { margin-top: 8px; color: var(--text-2); }
+.dlg-in ul { margin-top: 10px; padding-left: 20px; color: var(--warning-fg); font-weight: 600; }
+.dlg-in li + li { margin-top: 3px; }
+
+@media (max-width: 820px) {
+  .brand p { display: none; }
+  .encid { font-size: 22px; }
+  .hstat { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">+</div>
+    <div>
+      <h1>WASEL Responder<span class="simtag">Demo</span></h1>
+      <p>Paramedic pre-alert · Unit <span id="unitName">AMB-07</span></p>
+    </div>
+  </div>
+  <div class="enc">
+    <span class="lbl">Encounter</span>
+    <strong id="encId" class="encid">T-···</strong>
+    <span id="idChip" class="chip">Temporary ID</span>
+  </div>
+  <div class="hstat">
+    <button id="faceChip" type="button" class="chip" aria-controls="enrolDrawer">Face ID · checking…</button>
+    <span id="syncChip" class="chip" role="status" aria-live="polite">○ Draft · not sent</span>
+  </div>
+  <div class="hact">
+    <button id="themeBtn" type="button" class="btn ghost sm">Light theme</button>
+    <button id="newEncBtn" type="button" class="btn">New encounter</button>
+    <button id="sendTop" type="button" class="btn primary">Send pre-alert</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 1 · Encounter -->
+  <section class="step done" id="s1" aria-labelledby="s1h">
+    <div class="sh">
+      <span class="num" aria-hidden="true">1</span>
+      <h2 id="s1h">New encounter</h2>
+      <span class="meta good" id="s1m">✓ Created</span>
+    </div>
+    <div class="sb s1b">
+      <div class="bigid"><span class="lbl">Temporary ID</span><strong id="encId2">T-···</strong></div>
+      <p><strong>The patient exists from minute one.</strong> Opened <span id="encAt">--:--</span> by unit <span id="encUnit">AMB-07</span>.
+        Vital signs, treatment and the pre-alert attach to this ID now. Identity is optional and can follow later:
+        a failed or slow match never delays care.</p>
+    </div>
+  </section>
+
+  <!-- 2 · Identify -->
+  <section class="step" id="s2" aria-labelledby="s2h">
+    <div class="sh">
+      <span class="num" aria-hidden="true">2</span>
+      <h2 id="s2h">Identify · optional</h2>
+      <span class="meta" id="s2m">Not started</span>
+    </div>
+    <div class="sb">
+      <p id="faceOffline" class="note critical" hidden>Face service offline — continue on temporary ID. Nothing below waits for identification.</p>
+      <div class="cols">
+        <div class="capture" id="capId">
+          <div class="stage">
+            <video data-r="video" playsinline muted autoplay hidden></video>
+            <img data-r="img" alt="Patient photo, held in memory only" hidden>
+            <p data-r="empty" class="stage-empty">No photo yet. Start the camera, or take / upload a photo.</p>
+          </div>
+          <div class="btnrow">
+            <button data-r="start" type="button" class="btn">Start camera</button>
+            <button data-r="snap" type="button" class="btn primary" hidden>Capture</button>
+            <button data-r="stop" type="button" class="btn ghost" hidden>Stop camera</button>
+            <button data-r="fileBtn" type="button" class="btn">Take / upload photo</button>
+            <input data-r="file" type="file" accept="image/jpeg,image/png,image/*" class="sr-only" tabindex="-1" aria-hidden="true">
+          </div>
+          <p data-r="msg" class="msg" aria-live="polite"></p>
+          <div class="btnrow">
+            <button id="identifyBtn" type="button" class="btn primary lg" disabled>Identify</button>
+            <button id="discardBtn" type="button" class="btn ghost" disabled>Discard photo</button>
+          </div>
+        </div>
+
+        <div class="results">
+          <p id="idStatus" class="msg" role="status" aria-live="polite">Take a photo, then Identify. Or skip: the patient stays on the temporary ID.</p>
+          <ol id="candList" class="cands" aria-label="Face match candidates"></ol>
+          <p id="caution" class="note">Matching is strict. On blurred, dark or masked photos the right person is often ranked first but below the cutoff. Compare the face yourself; any choice is only a candidate, and an authorised nurse confirms identity at the ED door.</p>
+          <div class="btnrow">
+            <button id="noneBtn" type="button" class="btn">Skip face ID → keep temporary ID</button>
+          </div>
+          <div id="idChoice" class="choice" aria-live="polite"></div>
+        </div>
+      </div>
+      <p class="fine" style="margin-top:14px">Names appear on this device only so you can confirm. The pre-alert sends initials only. Photos stay in memory and are discarded after use; nothing is stored.</p>
+    </div>
+  </section>
+
+  <!-- 3 · Emergency summary -->
+  <section class="step" id="s3" aria-labelledby="s3h">
+    <div class="sh">
+      <span class="num" aria-hidden="true">3</span>
+      <h2 id="s3h">Emergency summary</h2>
+      <span class="chip warning sm">Simulated exchange data for demo</span>
+      <span class="meta" id="s3m">No record linked</span>
+    </div>
+    <div class="sb">
+      <p id="sumHead" class="sumhead" role="status" aria-live="polite"></p>
+      <dl id="sumRows" class="sumrows"></dl>
+      <p id="sumNote" class="note"></p>
+    </div>
+  </section>
+
+  <!-- 4 · ATMIST pre-alert -->
+  <section class="step" id="s4" aria-labelledby="s4h">
+    <div class="sh">
+      <span class="num" aria-hidden="true">4</span>
+      <h2 id="s4h">ATMIST pre-alert</h2>
+      <span class="meta" id="s4m"></span>
+    </div>
+    <div class="sb">
+      <div class="atm" id="atmist">
+
+        <div class="pair">
+          <div class="arow">
+            <span class="letter" aria-hidden="true">A</span>
+            <div>
+              <label class="lab" for="fAge">Age</label>
+              <input id="fAge" class="short" type="text" inputmode="numeric" maxlength="10" placeholder="e.g. 45 or ~40" autocomplete="off">
+            </div>
+          </div>
+          <div class="arow">
+            <span class="letter" aria-hidden="true">T</span>
+            <div>
+              <label class="lab" for="fTime">Time of incident <span class="auto">auto</span></label>
+              <div class="inl short"><input id="fTime" type="time"><button id="timeNow" type="button" class="btn">Now</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arow">
+          <span class="letter" aria-hidden="true">M</span>
+          <div>
+            <label class="lab" for="fMech">Mechanism</label>
+            <input id="fMech" type="text" maxlength="200" placeholder="Pick a preset or type" autocomplete="off">
+            <div id="mechPills" class="pills" role="group" aria-label="Mechanism presets"></div>
+          </div>
+        </div>
+
+        <div class="arow">
+          <span class="letter" aria-hidden="true">I</span>
+          <div>
+            <label class="lab" for="fInj">Injuries</label>
+            <textarea id="fInj" maxlength="400" placeholder="e.g. Chest wall tenderness, closed left femur fracture"></textarea>
+          </div>
+        </div>
+
+        <div class="arow">
+          <span class="letter" aria-hidden="true">S</span>
+          <div>
+            <span class="lab" id="signsLab">Signs</span>
+            <div id="vitals" class="vitals" role="group" aria-labelledby="signsLab"></div>
+            <div class="newsline"><span id="newsChip" class="chip">NEWS2-style score appears as you enter signs</span><span>Temperature not captured.</span></div>
+          </div>
+        </div>
+
+        <div class="arow">
+          <span class="letter" aria-hidden="true">T</span>
+          <div>
+            <span class="lab" id="treatLab">Treatment</span>
+            <div id="treatPills" class="pills" role="group" aria-labelledby="treatLab" style="margin-top:0"></div>
+            <label class="sr-only" for="fTreatOther">Other treatment</label>
+            <input id="fTreatOther" type="text" maxlength="200" placeholder="Other treatment (e.g. 10 mg morphine IV, TXA 1 g)" autocomplete="off" style="margin-top:10px">
+            <p id="conflict" class="note critical" role="alert" hidden></p>
+          </div>
+        </div>
+
+        <div class="arow">
+          <span class="letter alt" aria-hidden="true">P</span>
+          <fieldset>
+            <legend class="lab">Priority</legend>
+            <div class="opts seg" role="radiogroup" aria-label="Triage system">
+              <label class="opt"><input type="radio" name="psys" value="ESI" checked><span>ESI 1–5</span></label>
+              <label class="opt"><input type="radio" name="psys" value="START"><span>START (mass casualty)</span></label>
+            </div>
+            <div id="esiOpts" class="opts" role="radiogroup" aria-label="ESI level"></div>
+            <div id="startOpts" class="opts" role="radiogroup" aria-label="START category" hidden></div>
+          </fieldset>
+        </div>
+
+        <div class="arow">
+          <span class="letter alt" aria-hidden="true">ETA</span>
+          <div>
+            <label class="lab" for="fEta">ETA to ED <span class="unit">(minutes)</span></label>
+            <div class="inl" style="flex-wrap:wrap">
+              <input id="fEta" class="short" type="number" inputmode="numeric" min="0" max="240" step="1" autocomplete="off" style="flex:0 1 140px">
+              <div id="etaPills" class="pills" role="group" aria-label="ETA presets" style="margin-top:0"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p id="redactNote" class="note info" hidden>A name or ID number typed in free text was replaced: the pre-alert sends initials only.</p>
+
+      <div class="sendbar">
+        <button id="sendMain" type="button" class="btn primary lg">Send pre-alert</button>
+        <p id="missingLine" class="msg"></p>
+      </div>
+      <div id="ack" class="ack" aria-live="polite"></div>
+      <div id="copyBox" class="btnrow" hidden>
+        <button id="copyBtn" type="button" class="btn">Copy JSON</button>
+        <span id="copyMsg" class="fine" aria-live="polite">Paste on the dashboard console as WASEL.receivePreAlert(&lt;JSON&gt;).</span>
+      </div>
+      <details class="json">
+        <summary>Message preview: exactly what the dashboard receives</summary>
+        <pre id="jsonOut"></pre>
+        <p class="fine">Sends encounter, initials, match confidence, ATMIST, priority, ETA and safety flags. Never a name, person ID / Emirates ID number or photo.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- Demo setup -->
+  <details class="drawer" id="enrolDrawer">
+    <summary>Enrol demo faces (consenting team members only)</summary>
+    <div class="dbody">
+      <p class="note">Demo setup only. Enrol team members who are present and agree. Use a made-up ID such as <strong>DEMO-001</strong>, never a real Emirates ID number. The face service keeps a face embedding (not the photo) in its local database; this page keeps nothing.</p>
+      <p id="enHealth" class="msg"></p>
+      <div class="cols" style="margin-top:12px">
+        <div>
+          <label class="check"><input id="enConsent" type="checkbox"><span>This person is a team member, is present, and consents to enrolment for this demo.</span></label>
+          <div class="field">
+            <label class="lab" for="enPid">Person ID</label>
+            <input id="enPid" type="text" maxlength="64" placeholder="DEMO-001" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label class="lab" for="enName">Name</label>
+            <input id="enName" type="text" maxlength="80" placeholder="Full name (shown on the responder device only)" autocomplete="off">
+          </div>
+          <div class="capture small field" id="capEn">
+            <div class="stage">
+              <video data-r="video" playsinline muted autoplay hidden></video>
+              <img data-r="img" alt="Enrolment photo, held in memory only" hidden>
+              <p data-r="empty" class="stage-empty">No photo yet.</p>
+            </div>
+            <div class="btnrow">
+              <button data-r="start" type="button" class="btn">Start camera</button>
+              <button data-r="snap" type="button" class="btn primary" hidden>Capture</button>
+              <button data-r="stop" type="button" class="btn ghost" hidden>Stop camera</button>
+              <button data-r="fileBtn" type="button" class="btn">Take / upload photo</button>
+              <input data-r="file" type="file" accept="image/jpeg,image/png,image/*" class="sr-only" tabindex="-1" aria-hidden="true">
+            </div>
+            <p data-r="msg" class="msg" aria-live="polite"></p>
+          </div>
+          <div class="btnrow">
+            <button id="enrolBtn" type="button" class="btn primary lg" disabled>Enrol face</button>
+          </div>
+          <p id="enMsg" class="msg" role="status" aria-live="polite"></p>
+          <p class="fine">Tip: enrol 2–3 photos per person under the same ID to improve matching.</p>
+        </div>
+        <div>
+          <div class="ph2"><h3>Enrolled people</h3><button id="peopleRefresh" type="button" class="btn sm">Refresh</button></div>
+          <p id="peopleMsg" class="msg" aria-live="polite"></p>
+          <table class="ptable">
+            <thead><tr><th scope="col">Name</th><th scope="col">Person ID</th><th scope="col" class="n">Photos</th></tr></thead>
+            <tbody id="peopleBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <footer class="foot">
+    <p>Privacy: photos are held in memory only and discarded after use; camera tracks stop after capture. The pre-alert carries initials, never a name, ID number or image. Nothing is written to browser storage.</p>
+    <details class="log">
+      <summary>Device activity log (who, when, why · memory only)</summary>
+      <ul id="logList" class="loglist"></ul>
+    </details>
+  </footer>
+</main>
+
+<dialog id="dlg" aria-labelledby="dlgH">
+  <div class="dlg-in">
+    <h2 id="dlgH">Some fields are missing</h2>
+    <p>Care never waits: you can send now and update this encounter as you learn more.</p>
+    <ul id="dlgList"></ul>
+    <div class="btnrow end">
+      <button id="dlgBack" type="button" class="btn">Keep editing</button>
+      <button id="dlgSend" type="button" class="btn primary">Send anyway</button>
+    </div>
+  </div>
+</dialog>
+
+<div id="sr" class="sr-only" aria-live="polite"></div>
+
+<script>
+'use strict';
+(() => {
+/* =========================================================================
+ * WASEL Responder
+ *   1 encounter (temporary ID)  →  2 identify (face, optional)  →
+ *   3 emergency summary (simulated exchange)  →  4 ATMIST pre-alert
+ *
+ * Contract: FACE_ID_INTEGRATION.md (message v1 on BroadcastChannel
+ * 'wasel-prealert'). Face API: face-service README, via serve.py's /face/*.
+ *
+ * Privacy rules enforced here:
+ *  - Photos live only as an in-memory Blob + object URL; the URL is revoked
+ *    and the Blob dropped once a decision is made. Camera tracks stop after
+ *    capture, on stop, when the page is hidden and on unload.
+ *  - The pre-alert carries initials only: never a name, person_id / Emirates
+ *    ID or image. Free text is scrubbed of the candidate's name / ID.
+ *  - No localStorage / sessionStorage / IndexedDB. All DOM text is inserted
+ *    with textContent (via h()/setText()), never innerHTML.
+ * ========================================================================= */
+
+/* ---------- Configuration ---------- */
+const UNIT = 'AMB-07';
+const CHANNEL_NAME = 'wasel-prealert';
+const API = { health: '/face/health', identify: '/face/identify', enroll: '/face/enroll', people: '/face/people' };
+const MAX_SIDE = 1600;            // downscale photos before upload: faster, smaller, strips EXIF
+const HEALTH_EVERY_MS = 30000;
+
+const MECHANISMS = [
+  'Driver, frontal collision ~100 km/h',
+  'Rear passenger, rollover',
+  'Pedestrian struck',
+  'Smoke exposure, trapped 20 min',
+  'Burns from flash fire',
+];
+const TREATMENTS = ['Oxygen 15 L/min', 'Pelvic binder', '1 L saline', 'Tourniquet', 'Burns dressings', 'Morphine IV'];
+const ETA_PRESETS = [5, 10, 15, 20, 30];
+
+/* Simulated exchange record vocabulary */
+const ALLERGENS = ['Penicillin', 'Sulfonamides', 'NSAIDs', 'Latex', 'Contrast media', 'Morphine'];
+const ALLERGEN_TERMS = {           // what in a treatment line would trigger each allergy
+  'Penicillin': /penicillin|amoxicillin|co-?amoxiclav|augmentin|flucloxacillin/i,
+  'Sulfonamides': /sulfa|sulpha|sulfonamide|co-?trimoxazole/i,
+  'NSAIDs': /nsaid|ibuprofen|diclofenac|ketorolac|naproxen|aspirin/i,
+  'Latex': /latex/i,
+  'Contrast media': /contrast/i,
+  'Morphine': /morphine/i,
+};
+const SOURCES = ['Riayati', 'Malaffi', 'NABIDH'];
+const BLOOD_TYPES = [['O+', 35], ['A+', 25], ['B+', 20], ['AB+', 5], ['O-', 6], ['A-', 4], ['B-', 3], ['AB-', 2]];
+const CONDITIONS = ['Type 2 diabetes', 'Hypertension', 'Asthma', 'Chronic kidney disease (stage 3)', 'Epilepsy', 'Hypothyroidism'];
+const ANTICOAGULANTS = ['Apixaban 5 mg twice daily', 'Rivaroxaban 20 mg daily', 'Warfarin (INR-guided)'];
+
+/* Vital signs: sane entry ranges + NEWS2 single-parameter scores (RCP 2017).
+   `normal` is the 0-score band, used to say "Low" or "High". */
+const VITALS = [
+  { key: 'hr',   label: 'HR',   name: 'Heart rate',       unit: 'bpm',  min: 20, max: 250, normal: [51, 90],
+    score: v => v <= 40 ? 3 : v <= 50 ? 1 : v <= 90 ? 0 : v <= 110 ? 1 : v <= 130 ? 2 : 3 },
+  { key: 'sbp',  label: 'SBP',  name: 'Systolic BP',      unit: 'mmHg', min: 40, max: 300, normal: [111, 219],
+    score: v => v <= 90 ? 3 : v <= 100 ? 2 : v <= 110 ? 1 : v <= 219 ? 0 : 3 },
+  { key: 'rr',   label: 'RR',   name: 'Respiratory rate', unit: '/min', min: 0,  max: 80,  normal: [12, 20],
+    score: v => v <= 8 ? 3 : v <= 11 ? 1 : v <= 20 ? 0 : v <= 24 ? 2 : 3 },
+  { key: 'spo2', label: 'SpO₂', name: 'SpO₂',             unit: '%',    min: 50, max: 100, normal: [96, 100],
+    score: v => v <= 91 ? 3 : v <= 93 ? 2 : v <= 95 ? 1 : 0 },
+  { key: 'gcs',  label: 'GCS',  name: 'GCS',              unit: '/15',  min: 3,  max: 15,  normal: [15, 15],
+    score: v => v < 15 ? 3 : 0 },
+];
+const ESI_LEVELS = [
+  { v: 1, sub: 'Resuscitation' }, { v: 2, sub: 'Emergent' }, { v: 3, sub: 'Urgent' },
+  { v: 4, sub: 'Less urgent' }, { v: 5, sub: 'Non-urgent' },
+];
+const START_LEVELS = [
+  { v: 'red', label: 'Red', sub: 'Immediate' }, { v: 'yellow', label: 'Yellow', sub: 'Delayed' },
+  { v: 'green', label: 'Green', sub: 'Minor' }, { v: 'black', label: 'Black', sub: 'Expectant' },
+];
+
+/* ---------- Small helpers ---------- */
+const $ = id => document.getElementById(id);
+
+/** Build an element. Text children become text nodes (never parsed as HTML).
+ *  props: class, style (object), on<event> (listener), anything else → attribute. */
+function h(tag, props, ...kids) {
+  const node = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k === 'class') node.className = v;
+      else if (k === 'style') Object.assign(node.style, v);
+      else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v === true ? '' : String(v));
+    }
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    node.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return node;
+}
+const setText = (node, text) => { node.textContent = text == null ? '' : String(text); };
+const setTone = (node, base, tone) => { node.className = tone ? base + ' ' + tone : base; };
+const pad2 = n => String(n).padStart(2, '0');
+const hhmm = d => pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+const pct = x => Math.round(x * 100) + '%';
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const round2 = x => Math.round(x * 100) / 100;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : String(iso || '');
+}
+function announce(text) { setText(el.sr, text); }
+
+/** "Fatima Al Khan" → "F.K."  Initials are the only identity text that leaves the device. */
+function initials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  const first = Array.from(parts[0])[0].toUpperCase() + '.';
+  const last = parts.length > 1 ? Array.from(parts[parts.length - 1])[0].toUpperCase() + '.' : '';
+  return first + last;
+}
+
+/* Deterministic pseudo-random numbers from a string (FNV-1a → mulberry32). */
+function fnv1a(str) {
+  let x = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 0x01000193); }
+  return x >>> 0;
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function weighted(rng, pairs) {
+  const total = pairs.reduce((s, p) => s + p[1], 0);
+  let r = rng() * total;
+  for (const [value, w] of pairs) { r -= w; if (r < 0) return value; }
+  return pairs[pairs.length - 1][0];
+}
+function pickN(rng, list, n) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, n);
+}
+const escapeRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/* ---------- Element references (static markup) ---------- */
+const el = {};
+document.querySelectorAll('[id]').forEach(n => { el[n.id] = n; });
+
+/* ---------- State (memory only) ---------- */
+const TEMPORARY = () => ({ status: 'temporary', method: 'none' });
+const state = {
+  encounter: null,
+  openedAt: null,
+  usedIds: new Set(),
+  identity: TEMPORARY(),   // candidate: {status, method, confidence, display, name*, personId*, match*}  (* device only)
+  identityDecided: false,
+  candidates: [],
+  cutoff: null,            // from /health (0.70 for Facenet512)
+  summary: null,           // null | 'loading' | derived record
+  summaryToken: 0,
+  lookupAt: null,
+  sends: [],               // {at, delivered, isUpdate}
+  lastSentJson: null,
+  health: null,            // /health payload or {offline, problem}
+  log: [],
+  busy: { identify: false, enrol: false, sending: false },
+};
+
+/* =========================================================================
+ * Face-service HTTP (through serve.py's same-origin proxy)
+ * ========================================================================= */
+async function call(path, { method = 'GET', body, timeout = 45000 } = {}) {
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeout) : null;
+  try {
+    const res = await fetch(path, {
+      method, body, cache: 'no-store', credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined,
+    });
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* non-JSON error page */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, data: null, timeout: !!(err && err.name === 'AbortError') };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Map a failed face-service response to plain words. `offline` = service unreachable. */
+function faceProblem(res) {
+  const s = res.status;
+  const detail = res.data && res.data.detail;
+  if (s === 0 && res.timeout) return { offline: true, text: 'Face service timed out.' };
+  if (s === 0 || s === 502 || s === 503 || s === 504) return { offline: true, text: 'Face service offline.' };
+  if (s === 404 || s === 405 || s === 501) return { offline: true, text: 'Face proxy not found. Open this page through serve.py.' };
+  if (s === 422 && Array.isArray(detail)) return { text: 'Request incomplete: a required field is missing.' };
+  if (s === 422) return { text: 'No face found in the photo. Retake closer and face-on, in better light if safe.' };
+  if (s === 400) return { text: 'Could not read that image. Use a JPEG or PNG photo.' };
+  if (s === 413) return { text: 'Photo too large. Retake or choose a smaller photo.' };
+  return { text: `Face service error (HTTP ${s}).` };
+}
+
+async function refreshHealth() {
+  const res = await call(API.health, { timeout: 8000 });
+  if (res.ok && res.data && res.data.status === 'ok') {
+    state.health = res.data;
+    if (typeof res.data.match_similarity === 'number') state.cutoff = res.data.match_similarity;
+  } else {
+    state.health = { offline: true, problem: faceProblem(res).text };
+  }
+  renderHealth();
+}
+
+/* =========================================================================
+ * Photo capture (camera or upload) — one controller per capture panel.
+ * The photo is only ever a Blob in memory plus an object URL for preview.
+ * ========================================================================= */
+const captures = [];
+
+/** Re-encode any decodable image as a downscaled JPEG (also converts HEIC on Safari). */
+function toJpeg(file) {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.addEventListener('load', () => {
+      const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => { canvas.width = canvas.height = 0; resolve(blob || file); }, 'image/jpeg', 0.9);
+    });
+    img.addEventListener('error', () => { URL.revokeObjectURL(url); resolve(file); });  // let the service judge it
+    img.src = url;
+  });
+}
+
+function createCapture(root, onChange) {
+  const q = r => root.querySelector(`[data-r="${r}"]`);
+  const video = q('video'), img = q('img'), empty = q('empty'), msg = q('msg');
+  const startBtn = q('start'), snapBtn = q('snap'), stopBtn = q('stop'), fileBtn = q('fileBtn'), fileIn = q('file');
+  let stream = null, blob = null, url = null, starting = false, gen = 0;
+
+  const api = {
+    get blob() { return blob; },
+    get live() { return !!stream; },
+    start, stop, clear, say,
+  };
+  captures.push(api);
+
+  function say(text, tone) { setText(msg, text); setTone(msg, 'msg', tone); }
+
+  function view() {
+    const live = !!stream;
+    video.hidden = !live;
+    img.hidden = live || !url;
+    empty.hidden = live || !!url;
+    startBtn.hidden = live;
+    snapBtn.hidden = !live;
+    stopBtn.hidden = !live;
+    startBtn.disabled = starting;
+    setText(startBtn, url ? 'Retake with camera' : 'Start camera');
+  }
+
+  async function start() {
+    if (stream || starting) return;
+    captures.forEach(c => { if (c !== api) c.stop(); });   // one camera at a time
+    const md = navigator.mediaDevices;
+    if (!md || typeof md.getUserMedia !== 'function') {
+      say(window.isSecureContext === false
+        ? 'Live camera needs HTTPS or localhost. Use “Take / upload photo”: it opens the tablet camera.'
+        : 'Live camera not available in this browser. Use “Take / upload photo”.', 'warning');
+      return;
+    }
+    const mine = ++gen;
+    starting = true; view(); say('Starting camera…', 'busy');
+    try {
+      const s = await md.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
+      });
+      if (mine !== gen) { s.getTracks().forEach(t => t.stop()); return; }   // stopped while waiting
+      stream = s;
+      video.srcObject = s;
+      view();
+      try { await video.play(); } catch (_) { /* autoplay attribute covers it */ }
+      say('Frame the face, then Capture. The photo stays in memory only.');
+    } catch (err) {
+      const n = err && err.name;
+      say(n === 'NotAllowedError' || n === 'SecurityError' ? 'Camera permission denied. Use “Take / upload photo” instead.'
+        : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'No usable camera found. Use “Take / upload photo”.'
+        : n === 'NotReadableError' ? 'Camera is in use by another app. Use “Take / upload photo”.'
+        : 'Camera unavailable. Use “Take / upload photo”.', 'warning');
+    } finally {
+      starting = false; view();
+    }
+  }
+
+  function stop() {
+    gen++;
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    video.srcObject = null;
+    view();
+  }
+
+  function snap() {
+    if (!stream || !video.videoWidth) { say('Camera not ready yet. Try again in a moment.', 'warning'); return; }
+    const scale = Math.min(1, MAX_SIDE / Math.max(video.videoWidth, video.videoHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    stop();                                  // camera off as soon as the frame is grabbed
+    canvas.toBlob(b => {
+      canvas.width = canvas.height = 0;
+      if (b) setBlob(b, 'Photo captured · in memory only · camera off.');
+      else say('Capture failed. Use “Take / upload photo”.', 'warning');
+    }, 'image/jpeg', 0.9);
+  }
+
+  function setBlob(b, text) {
+    revoke();
+    blob = b;
+    url = URL.createObjectURL(b);
+    img.src = url;
+    view(); say(text, 'good'); onChange();
+  }
+
+  function revoke() {
+    if (url) URL.revokeObjectURL(url);
+    url = null;
+    img.removeAttribute('src');
+  }
+
+  /** Stop the camera and drop the photo from memory. */
+  function clear(text) {
+    stop(); revoke(); blob = null;
+    view(); say(text || ''); onChange();
+  }
+
+  startBtn.addEventListener('click', start);
+  snapBtn.addEventListener('click', snap);
+  stopBtn.addEventListener('click', () => { stop(); say('Camera off.'); });
+  fileBtn.addEventListener('click', () => fileIn.click());
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files && fileIn.files[0];
+    fileIn.value = '';                       // drop the input's reference to the file
+    if (!f) return;
+    stop();
+    say('Preparing photo…', 'busy');
+    const b = await toJpeg(f);
+    setBlob(b, 'Photo ready · in memory only.');
+  });
+  view();
+  return api;
+}
+
+const capId = createCapture(el.capId, renderIdentifyControls);
+const capEn = createCapture(el.capEn, renderEnrolControls);
+
+/* =========================================================================
+ * 1 · Encounter
+ * ========================================================================= */
+function newEncounterId() {
+  for (let i = 0; i < 1000; i++) {
+    const id = 'T-' + (500 + Math.floor(Math.random() * 400));
+    if (!state.usedIds.has(id)) { state.usedIds.add(id); return id; }
+  }
+  return 'T-' + (500 + Math.floor(Math.random() * 400));
+}
+
+function startEncounter() {
+  capId.clear('');
+  state.encounter = newEncounterId();
+  state.openedAt = new Date();
+  state.identity = TEMPORARY();
+  state.identityDecided = false;
+  state.candidates = [];
+  state.summary = null;
+  state.summaryToken++;
+  state.lookupAt = null;
+  state.sends = [];
+  state.lastSentJson = null;
+  resetForm();
+  setText(el.idStatus, 'Take a photo, then Identify. Or skip: the patient stays on the temporary ID.');
+  setTone(el.idStatus, 'msg', '');
+  addLog(`Encounter ${state.encounter} opened`, 'new patient on temporary ID');
+  renderAll();
+}
+
+function hasUnsentWork() {
+  const current = JSON.stringify(buildMessage());
+  if (state.lastSentJson) return current !== state.lastSentJson;
+  return formHasContent() || state.identity.status === 'candidate';
+}
+
+function onNewEncounter() {
+  if (hasUnsentWork()) {
+    const ok = window.confirm(`Start a new encounter? Unsent changes to ${state.encounter} on this tablet will be lost.`
+      + (state.lastSentJson ? ' What was already sent stays on the dashboard.' : ''));
+    if (!ok) return;
+  }
+  startEncounter();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  announce(`New encounter ${state.encounter} opened on a temporary ID.`);
+}
+
+function renderEncounter() {
+  setText(el.encId, state.encounter);
+  setText(el.encId2, state.encounter);
+  setText(el.encAt, hhmm(state.openedAt));
+}
+
+/* =========================================================================
+ * 2 · Identify
+ * ========================================================================= */
+function renderIdentifyControls() {
+  el.identifyBtn.disabled = !capId.blob || state.busy.identify;
+  el.discardBtn.disabled = !capId.blob && !capId.live;
+  setText(el.identifyBtn, state.busy.identify ? 'Identifying…' : 'Identify');
+}
+
+async function identify() {
+  const blob = capId.blob;
+  if (!blob || state.busy.identify) return;
+  const enc = state.encounter;
+  state.busy.identify = true;
+  renderIdentifyControls();
+  setText(el.idStatus, 'Comparing with enrolled faces… (about a second)');
+  setTone(el.idStatus, 'msg', 'busy');
+  addLog('Face lookup', 'identify patient for pre-alert');
+
+  const form = new FormData();
+  form.append('image', blob, 'probe.jpg');
+  form.append('top_k', '3');
+  const res = await call(API.identify, { method: 'POST', body: form, timeout: 60000 });
+
+  state.busy.identify = false;
+  if (enc !== state.encounter) return;      // a new encounter started meanwhile: drop the result
+  renderIdentifyControls();
+
+  if (!res.ok) {
+    const p = faceProblem(res);
+    state.candidates = [];
+    renderCandidates();
+    setText(el.idStatus, `${p.text} Continue on temporary ID ${state.encounter}; nothing else waits for this.`);
+    setTone(el.idStatus, 'msg', p.offline ? 'critical' : 'warning');
+    if (p.offline) { state.health = { offline: true, problem: p.text }; renderHealth(); }
+    announce(p.text);
+    return;
+  }
+
+  const list = res.data && Array.isArray(res.data.candidates) ? res.data.candidates : [];
+  state.candidates = list
+    .filter(c => c && typeof c.person_id === 'string' && typeof c.similarity === 'number')
+    .slice(0, 3);
+  renderCandidates();
+
+  const face = (res.data && res.data.face) || {};
+  const details = [];
+  if (typeof face.detection_confidence === 'number') details.push(`detection ${(face.detection_confidence * 100).toFixed(1)}%`);
+  if (face.rotation_ccw) details.push(`photo rotated ${face.rotation_ccw}°`);
+  if (face.faces_in_image > 1) details.push(`${face.faces_in_image} faces in photo, largest used`);
+  const faceLine = details.length ? ` Face found (${details.join(', ')}).` : '';
+
+  if (!state.candidates.length) {
+    setText(el.idStatus, `No enrolled faces to compare against.${faceLine} Continue on temporary ID.`);
+    setTone(el.idStatus, 'msg', 'warning');
+  } else {
+    const top = state.candidates[0];
+    const n = state.candidates.length;
+    setText(el.idStatus, `${n} candidate${n > 1 ? 's' : ''}. Top: ${pct(top.similarity)}${top.match ? ' (match)' : ' (below cutoff)'}.${faceLine} Choose one, or keep the temporary ID.`);
+    setTone(el.idStatus, 'msg', top.match ? 'good' : 'warning');
+  }
+}
+
+function renderCandidates() {
+  const cut = state.cutoff;
+  const chosen = state.identity.status === 'candidate' ? state.identity.personId : null;
+  el.candList.replaceChildren(...state.candidates.map((c, i) => {
+    const isChosen = c.person_id === chosen;
+    const label = `Similarity ${pct(c.similarity)}` + (cut != null ? `, match cutoff ${pct(cut)}` : '');
+    const bar = h('div', { class: 'simbar' + (c.match ? ' match' : ''), role: 'img', 'aria-label': label },
+      h('i', { style: { width: (clamp01(c.similarity) * 100) + '%' } }),
+      cut != null ? h('span', { class: 'cut', title: `Match cutoff ${pct(cut)}`, style: { left: (clamp01(cut) * 100) + '%' } }) : null);
+    const badge = c.match
+      ? h('span', { class: 'chip good sm' }, '✓ match')
+      : h('span', { class: 'chip sm' }, 'below cutoff');
+    const hint = !c.match && i === 0
+      ? h('p', { class: 'fine' }, 'Ranked first but below the cutoff: common on blurred, dark or masked photos. Compare the face before using.')
+      : null;
+    const btn = h('button', {
+      type: 'button', class: 'btn' + (isChosen ? ' primary' : ''), 'aria-pressed': isChosen ? 'true' : 'false',
+      onclick: () => chooseCandidate(c),
+    }, isChosen ? '✓ Candidate' : 'Use as candidate');
+    return h('li', { class: 'cand' + (c.match ? ' match' : '') + (isChosen ? ' chosen' : '') },
+      h('div', null,
+        h('div', { class: 'ctop' },
+          h('span', { class: 'rank' }, '#' + (i + 1)),
+          h('strong', { class: 'cname' }, c.name || '(no name on file)'),
+          badge,
+          h('span', { class: 'pct' }, pct(c.similarity))),
+        bar, hint),
+      btn);
+  }));
+  setText(el.noneBtn, state.candidates.length ? 'None of these → keep temporary ID' : 'Skip face ID → keep temporary ID');
+}
+
+function chooseCandidate(c) {
+  state.identity = {
+    status: 'candidate',
+    method: 'face',
+    confidence: round2(clamp01(c.similarity)),
+    display: initials(c.name),
+    name: c.name || '',            // device only
+    personId: c.person_id,         // device only: drives the simulated record lookup
+    match: !!c.match,
+  };
+  state.identityDecided = true;
+  capId.clear('Photo discarded from memory. Nothing stored.');
+  addLog(`Candidate chosen (${state.identity.display})`, `face ${pct(c.similarity)}, ${c.match ? 'match' : 'below cutoff'}; responder judgement`);
+  renderIdentity();
+  renderCandidates();
+  lookupSummary();
+  announce(`Candidate ${state.identity.display} chosen. Loading emergency summary.`);
+}
+
+function keepTemporary() {
+  const hadPhoto = !!capId.blob;
+  state.identity = TEMPORARY();
+  state.identityDecided = true;
+  capId.clear(hadPhoto ? 'Photo discarded from memory. Nothing stored.' : '');
+  addLog('Identity: temporary ID kept', 'no confident match or face ID skipped');
+  renderIdentity();
+  renderCandidates();
+  lookupSummary();
+  announce(`Patient stays on temporary ID ${state.encounter}.`);
+}
+
+function renderIdentity() {
+  const id = state.identity;
+  // Header chip: initials only (the header is the most visible part of the screen).
+  if (id.status === 'candidate') {
+    setText(el.idChip, `Candidate ${id.display} · face ${pct(id.confidence)}`);
+    setTone(el.idChip, 'chip', 'info');
+  } else {
+    setText(el.idChip, 'Temporary ID');
+    setTone(el.idChip, 'chip', '');
+  }
+
+  el.idChoice.replaceChildren();
+  if (id.status === 'candidate') {
+    setTone(el.idChoice, 'choice', '');
+    el.idChoice.append(
+      h('div', { class: 'who' },
+        h('span', { class: 'chip info' }, 'Candidate'),
+        h('strong', null, id.name || '(no name on file)'),
+        h('span', null, `→ pre-alert shows “${id.display}”`)),
+      h('p', null, `Face similarity ${pct(id.confidence)} · ${id.match ? 'above' : 'below'} the match cutoff. A candidate never merges charts: an authorised nurse confirms identity at the ED door.`),
+      h('div', { class: 'btnrow' }, h('button', { type: 'button', class: 'btn', onclick: keepTemporary }, 'Revert to temporary ID')));
+  } else if (state.identityDecided) {
+    setTone(el.idChoice, 'choice', 'temp');
+    el.idChoice.append(
+      h('div', { class: 'who' }, h('span', { class: 'chip' }, 'Temporary'), h('strong', null, state.encounter)),
+      h('p', null, 'Care and the pre-alert continue on the temporary ID. Identity can be added later.'));
+  }
+
+  const done = state.identityDecided;
+  el.s2.classList.toggle('done', done);
+  setText(el.s2m, !done ? 'Optional' : id.status === 'candidate' ? '✓ Candidate chosen' : '✓ Temporary ID kept');
+  setTone(el.s2m, 'meta', done ? 'good' : '');
+}
+
+/* =========================================================================
+ * 3 · Emergency summary — simulated exchange lookup ("One Record adapter")
+ * ========================================================================= */
+/** Deterministic synthetic record for a person_id. Same person → same record. */
+function deriveSummary(personId) {
+  const rng = mulberry32(fnv1a('wasel:' + personId));
+  const source = SOURCES[Math.floor(rng() * SOURCES.length)];
+  const day = Math.floor(rng() * 480);                       // 1 May 2025 … late Aug 2026
+  const asOf = new Date(Date.UTC(2025, 4, 1) + day * 86400000).toISOString().slice(0, 10);
+  const r = rng();
+  const allergies = pickN(rng, ALLERGENS, r < 0.35 ? 0 : r < 0.8 ? 1 : 2);
+  const anticoagulant = rng() < 0.25;
+  const anticoagDrug = ANTICOAGULANTS[Math.floor(rng() * ANTICOAGULANTS.length)];
+  const bloodType = weighted(rng, BLOOD_TYPES);
+  const conditions = pickN(rng, CONDITIONS, Math.floor(rng() * 3));
+  if (anticoagulant) conditions.unshift('Atrial fibrillation');
+  return { allergies, anticoagulant, anticoagDrug: anticoagulant ? anticoagDrug : null, bloodType, conditions, source, asOf };
+}
+
+const summaryRecord = () => (state.summary && typeof state.summary === 'object' ? state.summary : null);
+
+function lookupSummary() {
+  const token = ++state.summaryToken;
+  const id = state.identity;
+  if (id.status !== 'candidate') { state.summary = null; renderSummary(); onFormChange(); return; }
+  state.summary = 'loading';
+  renderSummary();
+  onFormChange();
+  setTimeout(() => {
+    if (token !== state.summaryToken) return;               // identity changed meanwhile
+    state.summary = deriveSummary(id.personId);
+    state.lookupAt = new Date();
+    addLog(`Record lookup for ${id.display} (One Record adapter, simulated)`, 'emergency care: allergies, anticoagulant, blood type');
+    renderSummary();
+    onFormChange();
+    announce(`Emergency summary loaded from ${state.summary.source}.`);
+  }, 450);
+}
+
+function summaryRow(label, value, source, tone) {
+  return h('div', { class: 'srow' + (tone ? ' ' + tone : '') },
+    h('dt', null, label),
+    h('dd', { class: 'v' }, value),
+    h('dd', { class: 'src' }, source));
+}
+
+function renderSummary() {
+  const id = state.identity, rec = summaryRecord();
+  el.sumRows.replaceChildren();
+  el.s3.classList.remove('done');
+
+  if (state.summary === 'loading') {
+    setText(el.sumHead, `Querying One Record adapter for candidate ${id.display}…`);
+    setTone(el.sumHead, 'sumhead', 'busy-inline');
+    el.sumNote.hidden = true;
+    setText(el.s3m, 'Looking up…'); setTone(el.s3m, 'meta', '');
+    return;
+  }
+
+  setTone(el.sumHead, 'sumhead', '');
+  el.sumNote.hidden = false;
+
+  if (id.status === 'candidate' && rec) {
+    const src = `${rec.source} · as of ${fmtDate(rec.asOf)}`;
+    setText(el.sumHead, `Linked to candidate ${id.display} (unconfirmed) through the One Record adapter.`);
+    el.sumRows.append(
+      summaryRow('Allergies', rec.allergies.length ? '⚠ ' + rec.allergies.join(', ') : 'None recorded', src, rec.allergies.length ? 'critical' : ''),
+      summaryRow('Anticoagulant', rec.anticoagulant ? `Yes: ${rec.anticoagDrug} (bleeding risk)` : 'No', src, rec.anticoagulant ? 'warning' : ''),
+      summaryRow('Blood type', rec.bloodType, src),
+      summaryRow('Chronic conditions', rec.conditions.length ? rec.conditions.join(', ') : 'None recorded', src));
+    setText(el.sumNote, `Candidate data until an authorised nurse confirms identity at the ED door. Lookup logged: ${UNIT} · ${hhmm(state.lookupAt || new Date())} · emergency care.`);
+    setTone(el.sumNote, 'note', 'info');
+    el.s3.classList.add('done');
+    setText(el.s3m, `✓ ${rec.source}`); setTone(el.s3m, 'meta', 'good');
+  } else {
+    setText(el.sumHead, `No record linked. Patient on temporary ID ${state.encounter}.`);
+    for (const label of ['Allergies', 'Anticoagulant', 'Blood type', 'Chronic conditions']) {
+      el.sumRows.append(summaryRow(label, 'Unknown', 'No source', 'unknown'));
+    }
+    setText(el.sumNote, 'Unknown is not “no known allergies”. Treat every field as unknown until verified.');
+    setTone(el.sumNote, 'note', '');
+    if (state.identityDecided) el.s3.classList.add('done');
+    setText(el.s3m, 'All fields unknown'); setTone(el.s3m, 'meta', 'warning');
+  }
+}
+
+/* =========================================================================
+ * 4 · ATMIST form
+ * ========================================================================= */
+function buildForm() {
+  el.mechPills.replaceChildren(...MECHANISMS.map(m =>
+    h('button', { type: 'button', class: 'pill', 'aria-pressed': 'false', 'data-mech': m }, m)));
+  el.treatPills.replaceChildren(...TREATMENTS.map(t =>
+    h('button', { type: 'button', class: 'pill', 'aria-pressed': 'false', 'data-treat': t }, t)));
+  el.etaPills.replaceChildren(...ETA_PRESETS.map(n =>
+    h('button', { type: 'button', class: 'pill', 'data-eta': n, 'aria-label': `${n} minutes` }, `${n} min`)));
+  el.vitals.replaceChildren(...VITALS.map(v =>
+    h('div', { class: 'vital', id: 'v-' + v.key },
+      h('label', { class: 'lab', for: 'f-' + v.key }, v.label, h('span', { class: 'unit' }, ' ' + v.unit)),
+      h('input', {
+        id: 'f-' + v.key, type: 'number', inputmode: 'numeric', min: v.min, max: v.max, step: 1,
+        autocomplete: 'off', 'aria-describedby': 's-' + v.key,
+      }),
+      h('p', { class: 'vs', id: 's-' + v.key }, `${v.min}–${v.max}`))));
+  el.esiOpts.replaceChildren(...ESI_LEVELS.map(l =>
+    h('label', { class: 'opt esi-' + l.v },
+      h('input', { type: 'radio', name: 'esi', value: String(l.v) }),
+      h('span', null, h('b', null, 'ESI ' + l.v), ' · ' + l.sub))));
+  el.startOpts.replaceChildren(...START_LEVELS.map(l =>
+    h('label', { class: 'opt st-' + l.v },
+      h('input', { type: 'radio', name: 'start', value: l.v }),
+      h('span', null, h('i', { class: 'sw', 'aria-hidden': 'true' }), h('b', null, l.label), ' · ' + l.sub))));
+}
+
+function resetForm() {
+  for (const node of el.atmist.querySelectorAll('input[type="text"], input[type="number"], textarea')) node.value = '';
+  el.fTime.value = hhmm(state.openedAt);
+  for (const r of el.atmist.querySelectorAll('input[name="esi"], input[name="start"]')) r.checked = false;
+  el.atmist.querySelector('input[name="psys"][value="ESI"]').checked = true;
+  for (const p of el.treatPills.querySelectorAll('.pill')) p.setAttribute('aria-pressed', 'false');
+  syncPrioritySystem();
+}
+
+function syncPrioritySystem() {
+  const sys = prioritySystem();
+  el.esiOpts.hidden = sys !== 'ESI';
+  el.startOpts.hidden = sys !== 'START';
+}
+const prioritySystem = () => (el.atmist.querySelector('input[name="psys"]:checked') || {}).value || 'ESI';
+
+/** Read one vital: empty | invalid (out of range / not a number) | ok with NEWS2 sub-score. */
+function readVital(v) {
+  const input = $('f-' + v.key);
+  const raw = input.value.trim();
+  if (input.validity && input.validity.badInput) return { state: 'invalid', value: null };
+  if (!raw) return { state: 'empty', value: null };
+  const n = Math.round(Number(raw));
+  if (!Number.isFinite(n) || n < v.min || n > v.max) return { state: 'invalid', value: null };
+  return { state: 'ok', value: n, score: v.score(n) };
+}
+
+function selectedTreatments() {
+  return Array.from(el.treatPills.querySelectorAll('.pill[aria-pressed="true"]'), p => p.dataset.treat);
+}
+
+function readForm() {
+  const signs = {};
+  for (const v of VITALS) signs[v.key] = readVital(v).value;
+  const treatment = [...selectedTreatments(), el.fTreatOther.value.trim()].filter(Boolean).join(', ');
+  const sys = prioritySystem();
+  const chosen = el.atmist.querySelector(sys === 'ESI' ? 'input[name="esi"]:checked' : 'input[name="start"]:checked');
+  const priority = chosen ? { system: sys, level: sys === 'ESI' ? Number(chosen.value) : chosen.value } : null;
+  const etaRaw = el.fEta.value.trim();
+  const eta = etaRaw === '' ? NaN : Math.round(Number(etaRaw));
+  return {
+    age: el.fAge.value.trim(),
+    time: el.fTime.value || hhmm(state.openedAt),
+    mechanism: el.fMech.value.trim(),
+    injuries: el.fInj.value.trim(),
+    signs,
+    treatment,
+    priority,
+    etaMin: Number.isFinite(eta) && eta >= 0 && eta <= 240 ? eta : null,
+  };
+}
+
+function formHasContent() {
+  const f = readForm();
+  return !!(f.age || f.mechanism || f.injuries || f.treatment || f.priority || f.etaMin != null
+    || VITALS.some(v => readVital(v).state !== 'empty'));
+}
+
+/** Defence in depth: keep the candidate's name / ID and any Emirates ID number out of free text. */
+function redact(text) {
+  let out = String(text || '').replace(/\b784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d\b/g, '[ID removed]');
+  const id = state.identity;
+  if (id.status === 'candidate') {
+    if (id.personId && id.personId.length >= 4) out = out.replace(new RegExp(escapeRx(id.personId), 'gi'), '[ID removed]');
+    const name = (id.name || '').trim();
+    if (name.length >= 3) out = out.replace(new RegExp(escapeRx(name), 'gi'), id.display);
+  }
+  return out;
+}
+
+/* =========================================================================
+ * Pre-alert message — EXACTLY the v1 shape in FACE_ID_INTEGRATION.md.
+ * No name, no person_id / Emirates ID, no image.
+ * ========================================================================= */
+function buildMessage() {
+  const f = readForm();
+  const id = state.identity;
+  const identity = id.status === 'candidate'
+    ? { status: 'candidate', method: 'face', confidence: id.confidence, display: id.display }
+    : { status: 'temporary', method: 'none', display: 'Unknown' };       // confidence omitted for temporary
+  const rec = id.status === 'candidate' ? summaryRecord() : null;
+  const safety = rec
+    ? { allergies: rec.allergies.slice(), anticoagulant: rec.anticoagulant, bloodType: rec.bloodType, source: rec.source, asOf: rec.asOf }
+    : { allergies: null, anticoagulant: null, bloodType: null, source: null, asOf: null };  // null = Unknown, never "none"
+  return {
+    type: 'prealert',
+    v: 1,
+    encounter: state.encounter,
+    identity,
+    atmist: {
+      age: redact(f.age),
+      time: f.time,
+      mechanism: redact(f.mechanism),
+      injuries: redact(f.injuries),
+      signs: { hr: f.signs.hr, sbp: f.signs.sbp, rr: f.signs.rr, spo2: f.signs.spo2, gcs: f.signs.gcs },
+      treatment: redact(f.treatment),
+    },
+    priority: f.priority,
+    etaMin: f.etaMin,
+    safety,
+  };
+}
+
+function missingFields() {
+  const f = readForm(), out = [];
+  if (!f.age) out.push('Age');
+  if (!f.mechanism) out.push('Mechanism');
+  if (!f.injuries) out.push('Injuries');
+  const empty = [], bad = [];
+  for (const v of VITALS) {
+    const r = readVital(v);
+    if (r.state === 'empty') empty.push(v.label);
+    else if (r.state === 'invalid') bad.push(`${v.label} (${v.min}–${v.max})`);
+  }
+  if (empty.length) out.push('Signs: ' + empty.join(', '));
+  if (bad.length) out.push('Out of range, sent as not recorded: ' + bad.join(', '));
+  if (!f.treatment) out.push('Treatment');
+  if (!f.priority) out.push('Priority');
+  if (f.etaMin == null) out.push('ETA');
+  return out;
+}
+
+/* ---------- Live form feedback ---------- */
+function renderVitals(onOxygen) {
+  let total = 0, entered = 0, single3 = false;
+  for (const v of VITALS) {
+    const r = readVital(v);
+    const box = $('v-' + v.key), line = $('s-' + v.key);
+    box.classList.remove('s0', 's1', 's2', 's3', 'bad');
+    if (r.state === 'empty') { setText(line, `${v.min}–${v.max}`); continue; }
+    if (r.state === 'invalid') { box.classList.add('bad'); setText(line, `✕ Check: ${v.min}–${v.max}`); continue; }
+    entered++;
+    total += r.score;
+    if (r.score === 3) single3 = true;
+    box.classList.add('s' + r.score);
+    if (r.score === 0) { setText(line, '✓ Normal'); continue; }
+    const dir = v.key === 'gcs' ? 'Reduced' : r.value < v.normal[0] ? '▼ Low' : '▲ High';
+    setText(line, `${dir} · +${r.score}`);
+  }
+  if (!entered) {
+    setText(el.newsChip, 'NEWS2-style score appears as you enter signs');
+    setTone(el.newsChip, 'chip', '');
+    return;
+  }
+  if (onOxygen) total += 2;                 // NEWS2: supplemental oxygen scores 2
+  const risk = total >= 7 ? ['High risk', 'critical']
+    : total >= 5 ? ['Medium risk', 'serious']
+    : single3 ? ['Low–medium: one parameter scores 3', 'warning']
+    : ['Low risk', 'good'];
+  setText(el.newsChip, `NEWS2-style ${total}${onOxygen ? ' (incl. O₂ +2)' : ''} · ${risk[0]}${entered < VITALS.length ? ' · partial' : ''}`);
+  setTone(el.newsChip, 'chip', risk[1]);
+}
+
+function renderConflicts(treatment) {
+  const rec = state.identity.status === 'candidate' ? summaryRecord() : null;
+  const hits = rec ? rec.allergies.filter(a => ALLERGEN_TERMS[a] && ALLERGEN_TERMS[a].test(treatment)) : [];
+  el.conflict.hidden = !hits.length;
+  if (hits.length) {
+    setText(el.conflict, `⚠ Allergy alert: ${hits.join(', ')} recorded for candidate ${state.identity.display} (${rec.source}, as of ${fmtDate(rec.asOf)}). Identity is unconfirmed: check before giving.`);
+  }
+}
+
+function onFormChange() {
+  const mech = el.fMech.value.trim();
+  for (const p of el.mechPills.querySelectorAll('.pill')) p.setAttribute('aria-pressed', String(p.dataset.mech === mech));
+  const eta = el.fEta.value.trim();
+  for (const p of el.etaPills.querySelectorAll('.pill')) p.setAttribute('aria-pressed', String(p.dataset.eta === eta));
+
+  const f = readForm();
+  renderVitals(selectedTreatments().some(t => /^oxygen/i.test(t)) || /\boxygen\b|\bO2\b/i.test(el.fTreatOther.value));
+  renderConflicts(f.treatment);
+
+  const msg = buildMessage();
+  el.redactNote.hidden = [f.age, f.mechanism, f.injuries, f.treatment].every(t => redact(t) === t);
+  setText(el.jsonOut, JSON.stringify(msg, null, 2));
+
+  const missing = missingFields();
+  setText(el.missingLine, missing.length
+    ? `${missing.length} item${missing.length > 1 ? 's' : ''} missing: ${missing.join(' · ')}. You can still send.`
+    : '✓ All ATMIST fields complete.');
+  setTone(el.missingLine, 'msg', missing.length ? 'warning' : 'good');
+  renderSync();
+}
+
+/* =========================================================================
+ * Send: BroadcastChannel('wasel-prealert'); same encounter id = update.
+ * ========================================================================= */
+let channel = null, channelTried = false;
+function getChannel() {
+  if (!channelTried) {
+    channelTried = true;
+    try { if (typeof BroadcastChannel === 'function') channel = new BroadcastChannel(CHANNEL_NAME); } catch (_) { channel = null; }
+  }
+  return channel;
+}
+
+let dialogResolve = null;
+function confirmSend(issues) {
+  return new Promise(resolve => {
+    if (!el.dlg || typeof el.dlg.showModal !== 'function') {
+      resolve(window.confirm(`Missing: ${issues.join('; ')}.\n\nSend anyway? You can update this encounter later.`));
+      return;
+    }
+    el.dlgList.replaceChildren(...issues.map(t => h('li', null, t)));
+    el.dlg.returnValue = '';
+    dialogResolve = resolve;
+    el.dlg.showModal();
+    el.dlgSend.focus();
+  });
+}
+
+async function send() {
+  if (state.busy.sending) return;
+  state.busy.sending = true;
+  try {
+    const issues = missingFields();
+    if (issues.length && !(await confirmSend(issues))) { announce('Not sent. Keep editing.'); return; }
+    deliver(buildMessage());
+  } finally {
+    state.busy.sending = false;
+  }
+}
+
+function deliver(msg) {
+  const json = JSON.stringify(msg);
+  let delivered = false;
+  const ch = getChannel();
+  if (ch) {
+    try { ch.postMessage(msg); delivered = true; } catch (_) { delivered = false; }
+  }
+  if (!delivered) {
+    // Fallback when this tab was opened from the dashboard (same origin only).
+    try {
+      const w = window.opener;
+      if (w && w.WASEL && typeof w.WASEL.receivePreAlert === 'function') { w.WASEL.receivePreAlert(JSON.parse(json)); delivered = true; }
+    } catch (_) { /* cross-origin opener or no dashboard */ }
+  }
+  const isUpdate = state.sends.some(s => s.delivered);
+  const at = new Date();
+  state.sends.push({ at, delivered, isUpdate });
+  if (delivered) state.lastSentJson = json;
+  addLog(delivered ? `${isUpdate ? 'Pre-alert update' : 'Pre-alert'} sent for ${state.encounter}` : `Pre-alert for ${state.encounter} not delivered`,
+    'notify receiving ED (initials only, no image)');
+  renderAck();
+  renderSync();
+  announce(delivered ? `${isUpdate ? 'Update' : 'Pre-alert'} sent at ${hhmm(at)}.` : 'Pre-alert not delivered. Use Copy JSON.');
+}
+
+function lastDelivered() {
+  for (let i = state.sends.length - 1; i >= 0; i--) if (state.sends[i].delivered) return state.sends[i];
+  return null;
+}
+
+function renderSync() {
+  const last = lastDelivered();
+  const latest = state.sends[state.sends.length - 1];
+  let text, tone;
+  if (latest && !latest.delivered) { text = '✕ Not delivered · copy JSON'; tone = 'offline'; }
+  else if (!last) { text = '○ Draft · not sent'; tone = ''; }
+  else if (JSON.stringify(buildMessage()) !== state.lastSentJson) { text = `! Unsent changes · last sent ${hhmm(last.at)}`; tone = 'warning'; }
+  else { text = `✓ ${last.isUpdate ? 'Update sent' : 'Sent'} ${hhmm(last.at)}`; tone = 'good'; }
+  if (el.syncChip.textContent !== text) setText(el.syncChip, text);
+  setTone(el.syncChip, 'chip', tone);
+
+  const label = last ? 'Send update' : 'Send pre-alert';
+  setText(el.sendTop, label);
+  setText(el.sendMain, label);
+
+  const sent = !!last;
+  el.s4.classList.toggle('done', sent && tone === 'good');
+  setText(el.s4m, sent ? text.replace(/^[✓!✕○] /, '') : 'Not sent');
+  setTone(el.s4m, 'meta', tone === 'good' ? 'good' : tone ? 'warning' : '');
+}
+
+function renderAck() {
+  const last = state.sends[state.sends.length - 1];
+  el.ack.replaceChildren();
+  if (!last) {
+    setTone(el.ack, 'ack', '');
+    el.ack.append(h('p', null, getChannel()
+      ? 'Not sent yet. The pre-alert goes live to WASEL dashboard pages open on this server.'
+      : 'This browser cannot broadcast to the dashboard. Use Copy JSON after sending.'));
+  } else if (last.delivered) {
+    setTone(el.ack, 'ack', 'good');
+    el.ack.append(
+      h('p', { class: 'ack-title' }, '✓ Sent to WASEL dashboard · same encounter updates, no duplicates'),
+      h('ul', { class: 'sendlog' }, state.sends.slice().reverse().map(s =>
+        h('li', null, h('time', null, hhmm(s.at)), ' ',
+          s.delivered ? (s.isUpdate ? `Update sent · ${state.encounter}` : `Pre-alert sent · ${state.encounter}`) : 'Not delivered'))));
+  } else {
+    setTone(el.ack, 'ack', 'critical');
+    el.ack.append(
+      h('p', { class: 'ack-title' }, '✕ Could not broadcast from this browser'),
+      h('p', null, 'Copy the JSON and pass it to the dashboard (console: WASEL.receivePreAlert(…)). Care continues; send again any time.'));
+  }
+  el.copyBox.hidden = !(!getChannel() || (last && !last.delivered));
+}
+
+async function copyJson() {
+  const json = JSON.stringify(buildMessage(), null, 2);
+  let ok = false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(json); ok = true; }
+  } catch (_) { ok = false; }
+  if (!ok) {
+    const ta = h('textarea', { readonly: true, 'aria-hidden': 'true', style: { position: 'fixed', top: '-1000px', opacity: '0' } });
+    ta.value = json;
+    document.body.append(ta);
+    ta.select();
+    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    ta.remove();
+  }
+  setText(el.copyMsg, ok ? '✓ JSON copied. Paste it on the dashboard console as WASEL.receivePreAlert(<JSON>).' : 'Copy failed: open “Message preview” below and copy it by hand.');
+}
+
+/* =========================================================================
+ * Header: face-service health chip, theme
+ * ========================================================================= */
+function renderHealth() {
+  const hl = state.health;
+  let chip, tone, line;
+  if (!hl) { chip = 'Face ID · checking…'; tone = ''; line = 'Checking face service…'; }
+  else if (hl.offline) {
+    chip = '✕ Face ID offline'; tone = 'offline';
+    line = `${hl.problem || 'Face service offline.'} Patients continue on temporary IDs.`;
+  } else {
+    const cut = typeof hl.match_similarity === 'number' ? pct(hl.match_similarity) : '?';
+    chip = `✓ Face ID · ${hl.model} · ${hl.faces_enrolled} faces · cutoff ${cut}`; tone = 'good';
+    line = `Service online · model ${hl.model} · detector ${hl.detector} · ${hl.faces_enrolled} faces enrolled · match cutoff ${cut}.`;
+  }
+  setText(el.faceChip, chip);
+  setTone(el.faceChip, 'chip', tone);
+  el.faceChip.setAttribute('aria-label', `Face ID service: ${line} Open demo enrolment.`);
+  setText(el.enHealth, line);
+  setTone(el.enHealth, 'msg', tone === 'offline' ? 'critical' : tone);
+  el.faceOffline.hidden = !(hl && hl.offline);
+
+  const cutText = state.cutoff != null ? `a “match” needs similarity of ${pct(state.cutoff)} or more` : 'the match cutoff is strict';
+  setText(el.caution, `Matching is strict: ${cutText}. On blurred, dark or masked photos the right person is often ranked first but below the cutoff, so compare the face yourself. Any choice is only a candidate; an authorised nurse confirms identity at the ED door.`);
+}
+
+function toggleTheme() {
+  const light = document.documentElement.dataset.theme !== 'light';
+  if (light) document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+  setText(el.themeBtn, light ? 'Dark theme' : 'Light theme');
+}
+
+/* =========================================================================
+ * Demo setup: enrol consenting team members
+ * ========================================================================= */
+let enrolledPid = null;
+
+function renderEnrolControls() {
+  const ready = el.enConsent.checked && el.enPid.value.trim() && capEn.blob && !state.busy.enrol;
+  el.enrolBtn.disabled = !ready;
+  setText(el.enrolBtn, state.busy.enrol ? 'Enrolling…' : 'Enrol face');
+  if (!state.busy.enrol && !ready && !el.enMsg.dataset.result) {
+    const need = [];
+    if (!el.enConsent.checked) need.push('consent');
+    if (!el.enPid.value.trim()) need.push('person ID');
+    if (!capEn.blob) need.push('photo');
+    setText(el.enMsg, need.length ? 'Needs: ' + need.join(', ') + '.' : '');
+    setTone(el.enMsg, 'msg', '');
+  }
+}
+
+function setEnrolResult(text, tone) {
+  el.enMsg.dataset.result = '1';
+  setText(el.enMsg, text);
+  setTone(el.enMsg, 'msg', tone);
+}
+
+async function enrol() {
+  const pid = el.enPid.value.trim(), name = el.enName.value.trim();
+  if (!el.enConsent.checked || !pid || !capEn.blob || state.busy.enrol) { renderEnrolControls(); return; }
+  state.busy.enrol = true;
+  delete el.enMsg.dataset.result;
+  renderEnrolControls();
+  setText(el.enMsg, 'Enrolling…'); setTone(el.enMsg, 'msg', 'busy');
+
+  const form = new FormData();
+  form.append('person_id', pid);
+  if (name) form.append('name', name);
+  form.append('image', capEn.blob, 'enrol.jpg');
+  const res = await call(API.enroll, { method: 'POST', body: form, timeout: 60000 });
+  state.busy.enrol = false;
+
+  if (res.ok && res.data) {
+    const n = res.data.faces_for_person;
+    setEnrolResult(`✓ Enrolled ${name || pid} · ${n} photo${n === 1 ? '' : 's'} on file. Add another photo, or change the person ID for the next team member.`, 'good');
+    enrolledPid = pid;
+    capEn.clear('Photo discarded from memory.');
+    addLog('Demo face enrolled', 'consenting team member, demo setup');
+    refreshPeople();
+    refreshHealth();
+  } else {
+    setEnrolResult('✕ ' + faceProblem(res).text, 'critical');
+    renderEnrolControls();
+  }
+}
+
+async function refreshPeople() {
+  setText(el.peopleMsg, 'Loading…'); setTone(el.peopleMsg, 'msg', 'busy');
+  const res = await call(API.people, { timeout: 8000 });
+  if (!res.ok || !Array.isArray(res.data)) {
+    el.peopleBody.replaceChildren();
+    setText(el.peopleMsg, faceProblem(res).text); setTone(el.peopleMsg, 'msg', 'critical');
+    return;
+  }
+  const people = res.data.slice().sort((a, b) => String(a.name || a.person_id).localeCompare(String(b.name || b.person_id)));
+  const photos = people.reduce((s, p) => s + (Number(p.faces) || 0), 0);
+  el.peopleBody.replaceChildren(...people.map(p =>
+    h('tr', null, h('td', null, p.name || '(no name)'), h('td', null, p.person_id), h('td', { class: 'n' }, String(p.faces)))));
+  setText(el.peopleMsg, people.length ? `${people.length} ${people.length === 1 ? 'person' : 'people'} · ${photos} photo${photos === 1 ? '' : 's'}` : 'No one enrolled yet.');
+  setTone(el.peopleMsg, 'msg', '');
+}
+
+/* =========================================================================
+ * Device activity log (memory only): who, when, why
+ * ========================================================================= */
+function addLog(what, why) {
+  state.log.unshift({ at: new Date(), who: UNIT, what, why });
+  if (state.log.length > 60) state.log.length = 60;
+  el.logList.replaceChildren(...state.log.map(e =>
+    h('li', null, h('time', null, hhmm(e.at)), ` ${e.who} · ${e.what} · why: ${e.why}`)));
+}
+
+/* =========================================================================
+ * Wiring
+ * ========================================================================= */
+function renderAll() {
+  renderEncounter();
+  renderIdentifyControls();
+  renderCandidates();
+  renderIdentity();
+  renderSummary();
+  renderAck();
+  onFormChange();
+}
+
+function wire() {
+  el.newEncBtn.addEventListener('click', onNewEncounter);
+  el.sendTop.addEventListener('click', send);
+  el.sendMain.addEventListener('click', send);
+  el.themeBtn.addEventListener('click', toggleTheme);
+  el.faceChip.addEventListener('click', () => {
+    el.enrolDrawer.open = true;
+    el.enrolDrawer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.enrolDrawer.querySelector('summary').focus({ preventScroll: true });
+  });
+
+  el.identifyBtn.addEventListener('click', identify);
+  el.discardBtn.addEventListener('click', () => capId.clear('Photo discarded from memory.'));
+  el.noneBtn.addEventListener('click', keepTemporary);
+
+  el.atmist.addEventListener('input', onFormChange);
+  el.atmist.addEventListener('change', e => {
+    if (e.target && e.target.name === 'psys') syncPrioritySystem();
+    onFormChange();
+  });
+  el.atmist.addEventListener('click', e => {
+    const pill = e.target.closest('.pill');
+    if (!pill) return;
+    if (pill.dataset.mech) {
+      el.fMech.value = el.fMech.value.trim() === pill.dataset.mech ? '' : pill.dataset.mech;
+    } else if (pill.dataset.treat) {
+      pill.setAttribute('aria-pressed', String(pill.getAttribute('aria-pressed') !== 'true'));
+    } else if (pill.dataset.eta) {
+      el.fEta.value = pill.dataset.eta;
+    }
+    onFormChange();
+  });
+  el.timeNow.addEventListener('click', () => { el.fTime.value = hhmm(new Date()); onFormChange(); });
+
+  el.dlgSend.addEventListener('click', () => el.dlg.close('send'));
+  el.dlgBack.addEventListener('click', () => el.dlg.close('back'));
+  el.dlg.addEventListener('close', () => {
+    const resolve = dialogResolve;
+    dialogResolve = null;
+    if (resolve) resolve(el.dlg.returnValue === 'send');
+  });
+  el.copyBtn.addEventListener('click', copyJson);
+
+  // Enrolment drawer
+  el.enConsent.addEventListener('change', () => { delete el.enMsg.dataset.result; renderEnrolControls(); });
+  el.enPid.addEventListener('input', () => {
+    if (enrolledPid && el.enPid.value.trim() !== enrolledPid) { el.enConsent.checked = false; enrolledPid = null; }
+    delete el.enMsg.dataset.result;
+    renderEnrolControls();
+  });
+  el.enrolBtn.addEventListener('click', enrol);
+  el.peopleRefresh.addEventListener('click', refreshPeople);
+  el.enrolDrawer.addEventListener('toggle', () => {
+    if (el.enrolDrawer.open) { refreshPeople(); refreshHealth(); }
+    else capEn.stop();
+  });
+
+  // Never leave a camera running in the background; drop photos on unload.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) captures.forEach(c => { if (c.live) { c.stop(); c.say('Camera stopped while the app was in the background.'); } });
+    else refreshHealth();
+  });
+  window.addEventListener('pagehide', () => captures.forEach(c => c.clear('')));
+  setInterval(() => { if (!document.hidden) refreshHealth(); }, HEALTH_EVERY_MS);
+}
+
+buildForm();
+wire();
+setText(el.unitName, UNIT);
+setText(el.encUnit, UNIT);
+getChannel();
+startEncounter();           // the patient exists from minute one
+renderEnrolControls();
+renderHealth();
+refreshHealth();
+})();
+</script>
+</body>
+</html>
