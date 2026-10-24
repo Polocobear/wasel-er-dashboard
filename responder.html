@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <!-- Defence in depth: no third-party code or network. The page may only talk to
      its own origin (serve.py proxies /face/* to the face-ID service). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src blob: mediastream:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; media-src blob: mediastream:; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
@@ -723,6 +723,54 @@ input::placeholder { color: var(--muted); }
   --tile-mix: 14%;
 }
 /* ==WASEL-TOKENS-END== */
+
+/* ---------- Demo face scan: round viewfinder, one button ---------- */
+.stage.scanning::before { content: ""; position: absolute; z-index: 1; }
+.stage.scanning::after {
+  content: ""; position: absolute; height: 3px; z-index: 2; border-radius: 2px;
+  background: var(--accent); box-shadow: 0 0 14px 3px var(--accent);
+  animation: facescan .55s ease-in-out infinite alternate;
+}
+#idWork { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+#idWork .capture, #idWork .results { width: 100%; max-width: 440px; }
+#capId .stage { height: 240px; border: 0; background: transparent; }
+#capId .stage-empty {
+  width: 200px; height: 200px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-2); border: 2px dashed var(--border-strong); font-size: 14px;
+}
+#capId .stage img {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 200px; height: 200px; border-radius: 50%; object-fit: cover; background: var(--surface-2);
+}
+#capId .stage.scanning::before { top: 50%; left: 50%; width: 216px; height: 216px; transform: translate(-50%, -50%); border: 3px solid var(--accent); border-radius: 50%; }
+#capId .stage.scanning::after { left: calc(50% - 90px); width: 180px; top: 24px; }
+@keyframes facescan { to { top: 214px; } }
+#capId .btnrow, #idWork .results .btnrow { justify-content: center; }
+#capId [data-r="start"], #capId [data-r="fileBtn"], #capId [data-r="msg"], #capId > .btnrow:last-of-type, #caution { display: none !important; }
+#scanBtn { min-width: 220px; border-radius: 999px; }
+#idStatus { font-size: 14px; color: var(--muted); }
+#noneBtn { background: none; border: 0; box-shadow: none; color: var(--accent); font-weight: 500; }
+
+/* ---------- Medical ID card (identified patient) ---------- */
+.choice.medid { margin-top: 4px; padding: 0; background: transparent; border: 0; }
+.mid { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 8px 0 4px; }
+.mid-photo { width: 116px; height: 116px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 4px var(--surface), 0 0 0 5px var(--border); }
+.mid-name { margin-top: 14px; font-size: 26px; font-weight: 650; letter-spacing: -.02em; }
+.mid-sub { margin-top: 2px; font-size: 15px; color: var(--muted); }
+.mid-match { margin-top: 10px; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--good-fg); background: var(--good-weak); }
+.mid-grid {
+  width: 100%; max-width: 560px; margin-top: 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 18px; overflow: hidden;
+}
+.mf { padding: 14px 16px; background: var(--surface-2); text-align: left; }
+.mf.wide { grid-column: 1 / -1; }
+.mf-v { display: block; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.mf-l { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.mf.alert .mf-v { color: var(--critical-fg); }
+.mf.warn .mf-v { color: var(--warning-fg); }
+.mid-src { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.mid-actions { display: flex; gap: 24px; margin-top: 6px; }
+.linkbtn { padding: 8px 4px; background: none; border: 0; color: var(--accent); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -772,9 +820,10 @@ input::placeholder { color: var(--muted); }
           <div class="stage">
             <video data-r="video" playsinline muted autoplay hidden></video>
             <img data-r="img" alt="Patient photo, held in memory only" hidden>
-            <p data-r="empty" class="stage-empty">No photo yet. Start the camera, or take / upload a photo.</p>
+            <p data-r="empty" class="stage-empty">Ready to scan</p>
           </div>
           <div class="btnrow">
+            <button id="scanBtn" type="button" class="btn primary lg">Scan face</button>
             <button data-r="start" type="button" class="btn">Start camera</button>
             <button data-r="snap" type="button" class="btn primary" hidden>Capture</button>
             <button data-r="stop" type="button" class="btn ghost" hidden>Stop camera</button>
@@ -789,7 +838,7 @@ input::placeholder { color: var(--muted); }
         </div>
 
         <div class="results">
-          <p id="idStatus" class="msg" role="status" aria-live="polite">Take a photo, then Identify. Or skip: the patient stays on the temporary ID.</p>
+          <p id="idStatus" class="msg" role="status" aria-live="polite">Scan, or skip. Care never waits for ID.</p>
           <ol id="candList" class="cands" aria-label="Face match candidates"></ol>
           <p id="caution" class="note">Matching is strict. On blurred, dark or masked photos the right person is often ranked first but below the cutoff. Compare the face yourself; any choice is only a candidate, and an authorised nurse confirms identity at the ED door.</p>
           <div class="btnrow">
@@ -800,7 +849,7 @@ input::placeholder { color: var(--muted); }
 
       <div id="idChoice" class="choice" aria-live="polite"></div>
 
-      <div class="sumbox">
+      <div class="sumbox" id="sumBox">
         <div class="sec-h">
           <h3 class="sub">Emergency summary</h3>
           <span class="chip warning sm">Simulated exchange data</span>
@@ -1385,7 +1434,7 @@ function createCapture(root, onChange) {
   const api = {
     get blob() { return blob; },
     get live() { return !!stream; },
-    start, stop, clear, say,
+    start, stop, clear, say, load: setBlob,
   };
   captures.push(api);
 
@@ -1535,7 +1584,7 @@ function startEncounter() {
   state.summaryToken++;
   applyIncidentPrefill();
   state.vit = vitalTargets();                 // the monitor starts on the current picture
-  setText(el.idStatus, 'Take a photo, then Identify. Or skip: the patient stays on the temporary ID.');
+  setText(el.idStatus, 'Scan, or skip. Care never waits for ID.');
   setTone(el.idStatus, 'msg', '');
   addLog(`Encounter ${state.encounter} opened`, 'new patient on temporary ID');
   recompute();
@@ -1571,6 +1620,8 @@ function renderEncounter() {
  * ========================================================================= */
 function renderIdentifyControls() {
   el.identifyBtn.disabled = !capId.blob || state.busy.identify;
+  el.scanBtn.disabled = state.busy.identify;
+  setText(el.scanBtn, state.busy.identify ? 'Scanning…' : 'Scan face');
   el.discardBtn.disabled = !capId.blob && !capId.live;
   setText(el.identifyBtn, state.busy.identify ? 'Identifying…' : 'Identify');
 }
@@ -1699,7 +1750,7 @@ function reopenIdentify() {
   state.idOpen = true;
   state.candidates = [];
   renderCandidates();
-  setText(el.idStatus, 'Take a photo, then Identify. The live pre-alert keeps running meanwhile.');
+  setText(el.idStatus, 'Scan again. The live pre-alert keeps running meanwhile.');
   setTone(el.idStatus, 'msg', '');
   renderIdentity();
 }
@@ -1716,7 +1767,11 @@ function renderIdentity() {
   }
 
   el.idChoice.replaceChildren();
-  if (id.status === 'candidate') {
+  const medid = id.status === 'candidate' && id.personId === DEMO_PATIENT.person_id;
+  if (medid) {
+    setTone(el.idChoice, 'choice', 'medid');
+    el.idChoice.append(medicalId(id));
+  } else if (id.status === 'candidate') {
     setTone(el.idChoice, 'choice', '');
     el.idChoice.append(
       h('div', { class: 'who' },
@@ -1739,6 +1794,8 @@ function renderIdentity() {
 
   el.idWork.hidden = state.identityDecided && !state.idOpen;
   const done = state.identityDecided;
+  el.sumBox.hidden = medid;
+  el.s1.querySelector('.lead').hidden = done;
   el.s1.classList.toggle('done', done);
   setText(el.s1m, !done ? 'Optional' : id.status === 'candidate' ? '✓ Candidate chosen' : '✓ Temporary ID kept');
   setTone(el.s1m, 'meta', done ? 'good' : '');
@@ -1749,6 +1806,7 @@ function renderIdentity() {
  * ========================================================================= */
 /** Deterministic synthetic record for a person_id. Same person → same record. */
 function deriveSummary(personId) {
+  if (personId === DEMO_PATIENT.person_id) return { ...DEMO_PATIENT.record };
   const rng = mulberry32(fnv1a('wasel:' + personId));
   const source = SOURCES[Math.floor(rng() * SOURCES.length)];
   const day = Math.floor(rng() * 480);                       // 1 May 2025 … late Aug 2026
@@ -1761,6 +1819,37 @@ function deriveSummary(personId) {
   const conditions = pickN(rng, CONDITIONS, Math.floor(rng() * 3));
   if (anticoagulant) conditions.unshift('Atrial fibrillation');
   return { allergies, anticoagulant, anticoagDrug: anticoagulant ? anticoagDrug : null, bloodType, conditions, source, asOf };
+}
+
+/* ---------- Demo face scan: one enrolled demo patient, no face service needed ---------- */
+const DEMO_PATIENT = {
+  person_id: 'DEMO-001', name: 'Adam Joseph', similarity: 0.94, match: true,
+  photo: 'demo-patient.jpg',
+  profile: { age: 21, sex: 'Male', dob: '2005-03-14', eid: '784-2005-•••••••-3', contact: 'Father · +971 50 ••• 4412' },
+  record: { allergies: ['Morphine', 'Penicillin'], anticoagulant: false, anticoagDrug: null, bloodType: 'O+', conditions: ['Asthma'], source: 'Riayati', asOf: '2026-09-02' },
+};
+const SCAN_MS = 1100;
+
+async function demoScan() {
+  if (state.busy.identify) return;
+  const enc = state.encounter;
+  const stage = el.capId.querySelector('.stage');
+  state.busy.identify = true;
+  renderIdentifyControls();
+  setText(el.idStatus, 'Scanning face…'); setTone(el.idStatus, 'msg', 'busy');
+  addLog('Face lookup', 'identify patient for pre-alert');
+  try {
+    const res = await fetch(DEMO_PATIENT.photo);
+    if (res.ok) capId.load(await res.blob(), 'Scanning · photo in memory only.');
+  } catch (_) { /* no photo: the scan still completes */ }
+  stage.classList.add('scanning');
+  await new Promise(r => setTimeout(r, SCAN_MS));
+  stage.classList.remove('scanning');
+  state.busy.identify = false;
+  renderIdentifyControls();
+  if (enc !== state.encounter) return;      // a new encounter started meanwhile
+  setText(el.idStatus, `Match ${pct(DEMO_PATIENT.similarity)}.`); setTone(el.idStatus, 'msg', 'good');
+  chooseCandidate(DEMO_PATIENT);
 }
 
 const summaryRecord = () => (state.summary && typeof state.summary === 'object' ? state.summary : null);
@@ -1797,8 +1886,33 @@ function summaryTile(label, value, source, tone) {
     h('dd', { class: 'src' }, source));
 }
 
+/** Medical ID card for the identified demo patient: photo, name, then the critical facts. */
+function medicalId(id) {
+  const p = DEMO_PATIENT.profile, rec = summaryRecord();
+  const f = (label, value, tone) => h('div', { class: 'mf' + (tone ? ' ' + tone : '') },
+    h('span', { class: 'mf-v' }, value), h('span', { class: 'mf-l' }, label));
+  return h('div', { class: 'mid' },
+    h('img', { class: 'mid-photo', src: DEMO_PATIENT.photo, alt: 'Photo on file' }),
+    h('div', { class: 'mid-name' }, id.name),
+    h('div', { class: 'mid-sub' }, `${p.age} years · ${p.sex} · DOB ${fmtDate(p.dob)}`),
+    h('span', { class: 'mid-match' }, `✓ Face match ${pct(id.confidence)}`),
+    rec
+      ? h('div', { class: 'mid-grid' },
+          f('Allergies', rec.allergies.length ? '⚠ ' + rec.allergies.join(', ') : 'None', rec.allergies.length ? 'alert wide' : 'wide'),
+          f('Conditions', rec.conditions.length ? rec.conditions.join(', ') : 'None'),
+          f('Blood type', rec.bloodType),
+          f('Blood thinners', rec.anticoagulant ? rec.anticoagDrug : 'None', rec.anticoagulant ? 'warn' : ''),
+          f('Emergency contact', p.contact))
+      : h('p', { class: 'mid-src' }, 'Loading record…'),
+    rec ? h('p', { class: 'mid-src' }, `${rec.source} · updated ${fmtDate(rec.asOf)} · identity confirmed at the ED door`) : null,
+    h('div', { class: 'mid-actions' },
+      h('button', { type: 'button', class: 'linkbtn', onclick: keepTemporary }, 'Not this person'),
+      state.idOpen ? null : h('button', { type: 'button', class: 'linkbtn', onclick: reopenIdentify }, 'Scan again')));
+}
+
 function renderSummary() {
   const id = state.identity, rec = summaryRecord();
+  if (id.status === 'candidate' && id.personId === DEMO_PATIENT.person_id) renderIdentity();
   el.sumRows.replaceChildren();
 
   if (state.summary === 'loading') {
@@ -2831,8 +2945,8 @@ function renderHealth() {
   let chip, tone, line;
   if (!hl) { chip = 'Face ID · checking…'; tone = ''; line = 'Checking face service…'; }
   else if (hl.offline) {
-    chip = '✕ Face ID offline'; tone = 'offline';
-    line = `${hl.problem || 'Face service offline.'} Patients continue on temporary IDs.`;
+    chip = 'Face ID · demo scan'; tone = '';
+    line = `${hl.problem || 'Face service offline.'} Scan face uses the demo patient; others continue on temporary IDs.`;
   } else {
     const cut = typeof hl.match_similarity === 'number' ? pct(hl.match_similarity) : '?';
     chip = `✓ Face ID · ${hl.model} · ${hl.faces_enrolled} faces · cutoff ${cut}`; tone = 'good';
@@ -2843,7 +2957,7 @@ function renderHealth() {
   el.faceChip.setAttribute('aria-label', `Face ID service: ${line} Open demo enrolment.`);
   setText(el.enHealth, line);
   setTone(el.enHealth, 'msg', tone === 'offline' ? 'critical' : tone);
-  el.faceOffline.hidden = !(hl && hl.offline);
+  el.faceOffline.hidden = true;
 
   const cutText = state.cutoff != null ? `a “match” needs similarity of ${pct(state.cutoff)} or more` : 'the match cutoff is strict';
   setText(el.caution, `Matching is strict: ${cutText}. On blurred, dark or masked photos the right person is often ranked first but below the cutoff, so compare the face yourself. Any choice is only a candidate; an authorised nurse confirms identity at the ED door.`);
@@ -2964,6 +3078,7 @@ function wire() {
   });
 
   el.identifyBtn.addEventListener('click', identify);
+  el.scanBtn.addEventListener('click', demoScan);
   el.discardBtn.addEventListener('click', () => capId.clear('Photo discarded from memory.'));
   el.noneBtn.addEventListener('click', keepTemporary);
 
