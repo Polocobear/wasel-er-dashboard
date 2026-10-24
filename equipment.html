@@ -1,0 +1,1803 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-theme="light">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: no third-party code and no network. This screen talks to the
+     dashboard only over same-origin BroadcastChannel (CHANNELS.md sections 4 and 5). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="WASEL equipment floor plan: live ED map of bays and tracked equipment (ventilators, monitors, defibrillators, crash carts, ultrasound), nearest free unit to any bay, and one-tap state changes. Simulated data.">
+<title>WASEL · Equipment Floor Plan</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d70015'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * WASEL · Equipment floor plan
+ * Same visual language as the dashboard (src/shell.html): its theme tokens,
+ * chips, bed tiles and ESI colours. Equipment state is never colour alone:
+ * every marker has a shape + letter for its type and a fill pattern + badge
+ * for its state, and every list row prints the state as a word.
+ * Touch-first: every control is at least 44px tall; nothing needs typing.
+ * ========================================================================= */
+
+/* ---------- Theme tokens (shared with the dashboard) ---------- */
+:root {
+  color-scheme: dark;
+  --page: #000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --raised: #3a3a3c;
+  --hover: #48484a;
+  --fill: rgba(120, 120, 128, .24);
+  --fill-strong: rgba(120, 120, 128, .36);
+  --text: #f5f5f7;
+  --text-2: #aeaeb2;
+  --muted: #98989f;
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .15);
+  --axis: rgba(255, 255, 255, .16);
+  --hatch: rgba(255, 255, 255, .07);
+  --accent: #0a84ff;
+  --accent-strong: #0071e3;
+  --accent-strong-hover: #0064cf;
+  --accent-fg: #409cff;
+  --accent-weak: rgba(10, 132, 255, .18);
+  --critical: #d70015;
+  --serious: #ff9f0a;
+  --warning: #ffd60a;
+  --good: #30d158;
+  --neutral: #8e8e93;
+  --on-fill: #fff;
+  --on-light-fill: #1a1a1a;
+  --critical-weak: rgba(255, 69, 58, .17);
+  --serious-weak: rgba(255, 159, 10, .16);
+  --warning-weak: rgba(255, 214, 10, .14);
+  --good-weak: rgba(48, 209, 88, .15);
+  --critical-line: rgba(255, 69, 58, .5);
+  --good-line: rgba(48, 209, 88, .55);
+  --critical-fg: #ff7a72;
+  --serious-fg: #ffb340;
+  --warning-fg: #ffd426;
+  --good-fg: #30db5b;
+  --shadow-sm: none;
+  --shadow: 0 24px 60px rgba(0, 0, 0, .6);
+  --backdrop: rgba(0, 0, 0, .55);
+  --page-glass: rgba(0, 0, 0, .82);
+  --corridor: #141416;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --t-micro: 10.5px;
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-title: 15px;
+  --t-large: 22px;
+  --t-number: 28px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --gap: 10px;
+  --radius-sm: 9px;
+  --radius-md: 12px;
+  --radius: 16px;
+  --radius-xl: 22px;
+  --pill: 999px;
+  --touch: 44px;                 /* minimum touch target on this screen */
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f2f2f7;
+  --surface: #fff;
+  --surface-2: #f5f5f7;
+  --raised: #e8e8ed;
+  --hover: #dedee3;
+  --fill: rgba(120, 120, 128, .12);
+  --fill-strong: rgba(120, 120, 128, .2);
+  --text: #1d1d1f;
+  --text-2: #424245;
+  --muted: #6e6e73;
+  --border: rgba(0, 0, 0, .08);
+  --border-strong: rgba(0, 0, 0, .14);
+  --axis: rgba(0, 0, 0, .16);
+  --hatch: rgba(0, 0, 0, .06);
+  --accent: #007aff;
+  --accent-fg: #0066cc;
+  --accent-weak: rgba(0, 122, 255, .1);
+  --serious: #ff9500;
+  --warning: #ffcc00;
+  --good: #34c759;
+  --critical-weak: rgba(255, 59, 48, .1);
+  --serious-weak: rgba(255, 149, 0, .12);
+  --warning-weak: rgba(255, 204, 0, .18);
+  --good-weak: rgba(52, 199, 89, .13);
+  --critical-line: rgba(215, 0, 21, .4);
+  --good-line: rgba(30, 123, 52, .5);
+  --critical-fg: #d70015;
+  --serious-fg: #c2410c;
+  --warning-fg: #946200;
+  --good-fg: #1e7b34;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .04), 0 2px 12px rgba(0, 0, 0, .04);
+  --shadow: 0 24px 60px rgba(0, 0, 0, .18);
+  --backdrop: rgba(0, 0, 0, .25);
+  --page-glass: rgba(242, 242, 247, .86);
+  --corridor: #ebebf0;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--page); color: var(--text);
+  font: var(--t-body)/1.4 var(--font); letter-spacing: -.006em;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button { font: inherit; color: inherit; letter-spacing: inherit; }
+::selection { background: var(--accent-weak); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+
+/* ---------- App frame ---------- */
+.app { display: flex; flex-direction: column; gap: var(--gap); min-height: 100vh; max-width: 1920px; margin: 0 auto; padding: 0 var(--s4) var(--s4); }
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--touch); padding: 6px 18px; border: 0; border-radius: var(--pill);
+  background: var(--fill); color: var(--text);
+  font-size: var(--t-title); font-weight: 600; line-height: 1.2; text-align: center; cursor: pointer;
+  transition: background-color .15s ease, box-shadow .15s ease;
+}
+.btn:hover { background: var(--fill-strong); }
+.btn:active { transform: scale(.98); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn.icon { width: var(--touch); padding: 0; font-size: 18px; }
+
+/* ---------- Chips (status: colour + glyph + word) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 22px; padding: 2px 9px;
+  border-radius: var(--pill); background: var(--fill); color: var(--text-2);
+  font-size: var(--t-small); font-weight: 600; line-height: 1.2; white-space: nowrap;
+  font-variant-numeric: tabular-nums; vertical-align: middle;
+}
+.chip.critical { background: var(--critical); color: var(--on-fill); }
+.chip.serious { background: var(--serious-weak); color: var(--serious-fg); }
+.chip.warning { background: var(--warning-weak); color: var(--warning-fg); }
+.chip.good { background: var(--good-weak); color: var(--good-fg); }
+.chip.info { background: var(--accent-weak); color: var(--accent-fg); }
+.chip.neutral { background: var(--fill); color: var(--text); }
+.chip.mode { min-height: 30px; padding: 0 14px; font-weight: 700; letter-spacing: .06em; cursor: help; }
+.chip.mode.good { color: var(--good-fg); }
+
+/* ---------- ESI v4 badges (legend) ---------- */
+.esi {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 5px;
+  font-size: var(--t-caption); font-weight: 700; white-space: nowrap;
+}
+.esi.e1 { background: var(--critical); color: var(--on-fill); }
+.esi.e2 { background: var(--serious); color: var(--on-light-fill); }
+.esi.e3 { background: var(--warning); color: var(--on-light-fill); }
+.esi.e4 { background: var(--good); color: var(--on-light-fill); }
+.esi.e5 { background: var(--neutral); color: var(--on-light-fill); }
+
+/* ---------- Sticky header ---------- */
+.hdr {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s4);
+  margin-inline: calc(-1 * var(--s4)); padding: var(--s3) var(--s4);
+  background: var(--page-glass); border-bottom: 1px solid var(--border);
+  -webkit-backdrop-filter: saturate(180%) blur(16px); backdrop-filter: saturate(180%) blur(16px);
+}
+.brand { display: flex; align-items: center; gap: var(--s3); min-width: 0; }
+.logo {
+  flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(180deg, #ff5b50, var(--critical));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 1px 3px rgba(0, 0, 0, .25);
+  color: var(--on-fill); font-size: 28px; font-weight: 600; line-height: 1; padding-bottom: 3px;
+}
+.brand > div { min-width: 0; }
+.brand h1 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.022em; line-height: 1.1; }
+.brand p { margin-top: 2px; font-size: var(--t-small); color: var(--text-2); }
+.simtag {
+  display: inline-block; margin-inline-start: 6px; padding: 2px 8px; border-radius: var(--pill);
+  background: var(--fill); color: var(--text-2); font-size: var(--t-micro); font-weight: 600; vertical-align: 1px;
+}
+.controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2) var(--s3); }
+.clockbox { text-align: end; }
+.clockbox small {
+  display: block; font-size: var(--t-micro); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+#clock { font-size: var(--t-number); font-weight: 600; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+#feed { min-height: 30px; white-space: normal; text-align: start; }
+
+/* ---------- Notices (downtime) ---------- */
+.notice {
+  display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s3) var(--s4); border-radius: var(--radius-md);
+  background: var(--critical-weak); box-shadow: inset 0 0 0 1px var(--critical-line); font-size: var(--t-title); line-height: 1.4;
+}
+.notice b { font-weight: 700; }
+
+/* ---------- Panels ---------- */
+.panel {
+  display: flex; flex-direction: column; min-width: 0;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+}
+.ph {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3);
+  padding: var(--s3) var(--s4) var(--s2);
+}
+.ph h2 { font-size: var(--t-title); font-weight: 700; letter-spacing: -.01em; }
+.meta { margin-inline-start: auto; font-size: var(--t-small); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pb { padding: 0 var(--s4) var(--s4); min-width: 0; }
+
+/* ---------- Find nearest free ---------- */
+.find { padding-bottom: var(--s4); }
+.find .ph p { font-size: var(--t-small); color: var(--muted); }
+.find-row {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2);
+  padding: 0 var(--s4);
+}
+.find-btn {
+  appearance: none; display: flex; align-items: center; gap: var(--s3); min-height: 64px; min-width: 0;
+  padding: 10px 16px; border: 0; border-radius: var(--radius-md); cursor: pointer; text-align: start;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border);
+  transition: background-color .15s ease, box-shadow .15s ease;
+}
+.find-btn:hover { background: var(--hover); }
+.find-btn:active { transform: scale(.985); }
+.find-btn[aria-pressed="true"] { background: var(--accent-weak); box-shadow: inset 0 0 0 2px var(--accent); }
+.find-btn svg { flex: none; width: 38px; height: 38px; }
+.fb-text { display: flex; flex-direction: column; min-width: 0; }
+.fb-label { font-size: var(--t-title); font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fb-count { font-size: var(--t-small); font-weight: 600; color: var(--good-fg); font-variant-numeric: tabular-nums; }
+.fb-count.none { color: var(--warning-fg); }
+.fb-count.idle { color: var(--muted); }
+
+.result {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4);
+  margin: var(--s3) var(--s4) 0; padding: var(--s3) var(--s4); min-height: 76px;
+  border-radius: var(--radius-md); background: var(--surface-2); box-shadow: inset 4px 0 0 var(--neutral);
+}
+:root[dir="rtl"] .result { box-shadow: inset -4px 0 0 var(--neutral); }
+.result.found { box-shadow: inset 4px 0 0 var(--accent); }
+.result.armed { box-shadow: inset 4px 0 0 var(--accent); background: var(--accent-weak); }
+.result.none { box-shadow: inset 4px 0 0 var(--warning); }
+.r-body { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.r-kicker { font-size: var(--t-small); font-weight: 600; color: var(--text-2); }
+.r-big { font-size: var(--t-large); font-weight: 700; letter-spacing: -.02em; line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.result.found .r-big { color: var(--accent-fg); }
+.result.none .r-big { color: var(--warning-fg); }
+.result.idle .r-big { font-size: var(--t-title); font-weight: 600; color: var(--text-2); letter-spacing: 0; }
+.r-line { font-size: var(--t-body); color: var(--text-2); }
+.r-rule { font-size: var(--t-small); color: var(--muted); }
+
+/* ---------- Main layout ---------- */
+.main { display: grid; gap: var(--gap); align-items: start; grid-template-columns: minmax(0, 1fr) 360px; }
+.side { position: sticky; top: 76px; max-height: calc(100vh - 92px); }
+.side .pb { overflow: auto; overscroll-behavior: contain; }
+
+/* ---------- Filter chips ---------- */
+.filters { display: flex; flex-wrap: wrap; gap: var(--s2); padding: 0 var(--s4) var(--s3); }
+.fchip {
+  appearance: none; display: inline-flex; align-items: center; gap: 8px; min-height: var(--touch);
+  padding: 4px 14px 4px 8px; border: 0; border-radius: var(--pill); cursor: pointer;
+  background: var(--fill); color: var(--text); font-size: var(--t-body); font-weight: 600; white-space: nowrap;
+}
+.fchip.all { padding-inline-start: 14px; }
+.fchip:hover { background: var(--fill-strong); }
+.fchip[aria-pressed="true"] { background: var(--accent-strong); color: var(--on-fill); }
+.fchip svg { flex: none; width: 28px; height: 28px; }
+.fchip small { font-size: var(--t-small); font-weight: 600; opacity: .85; font-variant-numeric: tabular-nums; }
+
+/* ---------- Floor plan ---------- */
+.plan-box { position: relative; margin: 0 var(--s4); border-radius: var(--radius-md); overflow: hidden; }
+.plan-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.plan {
+  display: block; width: 100%; height: auto; max-height: max(360px, calc(100vh - 430px));
+  font-family: var(--font); -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.plan .floor { fill: var(--surface-2); }
+.plan .corridor, .plan .doorway { fill: var(--corridor); }
+.plan .lane { stroke: var(--axis); stroke-width: 1.5; stroke-dasharray: 2 8; stroke-linecap: round; }
+.plan .room { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.5; }
+.plan .room-label { fill: var(--text-2); font-size: 12.5px; font-weight: 700; letter-spacing: .08em; }
+.plan .room-count { fill: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.plan .room-count.good { fill: var(--good-fg); }
+.plan .room-count.warning { fill: var(--warning-fg); }
+.plan .mid { text-anchor: middle; }
+.plan .end { text-anchor: end; }
+.plan .hatch-bg { fill: var(--surface-2); }
+.plan .hatch-line { fill: var(--hatch); }
+.plan .hatchw-bg, .legend .hatchw-bg { fill: var(--warning-weak); }
+.plan .hatchw-line, .legend .hatchw-line { fill: var(--warning); opacity: .55; }
+
+/* Bays: same state language as the dashboard's bed board */
+.bay { cursor: pointer; outline: none; }
+.bay-bg { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1; transition: stroke .15s ease; }
+.bay-id { fill: var(--text); font-size: 15px; font-weight: 700; text-anchor: middle; }
+.bay-st { fill: var(--text-2); font-size: 11.5px; font-weight: 600; text-anchor: middle; }
+.bay.s-free .bay-bg { fill: var(--surface); stroke: var(--good-line); stroke-width: 1.5; }
+.bay.s-free .bay-st { fill: var(--good-fg); }
+.bay.s-occupied .bay-bg { fill: var(--raised); stroke: transparent; }
+.bay.s-cleaning .bay-bg { fill: url(#hatchBay); stroke: var(--axis); }
+.bay.s-cleaning .bay-st { fill: var(--muted); }
+.bay.s-reserved .bay-bg { fill: var(--accent-weak); stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.bay.s-reserved .bay-st { fill: var(--accent-fg); }
+.bay.s-hold .bay-bg { fill: var(--warning-weak); stroke: var(--warning); stroke-width: 1.5; stroke-dasharray: 5 3; }
+.bay.s-hold .bay-st { fill: var(--warning-fg); }
+.bay.s-unknown .bay-st { fill: var(--muted); }
+.esi-bar { display: none; }
+.esi-bar.e1, .esi-bar.e2, .esi-bar.e3, .esi-bar.e4, .esi-bar.e5 { display: inline; }
+.esi-bar.e1 { fill: var(--critical); }
+.esi-bar.e2 { fill: var(--serious); }
+.esi-bar.e3 { fill: var(--warning); }
+.esi-bar.e4 { fill: var(--good); }
+.esi-bar.e5 { fill: var(--neutral); }
+.bay:hover .bay-bg { stroke: var(--text-2); stroke-width: 1.5; }
+.plan.armed .bay .bay-bg { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: none; }
+.bay.sel .bay-bg, .bay:focus-visible .bay-bg { stroke: var(--accent); stroke-width: 4; stroke-dasharray: none; }
+
+/* Equipment markers: shape + letter = type; fill pattern + badge = state */
+.asset { cursor: pointer; outline: none; }
+.asset .hit { fill: transparent; pointer-events: all; }
+.asset .ring { display: none; fill: none; stroke: var(--accent); stroke-width: 4; }
+.asset.hl .ring { display: inline; animation: pulse 1.6s ease-in-out infinite; }
+.asset:focus-visible .hit { stroke: var(--accent); stroke-width: 3; }
+.asset:hover .shape { filter: brightness(1.15); }
+@keyframes pulse { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: .25; } }
+.mk .shape { stroke-width: 2.5; }
+.mk .ltr { font-size: 13px; font-weight: 800; text-anchor: middle; dominant-baseline: central; font-family: var(--font); }
+.mk .slash { display: none; }
+.mk .badge { display: none; }
+.mk .badge circle { stroke: var(--surface); stroke-width: 1.5; }
+.mk .badge .glyph { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mk .badge text { font-size: 9px; font-weight: 800; text-anchor: middle; dominant-baseline: central; }
+.mk.st-free .shape { fill: var(--surface); stroke: var(--good); }
+.mk.st-free .ltr { fill: var(--good-fg); }
+.mk.st-free .badge { display: inline; }
+.mk.st-free .badge circle { fill: var(--good); }
+.mk.st-free .badge .glyph { stroke: var(--on-light-fill); }
+.mk.st-in-use .shape { fill: var(--text-2); stroke: var(--text-2); }
+.mk.st-in-use .ltr { fill: var(--surface); }
+.mk.st-cleaning .shape { fill: url(#hatchWarn); stroke: var(--warning); stroke-dasharray: 4 3; }
+.mk.st-cleaning .ltr { fill: var(--text); }
+.mk.st-cleaning .badge { display: inline; }
+.mk.st-cleaning .badge circle { fill: var(--warning); }
+.mk.st-cleaning .badge .glyph { stroke: var(--on-light-fill); }
+.mk.st-out-of-service .shape { fill: var(--critical-weak); stroke: var(--critical-fg); stroke-dasharray: 3 3; }
+.mk.st-out-of-service .ltr { fill: var(--critical-fg); }
+.mk.st-out-of-service .slash { display: inline; stroke: var(--critical-fg); stroke-width: 2.5; stroke-linecap: round; }
+.mk.st-out-of-service .badge { display: inline; }
+.mk.st-out-of-service .badge circle { fill: var(--critical); }
+.mk.st-out-of-service .badge .glyph { stroke: var(--on-fill); }
+.mk.st-unknown .shape { fill: var(--surface); stroke: var(--muted); stroke-dasharray: 2 3; }
+.mk.st-unknown .ltr { fill: var(--muted); }
+.mk.st-unknown .badge { display: inline; }
+.mk.st-unknown .badge circle { fill: var(--neutral); }
+.mk.st-unknown .badge text { fill: var(--on-light-fill); }
+
+/* Route to the nearest free unit, and labels */
+.route { fill: none; stroke: var(--accent); stroke-width: 4; stroke-dasharray: 9 7; stroke-linecap: round; stroke-linejoin: round; animation: march 1s linear infinite; }
+.route-start { fill: var(--accent); }
+@keyframes march { to { stroke-dashoffset: -16; } }
+.dist { fill: var(--accent-fg); font-size: 15px; font-weight: 800; text-anchor: middle; paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.more { fill: var(--text); font-size: 11px; font-weight: 800; text-anchor: middle; dominant-baseline: central; }
+.more-bg { fill: var(--fill-strong); }
+.labels { pointer-events: none; }
+
+/* Overlays: waiting for the dashboard, or stale snapshot */
+.overlay {
+  position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; padding: var(--s4);
+  background: repeating-linear-gradient(135deg, var(--hatch) 0 10px, transparent 10px 20px), rgba(0, 0, 0, .55);
+}
+:root[data-theme="light"] .overlay { background: repeating-linear-gradient(135deg, var(--hatch) 0 10px, transparent 10px 20px), rgba(242, 242, 247, .7); }
+.plan-box.dim .plan { filter: grayscale(1); opacity: .55; }
+.ov-card {
+  max-width: 540px; padding: 24px 26px; border-radius: var(--radius); background: var(--surface);
+  box-shadow: var(--shadow); display: flex; flex-direction: column; gap: var(--s3);
+}
+.ov-card h2 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.02em; }
+.ov-card p, .ov-card li { font-size: var(--t-title); color: var(--text-2); line-height: 1.5; }
+.ov-card ol { display: flex; flex-direction: column; gap: var(--s2); counter-reset: step; }
+.ov-card li { display: flex; gap: var(--s3); counter-increment: step; }
+.ov-card li::before {
+  content: counter(step); flex: none; width: 26px; height: 26px; border-radius: var(--pill); display: grid; place-items: center;
+  background: var(--accent-weak); color: var(--accent-fg); font-weight: 700; font-size: var(--t-small);
+}
+.ov-card .note { font-size: var(--t-small); color: var(--muted); }
+.stale-pill {
+  padding: 8px 16px; border-radius: var(--pill); background: var(--surface); color: var(--warning-fg);
+  box-shadow: inset 0 0 0 1px var(--warning), var(--shadow-sm); font-size: var(--t-body); font-weight: 700; letter-spacing: .03em; text-align: center;
+}
+
+/* ---------- Legend ---------- */
+.legend { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); padding: var(--s3) var(--s4) var(--s4); font-size: var(--t-small); color: var(--text-2); }
+.lg-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.lg-h { font-size: var(--t-caption); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.lg-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.lg-item svg { flex: none; width: 24px; height: 24px; }
+.sw { flex: none; display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border-strong); background: var(--surface-2); }
+.sw.s-free { background: var(--surface); border: 1.5px solid var(--good-line); }
+.sw.s-occupied { background: var(--raised); border-color: transparent; border-inline-start: 4px solid var(--serious); }
+.sw.s-cleaning { background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 4px), var(--surface-2); border-color: var(--axis); }
+.sw.s-reserved { background: var(--accent-weak); border: 1.5px dashed var(--accent); }
+.sw.s-hold { background: var(--warning-weak); border: 1.5px dashed var(--warning); }
+.sw.route { width: 22px; height: 0; border: 0; border-top: 4px dashed var(--accent); border-radius: 0; background: none; }
+
+/* ---------- Equipment list ---------- */
+.list { display: flex; flex-direction: column; gap: 2px; }
+.sect {
+  position: sticky; top: 0; z-index: 1; padding: 10px 4px 6px; background: var(--surface);
+  font-size: var(--t-caption); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.arow {
+  appearance: none; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 4px var(--s3);
+  width: 100%; min-height: 52px; margin: 0; padding: 6px 10px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text); text-align: start; cursor: pointer;
+}
+.arow:hover { background: var(--fill); }
+.arow svg { width: 32px; height: 32px; }
+.a-text { display: flex; flex-direction: column; min-width: 0; }
+.a-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: var(--t-title); }
+.a-top b { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a-top span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--t-body); }
+.a-loc { font-size: var(--t-small); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a-chips { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.empty { padding: 24px 8px; text-align: center; font-size: var(--t-body); color: var(--muted); }
+
+/* ---------- State sheet ---------- */
+.sheet {
+  width: min(460px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 0; border: 0;
+  border-radius: var(--radius-xl); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.sheet::backdrop { background: var(--backdrop); }
+.sheet-in { display: flex; flex-direction: column; gap: var(--s3); padding: 20px; }
+.sheet-head { display: flex; align-items: center; gap: var(--s3); }
+.sheet-head svg { flex: none; width: 48px; height: 48px; }
+.sheet-head h2 { font-size: var(--t-large); font-weight: 700; letter-spacing: -.02em; line-height: 1.2; }
+.sheet-head p { margin-top: 2px; font-size: var(--t-title); color: var(--text-2); }
+.sheet-q { font-size: var(--t-caption); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sheet-actions { display: flex; flex-direction: column; gap: var(--s2); }
+.state-btn {
+  appearance: none; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: var(--s3);
+  width: 100%; min-height: 60px; padding: 8px 14px; border: 0; border-radius: var(--radius-md); cursor: pointer;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); color: var(--text); text-align: start;
+}
+.state-btn:hover:not(:disabled) { background: var(--hover); }
+.state-btn:active:not(:disabled) { transform: scale(.99); }
+.state-btn:disabled { cursor: not-allowed; }
+.state-btn:disabled:not([aria-current="true"]) { opacity: .45; }
+.state-btn[aria-current="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.state-btn svg { width: 36px; height: 36px; }
+.state-btn b { display: block; font-size: var(--t-title); font-weight: 700; }
+.state-btn small { display: block; font-size: var(--t-small); color: var(--text-2); }
+.sb-cur { font-size: var(--t-small); font-weight: 700; color: var(--accent-fg); }
+.sheet-note { font-size: var(--t-body); color: var(--text-2); line-height: 1.45; }
+.sheet-note.warning { color: var(--warning-fg); }
+.sheet-close { width: 100%; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; inset-inline: 0; bottom: 20px; z-index: 40; width: fit-content; max-width: calc(100vw - 32px); margin: 0 auto;
+  padding: 12px 18px; border-radius: var(--radius-md); background: var(--surface); color: var(--text);
+  box-shadow: var(--shadow), inset 0 0 0 1px var(--border-strong); font-size: var(--t-title); font-weight: 600; line-height: 1.35;
+}
+.toast.good { box-shadow: var(--shadow), inset 0 0 0 2px var(--good); }
+.toast.warning { box-shadow: var(--shadow), inset 0 0 0 2px var(--warning); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1180px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .side { position: static; max-height: none; }
+}
+@media (max-width: 760px) {
+  .find-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan { min-width: 720px; max-height: none; }
+  .plan-box { margin: 0 var(--s2); }
+  .find-btn { padding: 8px 12px; gap: var(--s2); }
+  .find-btn svg { width: 32px; height: 32px; }
+  .clockbox { order: -1; }
+  .r-big { font-size: 19px; }
+  /* Phone: keep the sticky header short and the filter chips on one swipeable row */
+  .hdr { padding-block: var(--s2); }
+  .logo { width: 32px; height: 32px; font-size: 24px; }
+  .brand h1 { font-size: 19px; }
+  #clock { font-size: var(--t-large); }
+  .filters { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; }
+  .fchip { flex: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .route, .asset.hl .ring { animation: none; }
+  .btn:active, .find-btn:active, .state-btn:active { transform: none; }
+}
+/* ==WASEL-TOKENS-START== */
+/* ---------- WASEL design system tokens (synced from src/shell.html) ---------- */
+:root {
+  color-scheme: dark;
+  /* Surfaces, back to front: page → panel → inset → control */
+  --page: #000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --raised: #3a3a3c;
+  --hover: #48484a;
+  --fill: rgba(120, 120, 128, .24);          /* controls, chips, tracks */
+  --fill-strong: rgba(120, 120, 128, .36);   /* their hover */
+  --thumb: #636366;                          /* selected segment */
+  /* Text */
+  --text: #f5f5f7;
+  --text-2: #aeaeb2;
+  --muted: #98989f;
+  /* Lines */
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .15);
+  --grid: rgba(255, 255, 255, .07);
+  --axis: rgba(255, 255, 255, .16);
+  --hatch: rgba(255, 255, 255, .07);
+  /* Accent: system blue */
+  --accent: #0a84ff;
+  --accent-strong: #0071e3;                  /* fill behind white text */
+  --accent-strong-hover: #0064cf;
+  --accent-fg: #409cff;                      /* accent as text */
+  --accent-weak: rgba(10, 132, 255, .18);
+  /* Status fills: same meaning in both themes */
+  --critical: #d70015;
+  --serious: #ff9f0a;
+  --warning: #ffd60a;
+  --good: #30d158;
+  --neutral: #8e8e93;
+  --on-fill: #fff;                           /* text on critical / accent fills */
+  --on-light-fill: #1a1a1a;                  /* text on orange, yellow, green, grey fills */
+  /* Status tints and lines */
+  --critical-weak: rgba(255, 69, 58, .17);
+  --serious-weak: rgba(255, 159, 10, .16);
+  --warning-weak: rgba(255, 214, 10, .14);
+  --good-weak: rgba(48, 209, 88, .15);
+  --critical-line: rgba(255, 69, 58, .5);
+  --good-line: rgba(48, 209, 88, .55);
+  /* Status as text */
+  --critical-fg: #ff7a72;
+  --serious-fg: #ffb340;
+  --warning-fg: #ffd426;
+  --good-fg: #30db5b;
+  /* Depth and materials */
+  --shadow-sm: none;
+  --shadow: 0 24px 60px rgba(0, 0, 0, .6);
+  --ring: 0 0 0 1px rgba(255, 255, 255, .08);  /* hairline edge on floating things */
+  --backdrop: rgba(0, 0, 0, .5);
+  --material: rgba(44, 44, 46, .82);           /* toast, chart tip */
+  /* Type */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --t-micro: 10.5px;
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-title: 15px;
+  --t-sheet: 19px;
+  --t-large: 22px;
+  --t-number: 28px;
+  /* Space: 4 px grid */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --gap: 10px;
+  /* Shape: inner radii nest inside outer ones */
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 14px;
+  --radius: 18px;
+  --radius-xl: 24px;
+  --pill: 999px;
+  /* Control heights */
+  --h-control: 30px;
+  --h-control-sm: 26px;
+  --h-chip: 22px;
+  --h-chip-sm: 18px;
+  /* Backdrop, glass header, critical step card */
+  --page-gradient: radial-gradient(1100px 620px at 0% 0%, rgba(59, 130, 246, .16), transparent 62%),
+                   radial-gradient(900px 560px at 100% 0%, rgba(139, 92, 246, .13), transparent 58%),
+                   #000;
+  --glass: rgba(28, 28, 30, .72);
+  --critical-card: linear-gradient(135deg, #dc3125, #b42318);   /* white text >= 4.6:1 across the gradient */
+  --hatch-bar: rgba(255, 255, 255, .08);                       /* the empty part of a capacity bar */
+  /* Icon tiles: decorative hues only, never the status hues, so an icon is never read as a status */
+  --tile-mix: 22%;
+  --hue-blue: #3b82f6;
+  --hue-indigo: #6366f1;
+  --hue-violet: #8b5cf6;
+  --hue-purple: #a855f7;
+  --hue-sky: #0ea5e9;
+  --hue-cyan: #06b6d4;
+  --hue-slate: #64748b;
+  --ai-gradient: linear-gradient(135deg, #6366f1, #d946ef);
+  /* Icon glyphs (masks; colour comes from the tile hue) */
+  --i-ambulance: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 10H6'/%3E%3Cpath d='M8 8v4'/%3E%3Cpath d='M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2'/%3E%3Cpath d='M19 18h2a1 1 0 0 0 1-1v-3.28a1 1 0 0 0-.684-.948l-1.923-.641a1 1 0 0 1-.578-.502l-1.539-3.076A1 1 0 0 0 16.382 8H14'/%3E%3Cpath d='M8 18h1'/%3E%3Ccircle cx='17' cy='18' r='2'/%3E%3Ccircle cx='7' cy='18' r='2'/%3E%3C/svg%3E");
+  --i-users: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E");
+  --i-pulse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z'/%3E%3Cpath d='M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27'/%3E%3C/svg%3E");
+  --i-bed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4v16'/%3E%3Cpath d='M2 8h18a2 2 0 0 1 2 2v10'/%3E%3Cpath d='M2 17h20'/%3E%3Cpath d='M6 8v9'/%3E%3C/svg%3E");
+  --i-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7.5 4.27 9 5.15'/%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpath d='m3.3 7 8.7 5 8.7-5'/%3E%3Cpath d='M12 22V12'/%3E%3C/svg%3E");
+  --i-sparkles: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z'/%3E%3Cpath d='M20 3v4'/%3E%3Cpath d='M22 5h-4'/%3E%3C/svg%3E");
+  --i-activity: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E");
+  --i-trend: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m22 7-8.5 8.5-5-5L2 17'/%3E%3Cpath d='M16 7h6v6'/%3E%3C/svg%3E");
+  --i-siren: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 18v-6a5 5 0 1 1 10 0v6'/%3E%3Cpath d='M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z'/%3E%3Cpath d='M21 12h1'/%3E%3Cpath d='M18.5 4.5 18 5'/%3E%3Cpath d='M2 12h1'/%3E%3Cpath d='M12 2v1'/%3E%3Cpath d='m4.929 4.929.707.707'/%3E%3Cpath d='M12 12v6'/%3E%3C/svg%3E");
+  --i-shield: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='M9 12h6'/%3E%3Cpath d='M12 9v6'/%3E%3C/svg%3E");
+  --i-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 6v6l4 2'/%3E%3C/svg%3E");
+  --i-steth: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 2v2'/%3E%3Cpath d='M5 2v2'/%3E%3Cpath d='M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1'/%3E%3Cpath d='M8 15a6 6 0 0 0 12 0v-3'/%3E%3Ccircle cx='20' cy='10' r='2'/%3E%3C/svg%3E");
+  --i-exit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpath d='m16 17 5-5-5-5'/%3E%3Cpath d='M21 12H9'/%3E%3C/svg%3E");
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f4f6fb;
+  --surface: #fff;
+  --surface-2: #f8fafc;
+  --raised: #eef2f6;
+  --hover: #e4e8ee;
+  --fill: rgba(16, 24, 40, .05);
+  --fill-strong: rgba(16, 24, 40, .09);
+  --thumb: #fff;
+  --text: #101828;
+  --text-2: #475467;
+  --muted: #667085;
+  --border: rgba(16, 24, 40, .08);
+  --border-strong: rgba(16, 24, 40, .14);
+  --grid: rgba(16, 24, 40, .06);
+  --axis: rgba(16, 24, 40, .16);
+  --hatch: rgba(16, 24, 40, .06);
+  --hatch-bar: rgba(16, 24, 40, .08);
+  --accent: #3b82f6;
+  --accent-strong: #2563eb;
+  --accent-strong-hover: #1d4ed8;
+  --accent-fg: #1d4ed8;
+  --accent-weak: rgba(37, 99, 235, .09);
+  --critical: #d92d20;
+  --serious: #f79009;
+  --warning: #fdb022;
+  --good: #12b76a;
+  --neutral: #98a2b3;
+  --critical-weak: rgba(240, 68, 56, .09);
+  --serious-weak: rgba(247, 144, 9, .11);
+  --warning-weak: rgba(253, 176, 34, .16);
+  --good-weak: rgba(18, 183, 106, .1);
+  --critical-line: rgba(217, 45, 32, .35);
+  --good-line: rgba(6, 118, 71, .45);
+  --critical-fg: #b42318;
+  --serious-fg: #b54708;
+  --warning-fg: #8d5b00;
+  --good-fg: #067647;
+  --shadow-sm: 0 0 0 1px rgba(16, 24, 40, .05), 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .05);
+  --shadow: 0 24px 60px rgba(16, 24, 40, .18);
+  --ring: 0 0 0 1px rgba(16, 24, 40, .06);
+  --backdrop: rgba(16, 24, 40, .25);
+  --material: rgba(16, 24, 40, .88);
+  --page-gradient: radial-gradient(1100px 620px at 0% 0%, #dde9ff, transparent 62%),
+                   radial-gradient(900px 560px at 100% 0%, #efe6ff, transparent 58%),
+                   radial-gradient(900px 600px at 50% 110%, #e2f6ee, transparent 60%),
+                   #f4f6fb;
+  --glass: rgba(255, 255, 255, .72);
+  --tile-mix: 14%;
+}
+/* ==WASEL-TOKENS-END== */
+</style>
+</head>
+<body>
+<noscript><p class="empty">This screen needs JavaScript to mirror the WASEL dashboard.</p></noscript>
+<div class="app">
+
+  <header class="hdr">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">+</div>
+      <div>
+        <h1>Equipment floor plan</h1>
+        <p>WASEL · <span id="hospital">Waiting for the dashboard</span> <span class="simtag">Simulated data</span></p>
+      </div>
+    </div>
+    <div class="controls">
+      <span id="mode" class="chip mode" role="status" hidden></span>
+      <span id="feed" class="chip critical" role="status"><span aria-hidden="true">■</span> No feed (start the dashboard in another tab)</span>
+      <div class="clockbox">
+        <small>Sim time</small>
+        <div id="clock">--:--</div>
+      </div>
+      <button type="button" id="theme" class="btn icon" aria-label="Switch to light theme" title="Switch theme"><span aria-hidden="true">◐</span></button>
+    </div>
+  </header>
+
+  <div id="downtime" class="notice" role="alert" hidden>
+    <span aria-hidden="true">■</span>
+    <p><b>Downtime mode.</b> The dashboard is read-only, so state changes from this screen are paused. Record equipment changes on the paper equipment log and tell the charge nurse by radio.</p>
+  </div>
+
+  <section class="panel find" aria-labelledby="findTitle">
+    <div class="ph">
+      <h2 id="findTitle">Find nearest free…</h2>
+      <p>Tap a bay on the plan and what it needs, in either order.</p>
+    </div>
+    <div class="find-row" id="findRow" role="group" aria-labelledby="findTitle"></div>
+    <div id="result" class="result idle" role="status" aria-live="polite"></div>
+  </section>
+
+  <div class="main">
+    <section class="panel" aria-labelledby="planTitle">
+      <div class="ph">
+        <h2 id="planTitle">Emergency department</h2>
+        <span class="meta" id="planMeta">Positions from asset tracking (RTLS)</span>
+      </div>
+      <div class="filters" id="filters" role="group" aria-label="Show equipment type"></div>
+      <div class="plan-box" id="planBox">
+        <div class="plan-scroll">
+          <svg id="plan" class="plan" viewBox="0 0 1000 600" role="group" aria-label="Emergency department floor plan. Tap a bay to choose it, or a piece of equipment to change its state."></svg>
+        </div>
+        <div id="waiting" class="overlay">
+          <div class="ov-card">
+            <h2>Waiting for the dashboard</h2>
+            <p id="waitLead">This screen mirrors the WASEL ER dashboard. It runs no simulation of its own.</p>
+            <ol>
+              <li>Open the WASEL dashboard (index.html) in another tab of this browser, on the same site.</li>
+              <li>Bays and equipment appear here within 2 seconds and stay live while it runs.</li>
+            </ol>
+            <p class="note">Bays show status and ESI level only. No patient names or IDs reach this screen.</p>
+          </div>
+        </div>
+        <div id="stale" class="overlay" hidden>
+          <p class="stale-pill" id="staleText">STALE · no feed from the dashboard</p>
+        </div>
+      </div>
+      <div class="legend" id="legend" aria-label="Legend"></div>
+    </section>
+
+    <aside class="panel side" aria-labelledby="listTitle">
+      <div class="ph">
+        <h2 id="listTitle">Equipment</h2>
+        <span class="meta" id="listMeta"></span>
+      </div>
+      <div class="pb">
+        <div class="list" id="list"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<dialog id="sheet" class="sheet" aria-labelledby="sheetTitle">
+  <div class="sheet-in">
+    <div class="sheet-head">
+      <span id="sheetIcon" aria-hidden="true"></span>
+      <div>
+        <h2 id="sheetTitle">Equipment</h2>
+        <p id="sheetSub"></p>
+      </div>
+    </div>
+    <p class="sheet-q" id="sheetQ">Set its state</p>
+    <div class="sheet-actions" id="sheetActions" role="group" aria-labelledby="sheetQ"></div>
+    <p id="sheetNote" class="sheet-note"></p>
+    <button type="button" class="btn sheet-close" id="sheetClose">Cancel</button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+/* =========================================================================
+ * WASEL · Equipment floor plan
+ *
+ * Mirrors the dashboard over BroadcastChannel('wasel-state') (CHANNELS.md §4)
+ * and sends one action, `assetState`, over BroadcastChannel('wasel-command')
+ * (CHANNELS.md §5). It never runs its own simulation and stores nothing
+ * except the shared light/dark theme choice.
+ *
+ * "Find nearest free…" is a readable rule, not a model:
+ *   1. Only units whose state is Free count.
+ *   2. Each one is ranked by walking distance from the chosen bay: straight
+ *      to the room door, along Corridor T, then through the other room's
+ *      door (or straight across when both are in the same room).
+ *   3. The shortest route wins; ties go to the lower asset ID.
+ * The route is drawn on the plan so staff can check the answer at a glance.
+ *
+ * Security: every string from the feed is length-capped and written with
+ * textContent or setAttribute (never innerHTML); lookups use Maps so feed
+ * values cannot reach Object.prototype; no data goes into URLs or storage.
+ * ========================================================================= */
+(function () {
+  'use strict';
+
+  /* ---------- Configuration ---------- */
+  const STALE_MS = 6000;             // the dashboard sends state every 2 s; 6 s of silence = no feed
+  const CONFIRM_MS = 8000;           // a change not reflected in the feed after 8 s is reported
+  const TOAST_MS = 5000;
+  const METRES_PER_UNIT = 0.05;      // the plan is 1000 x 600 units, i.e. 50 m x 30 m
+  const MAX_ITEMS = 500;             // cap on any array read from the feed
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const THEME_KEY = 'ercc.theme';    // shared with the dashboard on the same origin
+  const SCREEN = { from: 'equipment', role: 'Equipment floor plan' };
+
+  /* ---------- Vocabulary ---------- */
+  const TYPES = [
+    { key: 'ventilator', label: 'Ventilator', plural: 'Ventilators', letter: 'V', shape: 'circle' },
+    { key: 'monitor', label: 'Monitor', plural: 'Monitors', letter: 'M', shape: 'square' },
+    { key: 'defibrillator', label: 'Defibrillator', plural: 'Defibrillators', letter: 'D', shape: 'diamond' },
+    { key: 'crash-cart', label: 'Crash cart', plural: 'Crash carts', letter: 'C', shape: 'hexagon' },
+    { key: 'ultrasound', label: 'Ultrasound', plural: 'Ultrasounds', letter: 'U', shape: 'triangle' },
+  ];
+  const OTHER_TYPE = { key: 'other', label: 'Other equipment', plural: 'Other', letter: '?', shape: 'pill' };
+  const TYPE_BY_KEY = new Map(TYPES.map(t => [t.key, t]).concat([[OTHER_TYPE.key, OTHER_TYPE]]));
+  const TYPE_ORDER = new Map(TYPES.map((t, i) => [t.key, i]).concat([[OTHER_TYPE.key, TYPES.length]]));
+  const TYPE_ALIASES = new Map([
+    ['ventilator', 'ventilator'], ['vent', 'ventilator'],
+    ['monitor', 'monitor'], ['cardiacmonitor', 'monitor'],
+    ['defibrillator', 'defibrillator'], ['defib', 'defibrillator'], ['aed', 'defibrillator'],
+    ['crashcart', 'crash-cart'], ['resuscart', 'crash-cart'],
+    ['ultrasound', 'ultrasound'], ['pocus', 'ultrasound'],
+  ]);
+  const FIND_TYPES = ['defibrillator', 'ventilator', 'ultrasound', 'crash-cart'];
+
+  const STATES = new Map([
+    ['free', { label: 'Free', tone: 'good', glyph: '✓', note: 'Ready for the next patient' }],
+    ['in-use', { label: 'In use', tone: 'neutral', glyph: '●', note: 'With a patient' }],
+    ['cleaning', { label: 'Cleaning', tone: 'warning', glyph: '◐', note: 'Being cleaned, back soon' }],
+    ['out-of-service', { label: 'Out of service', tone: 'critical', glyph: '✕', note: 'Faulty: tag it for biomedical engineering' }],
+    ['unknown', { label: 'Unknown', tone: 'neutral', glyph: '?', note: 'No state from the tracking feed' }],
+  ]);
+  const STATE_ALIASES = new Map([
+    ['free', 'free'], ['available', 'free'],
+    ['inuse', 'in-use'], ['busy', 'in-use'],
+    ['cleaning', 'cleaning'],
+    ['outofservice', 'out-of-service'], ['faulty', 'out-of-service'],
+  ]);
+  const SETTABLE = ['free', 'cleaning', 'out-of-service'];
+  const LIST_ORDER = ['out-of-service', 'cleaning', 'free', 'in-use', 'unknown'];
+
+  const BED_WORDS = new Map([['free', 'Free'], ['occupied', 'Occupied'], ['cleaning', 'Cleaning'], ['reserved', 'Reserved'], ['hold', 'Held'], ['unknown', '—']]);
+  const MODES = new Map([['steady', ['good', '●', 'STEADY']], ['strain', ['warning', '◆', 'STRAIN']], ['surge', ['serious', '▲', 'SURGE']], ['mci', ['critical', '■', 'MCI']]]);
+  const FEED_CHIP = {
+    live: ['good', '●', 'Live'],
+    connecting: ['info', '●', 'Connecting…'],
+    none: ['critical', '■', 'No feed (start the dashboard in another tab)'],
+  };
+
+  /* ---------- Floor plan geometry (plan units; 20 units = 1 m) ----------
+   * Top row: Resus, Trauma, Nurses' station, Store A. Middle: Corridor T.
+   * Bottom row: Acute, Fast track, Store B. Every room opens onto the corridor
+   * through one door (x = door), which is what the walking rule follows. */
+  const CORRIDOR = { id: 'CT', name: 'Corridor T', x: 16, y: 228, w: 968, h: 104 };
+  const LANE_Y = 280;                // walking line along Corridor T
+  const ROOMS = [
+    { id: 'R', name: 'Resus', x: 16, y: 16, w: 300, h: 200, door: 166, bays: { count: 4, cols: 4, bw: 64, bh: 146 } },
+    { id: 'T', name: 'Trauma', x: 328, y: 16, w: 440, h: 200, door: 548, bays: { count: 6, cols: 6, bw: 64, bh: 146 } },
+    { id: 'NS', name: "Nurses' station", x: 780, y: 16, w: 100, h: 200, door: 830 },
+    { id: 'SA', name: 'Store A', x: 892, y: 16, w: 92, h: 200, door: 938 },
+    { id: 'A', name: 'Acute', x: 16, y: 344, w: 544, h: 240, door: 288, bays: { count: 12, cols: 6, bw: 78, bh: 88 } },
+    { id: 'F', name: 'Fast track', x: 572, y: 344, w: 280, h: 240, door: 712, bays: { count: 8, cols: 4, bw: 58, bh: 88 } },
+    { id: 'SB', name: 'Store B', x: 864, y: 344, w: 120, h: 240, door: 924 },
+  ];
+  const ROOM_BY_ID = new Map(ROOMS.map(r => [r.id, r]));
+  const ROOM_BY_NAME = new Map(ROOMS.map(r => [norm(r.name), r]));
+  const PLACE_ALIASES = new Map([
+    ['storea', 'SA'], ['storeb', 'SB'],
+    ['nursesstation', 'NS'], ['nursestation', 'NS'], ['nurses', 'NS'], ['station', 'NS'],
+  ]);
+  const BAY_GAP = 8;
+  const BAY_HEADER = 40;
+  const CORRIDOR_KEY = 'corridor';
+  const BAYS = new Map();            // id -> { id, room, x, y, w, h, cx, cy, slots }
+  const CORRIDOR_SLOTS = [];
+
+  function doorOf(room) {
+    return { x: room.door, y: room.y < LANE_Y ? room.y + room.h : room.y };
+  }
+  function grid(x0, y0, cols, rows, dx, dy) {
+    const out = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) out.push({ x: x0 + c * dx, y: y0 + r * dy });
+    return out;
+  }
+  function buildGeometry() {
+    for (const room of ROOMS) {
+      if (room.bays) {
+        const { count, cols, bw, bh } = room.bays;
+        const x0 = room.x + (room.w - (cols * bw + (cols - 1) * BAY_GAP)) / 2;
+        for (let i = 0; i < count; i++) {
+          const x = x0 + (i % cols) * (bw + BAY_GAP);
+          const y = room.y + BAY_HEADER + Math.floor(i / cols) * (bh + BAY_GAP);
+          const rows = bh >= 120 ? 3 : 1;
+          BAYS.set(room.id + (i + 1), {
+            id: room.id + (i + 1), room: room.id, x, y, w: bw, h: bh, cx: x + bw / 2, cy: y + bh / 2,
+            slots: grid(x + bw / 2 - 15, y + 64, 2, rows, 30, 32),
+          });
+        }
+        // Units parked in the room itself (e.g. "Resus bay") sit in its header strip
+        room.slots = grid(room.x + 112, room.y + 24, Math.floor((room.w - 202) / 30) + 1, 1, 30, 0);
+      } else {
+        const cols = Math.max(1, Math.floor((room.w - 8) / 36));
+        const y0 = room.y + 82;
+        const rows = Math.floor((room.y + room.h - 14 - y0) / 34) + 1;
+        room.slots = grid(room.x + room.w / 2 - (cols - 1) * 18, y0, cols, rows, 36, 34);
+      }
+    }
+    for (let x = 150; x <= 960; x += 34) {
+      CORRIDOR_SLOTS.push({ x, y: LANE_Y - 30 }, { x, y: LANE_Y + 30 });
+    }
+  }
+
+  /* ---------- Walking-distance rule ---------- */
+  function lanePath(pt) {
+    if (pt.room === CORRIDOR.id) return [{ x: pt.x, y: LANE_Y }];
+    const d = doorOf(ROOM_BY_ID.get(pt.room));
+    return [d, { x: d.x, y: LANE_Y }];
+  }
+  function walk(from, to) {
+    const pts = from.room === to.room && from.room !== CORRIDOR.id
+      ? [from, to]
+      : [from].concat(lanePath(from), lanePath(to).reverse(), [to]);
+    let units = 0;
+    for (let i = 1; i < pts.length; i++) units += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    return { pts, units, metres: Math.max(1, Math.round(units * METRES_PER_UNIT)), sameRoom: pts.length === 2 };
+  }
+  // Where an asset is, for distance: bay centre, store centre, or its corridor spot
+  function anchorOf(a) {
+    const p = a.place;
+    if (p.kind === 'bay') { const b = BAYS.get(p.bayId); return { x: b.cx, y: b.cy, room: b.room }; }
+    if (p.kind === 'room') {
+      const r = ROOM_BY_ID.get(p.roomId);
+      return { x: r.x + r.w / 2, y: r.bays ? r.y + 24 : r.y + r.h / 2, room: r.id };
+    }
+    return { x: p.nearX, y: LANE_Y, room: CORRIDOR.id };
+  }
+  function byWalk(x, y) {
+    return x.w.units - y.w.units || x.a.id.localeCompare(y.a.id, 'en', { numeric: true });
+  }
+  function computeFind() {
+    if (!ui.findType || !ui.bay || !model.snap) return null;
+    const bay = BAYS.get(ui.bay);
+    const origin = { x: bay.cx, y: bay.cy, room: bay.room };
+    const ofType = model.snap.assets.filter(a => a.type === ui.findType);
+    const rank = state => ofType.filter(a => a.state === state && a.place.kind !== 'off')
+      .map(a => ({ a, w: walk(origin, anchorOf(a)) })).sort(byWalk);
+    const ranked = rank('free');
+    const count = state => ofType.filter(a => a.state === state).length;
+    return {
+      bay, ranked, best: ranked[0] || null,
+      cleaning: rank('cleaning')[0] || null,
+      offPlanFree: ofType.filter(a => a.state === 'free' && a.place.kind === 'off'),
+      skipped: { 'in-use': count('in-use'), cleaning: count('cleaning'), 'out-of-service': count('out-of-service') },
+    };
+  }
+
+  /* ---------- Feed parsing (untrusted input) ---------- */
+  function str(v, max) {
+    if (typeof v === 'string') return v.trim().slice(0, max);
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v).slice(0, max);
+    return '';
+  }
+  function norm(v) { return str(v, 60).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function arr(v) { return Array.isArray(v) ? v.slice(0, MAX_ITEMS) : []; }
+
+  function resolvePlace(loc, zone) {
+    const up = loc.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const bay = BAYS.get(up.startsWith('BAY') ? up.slice(3) : up);
+    if (bay) return { kind: 'bay', key: 'bay:' + bay.id, bayId: bay.id, label: 'Bay ' + bay.id };
+    const n = norm(loc);
+    const placeId = PLACE_ALIASES.get(n);
+    if (placeId) {
+      const r = ROOM_BY_ID.get(placeId);
+      return { kind: 'room', key: 'room:' + r.id, roomId: r.id, label: r.name };
+    }
+    if (n.startsWith('corridor')) {
+      const near = ROOM_BY_ID.get(n.slice(8).toUpperCase()) || ROOM_BY_ID.get(zone);
+      return {
+        kind: 'corridor', key: CORRIDOR_KEY, label: loc,
+        nearX: near ? near.door : CORRIDOR.x + CORRIDOR.w / 2,
+        nearY: near && near.y > LANE_Y ? LANE_Y + 30 : LANE_Y - 30,     // the lane on that room's side
+      };
+    }
+    const zoneRoom = ROOM_BY_NAME.get(n.replace(/(bay|bays|area|zone|room)$/, '')) || (n ? null : ROOM_BY_ID.get(zone));
+    if (zoneRoom && zoneRoom.bays) {
+      return { kind: 'room', key: 'room:' + zoneRoom.id, roomId: zoneRoom.id, label: loc || zoneRoom.name };
+    }
+    if (n === 'ed') return { kind: 'off', key: 'off', label: 'ED (no bay assigned)' };
+    return { kind: 'off', key: 'off', label: loc || 'Location unknown' };
+  }
+  function cleanAsset(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = str(raw.id, 24);
+    if (!id) return null;
+    const loc = str(raw.loc, 40);
+    const zone = str(raw.zone, 4).toUpperCase();
+    return {
+      id,
+      type: TYPE_ALIASES.get(norm(raw.type)) || OTHER_TYPE.key,
+      state: STATE_ALIASES.get(norm(raw.state)) || 'unknown',
+      place: resolvePlace(loc, zone),
+      note: str(raw.note, 80),
+    };
+  }
+  function cleanBed(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = str(raw.id, 8).toUpperCase();
+    if (!id) return null;
+    const s = norm(raw.status);
+    const status = s === 'held' ? 'hold' : BED_WORDS.has(s) ? s : 'unknown';
+    const esi = Number.isInteger(raw.esi) && raw.esi >= 1 && raw.esi <= 5 ? raw.esi : null;
+    return { id, status, esi };
+  }
+  function readState(msg) {
+    if (!msg || typeof msg !== 'object' || msg.type !== 'state' || msg.v !== 1) return null;
+    const ts = Number(msg.ts);
+    if (!Number.isFinite(ts)) return null;
+    const assets = [];
+    const seen = new Set();
+    for (const raw of arr(msg.assets)) {
+      const a = cleanAsset(raw);
+      if (a && !seen.has(a.id)) { seen.add(a.id); assets.push(a); }
+    }
+    assets.sort((x, y) => TYPE_ORDER.get(x.type) - TYPE_ORDER.get(y.type) || x.id.localeCompare(y.id, 'en', { numeric: true }));
+    const beds = new Map();
+    for (const raw of arr(msg.bedList)) {
+      const b = cleanBed(raw);
+      if (b && !beds.has(b.id)) beds.set(b.id, b);
+    }
+    const acks = [];
+    for (const raw of arr(msg.acks).slice(0, 50)) {
+      if (raw && typeof raw === 'object' && typeof raw.id === 'string') acks.push({ id: raw.id.slice(0, 40), ok: raw.ok === true, text: str(raw.text, 160) });
+    }
+    const mode = norm(msg.mode);
+    return {
+      acks,
+      ts,
+      simClock: str(msg.simClock, 8),
+      hospital: str(msg.hospital, 60),
+      mode: MODES.has(mode) ? mode : '',
+      modeReason: str(msg.modeReason, 160),
+      downtime: msg.downtime === true,
+      assets,
+      byId: new Map(assets.map(a => [a.id, a])),
+      beds,
+    };
+  }
+
+  /* ---------- Screen state ---------- */
+  const startedAt = Date.now();
+  const model = { snap: null, lastAt: 0, lastTs: NaN };
+  const ui = { filter: 'all', bay: null, findType: null, sheetId: null };
+  const pending = new Map();         // asset id -> { state, sentAt }
+  let commandChannel = null;
+  let toastTimer = 0;
+
+  function feedState() {
+    if (model.snap && Date.now() - model.lastAt <= STALE_MS) return 'live';
+    return !model.snap && Date.now() - startedAt < STALE_MS ? 'connecting' : 'none';
+  }
+  function canSend() {
+    return Boolean(commandChannel) && feedState() === 'live' && !model.snap.downtime;
+  }
+  function typeOf(key) { return TYPE_BY_KEY.get(key) || OTHER_TYPE; }
+  function stateOf(key) { return STATES.get(key) || STATES.get('unknown'); }
+  function lower(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
+  function assetSentence(a) {
+    return `${a.id}, ${typeOf(a.type).label}, ${stateOf(a.state).label}, ${a.place.label}`;
+  }
+
+  /* ---------- DOM helpers ---------- */
+  const $ = sel => document.querySelector(sel);
+  function el(tag, cls, text, parent) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function svgEl(name, attrs, parent) {
+    const n = document.createElementNS(SVG_NS, name);
+    if (attrs) for (const k of Object.keys(attrs)) n.setAttribute(k, String(attrs[k]));
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  // Live regions re-announce on every write, so only write real changes
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
+  }
+  function svgText(parent, x, y, cls, text) {
+    const t = svgEl('text', { x, y, class: cls }, parent);
+    t.textContent = text;
+    return t;
+  }
+
+  /* ---------- Markers: shape + letter = type, fill + badge = state ---------- */
+  function shapeNode(shape) {
+    switch (shape) {
+      case 'circle': return svgEl('circle', { r: 13 });
+      case 'square': return svgEl('rect', { x: -12, y: -12, width: 24, height: 24, rx: 4 });
+      case 'diamond': return svgEl('path', { d: 'M0 -16L16 0L0 16L-16 0Z' });
+      case 'hexagon': return svgEl('path', { d: 'M-7.5 -13L7.5 -13L15 0L7.5 13L-7.5 13L-15 0Z' });
+      case 'triangle': return svgEl('path', { d: 'M0 -16L15.5 12L-15.5 12Z' });
+      default: return svgEl('rect', { x: -14, y: -10, width: 28, height: 20, rx: 10 });
+    }
+  }
+  function makeMarker(type, state) {
+    const g = svgEl('g', { class: 'mk st-' + state });
+    const shape = shapeNode(type.shape);
+    shape.setAttribute('class', 'shape');
+    g.appendChild(shape);
+    svgEl('line', { x1: -10, y1: 10, x2: 10, y2: -10, class: 'slash' }, g);
+    if (type.letter) svgText(g, 0, type.shape === 'triangle' ? 3.5 : 0.5, 'ltr', type.letter);
+    const badge = svgEl('g', { class: 'badge', transform: 'translate(12 -12)' }, g);
+    svgEl('circle', { r: 6.5 }, badge);
+    if (state === 'free') svgEl('path', { d: 'M-3 0.2L-0.9 2.4L3.2 -2.2', class: 'glyph' }, badge);
+    else if (state === 'out-of-service') svgEl('path', { d: 'M-2.4 -2.4L2.4 2.4M2.4 -2.4L-2.4 2.4', class: 'glyph' }, badge);
+    else if (state === 'cleaning') svgEl('path', { d: 'M-3.4 0.8Q-1.7 -2.2 0 0.4T3.4 -0.2', class: 'glyph' }, badge);
+    else if (state === 'unknown') svgText(badge, 0, 0.5, '', '?');
+    return g;
+  }
+  // Small standalone icon (find buttons, filters, list rows, legend, sheet)
+  function icon(type, state) {
+    const s = svgEl('svg', { viewBox: '-21 -21 42 42', 'aria-hidden': 'true', focusable: 'false' });
+    s.appendChild(makeMarker(type, state));
+    return s;
+  }
+
+  /* ---------- Static plan ---------- */
+  const layers = {};
+  const bayEls = new Map();          // bay id -> { g, bar, st }
+  const roomCountEls = new Map();    // room id -> text element
+
+  function buildPlan() {
+    const plan = $('#plan');
+    const defs = svgEl('defs', null, plan);
+    const hatch = svgEl('pattern', { id: 'hatchBay', width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
+    svgEl('rect', { width: 8, height: 8, class: 'hatch-bg' }, hatch);
+    svgEl('rect', { width: 3, height: 8, class: 'hatch-line' }, hatch);
+    const hatchW = svgEl('pattern', { id: 'hatchWarn', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
+    svgEl('rect', { width: 6, height: 6, class: 'hatchw-bg' }, hatchW);
+    svgEl('rect', { width: 2.5, height: 6, class: 'hatchw-line' }, hatchW);
+
+    const base = svgEl('g', { 'aria-hidden': 'true' }, plan);
+    svgEl('rect', { x: 0, y: 0, width: 1000, height: 600, rx: 12, class: 'floor' }, base);
+    svgEl('rect', { x: CORRIDOR.x, y: CORRIDOR.y, width: CORRIDOR.w, height: CORRIDOR.h, rx: 8, class: 'corridor' }, base);
+    svgEl('line', { x1: 130, y1: LANE_Y, x2: CORRIDOR.x + CORRIDOR.w - 14, y2: LANE_Y, class: 'lane' }, base);
+    svgText(base, CORRIDOR.x + 12, LANE_Y + 4.5, 'room-label', CORRIDOR.name.toUpperCase());
+    for (const room of ROOMS) {
+      svgEl('rect', { x: room.x, y: room.y, width: room.w, height: room.h, rx: 10, class: 'room' }, base);
+      const top = room.y < LANE_Y;
+      svgEl('rect', {
+        x: room.door - 22, y: top ? room.y + room.h - 2 : CORRIDOR.y + CORRIDOR.h - 2,
+        width: 44, height: top ? CORRIDOR.y - (room.y + room.h) + 4 : room.y - (CORRIDOR.y + CORRIDOR.h) + 4, class: 'doorway',
+      }, base);
+      if (room.bays) {
+        svgText(base, room.x + 12, room.y + 25, 'room-label', room.name.toUpperCase());
+        roomCountEls.set(room.id, svgText(base, room.x + room.w - 12, room.y + 25, 'room-count end', ''));
+      } else {
+        const cx = room.x + room.w / 2;
+        const words = room.name.toUpperCase().split(' ');
+        const lines = room.w < 110 && words.length > 1 && words.join(' ').length > 8 ? words : [words.join(' ')];
+        lines.forEach((line, i) => svgText(base, cx, room.y + 24 + i * 14, 'room-label mid', line));
+        roomCountEls.set(room.id, svgText(base, cx, room.y + 26 + lines.length * 14, 'room-count mid', ''));
+      }
+    }
+
+    layers.bays = svgEl('g', null, plan);
+    layers.route = svgEl('g', { 'aria-hidden': 'true' }, plan);
+    layers.assets = svgEl('g', null, plan);
+    layers.labels = svgEl('g', { class: 'labels', 'aria-hidden': 'true' }, plan);
+
+    for (const bay of BAYS.values()) {
+      const g = svgEl('g', { class: 'bay s-unknown', 'data-bay': bay.id, 'data-fk': 'bay:' + bay.id, role: 'button', tabindex: 0 }, layers.bays);
+      svgEl('rect', { x: bay.x, y: bay.y, width: bay.w, height: bay.h, rx: 7, class: 'bay-bg' }, g);
+      const bar = svgEl('rect', { x: bay.x + 2, y: bay.y + 2, width: 5, height: bay.h - 4, rx: 2.5, class: 'esi-bar' }, g);
+      svgText(g, bay.cx, bay.y + 21, 'bay-id', bay.id);
+      const st = svgText(g, bay.cx, bay.y + 37, 'bay-st', '—');
+      bayEls.set(bay.id, { g, bar, st });
+    }
+  }
+
+  /* ---------- Static controls ---------- */
+  const findEls = new Map();         // type key -> { b, count }
+  const filterEls = new Map();       // filter key -> { b, count }
+
+  function buildControls() {
+    const row = $('#findRow');
+    for (const key of FIND_TYPES) {
+      const t = typeOf(key);
+      const b = el('button', 'find-btn', null, row);
+      b.type = 'button';
+      b.setAttribute('data-find', key);
+      b.setAttribute('aria-pressed', 'false');
+      b.appendChild(icon(t, 'free'));
+      const tx = el('span', 'fb-text', null, b);
+      el('span', 'fb-label', t.label, tx);
+      findEls.set(key, { b, count: el('span', 'fb-count idle', '—', tx) });
+    }
+
+    const filters = $('#filters');
+    const addFilter = (key, type, label) => {
+      const b = el('button', 'fchip' + (type ? '' : ' all'), null, filters);
+      b.type = 'button';
+      b.setAttribute('data-filter', key);
+      b.setAttribute('aria-pressed', key === ui.filter ? 'true' : 'false');
+      if (type) b.appendChild(icon(type, 'free'));
+      el('span', null, label, b);
+      filterEls.set(key, { b, count: el('small', null, '', b) });
+    };
+    addFilter('all', null, 'All');
+    for (const t of TYPES) addFilter(t.key, t, t.plural);
+    addFilter(OTHER_TYPE.key, OTHER_TYPE, OTHER_TYPE.plural);
+
+    const actions = $('#sheetActions');
+    for (const s of SETTABLE) {
+      const st = stateOf(s);
+      const b = el('button', 'state-btn', null, actions);
+      b.type = 'button';
+      b.setAttribute('data-state', s);
+      b.appendChild(icon({ shape: 'circle', letter: '' }, s));
+      const tx = el('span', null, null, b);
+      el('b', null, st.label, tx);
+      el('small', null, st.note, tx);
+      el('span', 'sb-cur', '', b);
+    }
+    buildLegend();
+  }
+
+  function buildLegend() {
+    const lg = $('#legend');
+    const group = title => {
+      const g = el('div', 'lg-group', null, lg);
+      el('span', 'lg-h', title, g);
+      return g;
+    };
+    const item = (g, swatch, text) => {
+      const it = el('span', 'lg-item', null, g);
+      it.appendChild(swatch);
+      el('span', null, text, it);
+    };
+    const sw = cls => { const s = el('i', 'sw ' + cls); s.setAttribute('aria-hidden', 'true'); return s; };
+
+    const bays = group('Bays');
+    item(bays, sw('s-free'), 'Free');
+    item(bays, sw('s-occupied'), 'Occupied (bar = ESI)');
+    item(bays, sw('s-cleaning'), 'Cleaning');
+    item(bays, sw('s-reserved'), 'Reserved');
+    const esi = group('ESI');
+    for (let i = 1; i <= 5; i++) el('span', 'esi e' + i, String(i), esi);
+    const kinds = group('Equipment');
+    for (const t of TYPES) item(kinds, icon(t, 'free'), `${t.letter} ${t.label}`);
+    const states = group('State');
+    for (const s of ['free', 'in-use', 'cleaning', 'out-of-service']) {
+      const st = stateOf(s);
+      item(states, icon({ shape: 'circle', letter: '' }, s), `${st.label}${s === 'free' ? ' (tick)' : s === 'cleaning' ? ' (hatched)' : s === 'out-of-service' ? ' (cross)' : ' (solid)'}`);
+    }
+    const route = group('Find');
+    item(route, sw('route'), 'Walking route to the nearest free unit');
+  }
+
+  /* ---------- Render ---------- */
+  function render() {
+    const focusKey = document.activeElement && document.activeElement.getAttribute ? document.activeElement.getAttribute('data-fk') : null;
+    const found = computeFind();
+    renderHeader();
+    renderBays();
+    renderRoomCounts();
+    renderAssets(found);
+    renderControls();
+    renderResult(found);
+    renderList();
+    renderSheet();
+    renderOverlay();
+    if (focusKey && (!document.activeElement || document.activeElement.getAttribute('data-fk') !== focusKey)) {
+      const target = Array.from(document.querySelectorAll('[data-fk]')).find(n => n.getAttribute('data-fk') === focusKey);
+      if (target) target.focus({ preventScroll: true });
+    }
+  }
+
+  function renderHeader() {
+    const s = model.snap;
+    setText($('#hospital'), s && s.hospital ? s.hospital : 'Waiting for the dashboard');
+    setText($('#clock'), s && s.simClock ? s.simClock : '--:--');
+    const mode = $('#mode');
+    const m = s && s.mode ? MODES.get(s.mode) : null;
+    mode.hidden = !m;
+    if (m) {
+      mode.className = 'chip mode ' + m[0];
+      setText(mode, `${m[1]} ${m[2]}`);
+      mode.title = s.modeReason || '';
+    }
+    $('#downtime').hidden = !(s && s.downtime);
+    renderFeed();
+  }
+
+  let feedShown = '';
+  function renderFeed() {
+    const state = feedState();
+    if (state === feedShown) return;
+    feedShown = state;
+    const [tone, glyph, text] = FEED_CHIP[state];
+    const feed = $('#feed');
+    feed.className = 'chip ' + tone;
+    const g = el('span', null, glyph);
+    g.setAttribute('aria-hidden', 'true');
+    feed.replaceChildren(g, ' ' + text);
+  }
+
+  function renderBays() {
+    const s = model.snap;
+    for (const bay of BAYS.values()) {
+      const info = s ? s.beds.get(bay.id) : null;
+      const status = info ? info.status : 'unknown';
+      const esi = info && status === 'occupied' ? info.esi : null;
+      const rec = bayEls.get(bay.id);
+      const word = status === 'occupied' && esi ? 'ESI ' + esi : BED_WORDS.get(status);
+      rec.g.setAttribute('class', `bay s-${status}${ui.bay === bay.id ? ' sel' : ''}`);
+      rec.bar.setAttribute('class', 'esi-bar' + (esi ? ' e' + esi : ''));
+      setText(rec.st, word);
+      const spoken = status === 'unknown' ? 'no data' : status === 'occupied' && esi ? 'occupied, ESI ' + esi : BED_WORDS.get(status).toLowerCase();
+      rec.g.setAttribute('aria-label', `Bay ${bay.id}, ${spoken}${ui.bay === bay.id ? ', selected' : ''}. Tap to find equipment for this bay.`);
+      rec.g.setAttribute('aria-pressed', ui.bay === bay.id ? 'true' : 'false');
+    }
+    $('#plan').setAttribute('class', 'plan' + (ui.findType && !ui.bay ? ' armed' : ''));
+  }
+
+  function renderRoomCounts() {
+    const s = model.snap;
+    for (const room of ROOMS) {
+      const t = roomCountEls.get(room.id);
+      if (!s) { setText(t, ''); continue; }
+      if (room.bays) {
+        const ids = Array.from(BAYS.values()).filter(b => b.room === room.id).map(b => b.id);
+        const free = ids.filter(id => { const b = s.beds.get(id); return b && b.status === 'free'; }).length;
+        setText(t, `${free}/${ids.length} free`);
+        t.setAttribute('class', 'room-count end ' + (free ? 'good' : 'warning'));
+      } else {
+        const n = s.assets.filter(a => a.place.kind === 'room' && a.place.roomId === room.id).length;
+        setText(t, n === 1 ? '1 item' : `${n} items`);
+      }
+    }
+  }
+
+  // Keyed by asset id so a tap is never lost to a re-render
+  const assetEls = new Map();        // id -> { g, title, marker, key }
+
+  function layoutAssets(items, hlId) {
+    const pos = new Map();
+    const overflow = [];
+    const groups = new Map();
+    for (const a of items) {
+      if (!groups.has(a.place.key)) groups.set(a.place.key, []);
+      if (a.id === hlId) groups.get(a.place.key).unshift(a); else groups.get(a.place.key).push(a);
+    }
+    const taken = new Set();
+    for (const [key, group] of groups) {
+      if (key === CORRIDOR_KEY) {
+        for (const a of group) {
+          // Closest free spot to the room it belongs to: along the corridor first, then on its side
+          const cost = slot => Math.abs(slot.x - a.place.nearX) + Math.abs(slot.y - a.place.nearY);
+          let best = -1;
+          for (let i = 0; i < CORRIDOR_SLOTS.length; i++) {
+            if (!taken.has(i) && (best < 0 || cost(CORRIDOR_SLOTS[i]) < cost(CORRIDOR_SLOTS[best]))) best = i;
+          }
+          if (best >= 0) { taken.add(best); pos.set(a.id, CORRIDOR_SLOTS[best]); }
+        }
+        continue;
+      }
+      const p = group[0].place;
+      const slots = p.kind === 'bay' ? BAYS.get(p.bayId).slots : ROOM_BY_ID.get(p.roomId).slots;
+      const fit = group.length <= slots.length ? group.length : slots.length - 1;
+      for (let i = 0; i < fit; i++) pos.set(group[i].id, slots[i]);
+      if (fit < group.length) overflow.push({ at: slots[slots.length - 1], n: group.length - fit });
+    }
+    return { pos, overflow };
+  }
+
+  function renderAssets(found) {
+    const s = model.snap;
+    const hlId = found && found.best ? found.best.a.id : null;
+    const shown = s ? s.assets.filter(a => a.place.kind !== 'off' && (ui.filter === 'all' || a.type === ui.filter || a.id === hlId)) : [];
+    const { pos, overflow } = layoutAssets(shown, hlId);
+    const keep = new Set();
+    for (const a of shown) {
+      const p = pos.get(a.id);
+      if (!p) continue;
+      keep.add(a.id);
+      let rec = assetEls.get(a.id);
+      if (!rec) {
+        const g = svgEl('g', { 'data-asset': a.id, 'data-fk': 'asset:' + a.id, role: 'button', tabindex: 0 }, layers.assets);
+        const title = svgEl('title', null, g);
+        svgEl('circle', { r: 23, class: 'ring' }, g);
+        svgEl('circle', { r: 19, class: 'hit' }, g);
+        rec = { g, title, marker: null, key: '' };
+        assetEls.set(a.id, rec);
+      }
+      rec.g.setAttribute('transform', `translate(${p.x} ${p.y})`);
+      rec.g.setAttribute('class', 'asset' + (a.id === hlId ? ' hl' : ''));
+      const sentence = assetSentence(a) + (pending.has(a.id) ? ', change sent' : '');
+      rec.g.setAttribute('aria-label', sentence + '. Tap to change its state.');
+      setText(rec.title, sentence);
+      const key = a.type + '|' + a.state;
+      if (rec.key !== key) {
+        const m = makeMarker(typeOf(a.type), a.state);
+        if (rec.marker) rec.g.replaceChild(m, rec.marker); else rec.g.appendChild(m);
+        rec.marker = m;
+        rec.key = key;
+      }
+    }
+    for (const [id, rec] of assetEls) {
+      if (!keep.has(id)) { rec.g.remove(); assetEls.delete(id); }
+    }
+    if (hlId && assetEls.has(hlId) && layers.assets.lastChild !== assetEls.get(hlId).g) {
+      layers.assets.appendChild(assetEls.get(hlId).g);   // highlighted unit on top
+    }
+
+    layers.route.replaceChildren();
+    layers.labels.replaceChildren();
+    for (const o of overflow) {
+      svgEl('circle', { cx: o.at.x, cy: o.at.y, r: 13, class: 'more-bg' }, layers.labels);
+      svgText(layers.labels, o.at.x, o.at.y + 0.5, 'more', '+' + o.n);
+    }
+    if (found && found.best) {
+      const pts = found.best.w.pts.slice();
+      const drawn = pos.get(found.best.a.id);
+      if (drawn) pts[pts.length - 1] = drawn;
+      svgEl('polyline', { points: pts.map(p => `${p.x},${p.y}`).join(' '), class: 'route' }, layers.route);
+      svgEl('circle', { cx: pts[0].x, cy: pts[0].y, r: 6, class: 'route-start' }, layers.route);
+      const end = pts[pts.length - 1];
+      const above = end.y > 50;
+      svgText(layers.labels, Math.min(960, Math.max(40, end.x)), above ? end.y - 30 : end.y + 42, 'dist', `~${found.best.w.metres} m`);
+    }
+  }
+
+  function renderControls() {
+    const s = model.snap;
+    const assets = s ? s.assets : [];
+    for (const [key, rec] of findEls) {
+      const free = assets.filter(a => a.type === key && a.state === 'free').length;
+      rec.b.setAttribute('aria-pressed', ui.findType === key ? 'true' : 'false');
+      setText(rec.count, !s ? '—' : free ? `${free} free` : 'None free');
+      rec.count.className = 'fb-count' + (!s ? ' idle' : free ? '' : ' none');
+      rec.b.setAttribute('aria-label', `Find nearest free ${typeOf(key).label.toLowerCase()}, ${rec.count.textContent}`);
+    }
+    for (const [key, rec] of filterEls) {
+      const ofType = key === 'all' ? assets : assets.filter(a => a.type === key);
+      const free = ofType.filter(a => a.state === 'free').length;
+      rec.b.setAttribute('aria-pressed', ui.filter === key ? 'true' : 'false');
+      setText(rec.count, s ? `${free}/${ofType.length} free` : '');
+      if (key === OTHER_TYPE.key) rec.b.hidden = !ofType.length && ui.filter !== key;
+    }
+  }
+
+  // The result card is rebuilt only when its content changes (keeps screen readers quiet)
+  let resultSig = '';
+  function resultContent(found) {
+    const s = model.snap;
+    const typeLabel = ui.findType ? typeOf(ui.findType).label.toLowerCase() : '';
+    if (!s) return { tone: 'idle', big: 'Waiting for the dashboard feed. Find works as soon as equipment positions arrive.', lines: [] };
+    if (!ui.findType && !ui.bay) return { tone: 'idle', big: 'Tap a bay on the plan, then tap what it needs above. WASEL shows the nearest free unit and the walking route.', lines: [] };
+    if (!ui.findType) return { tone: 'armed', kicker: `Bay ${ui.bay} selected`, big: 'Now tap what it needs above', lines: [], clear: true };
+    if (!ui.bay) return { tone: 'armed', kicker: `Looking for a free ${typeLabel}`, big: `Now tap the bay that needs the ${typeLabel}`, lines: [], clear: true };
+    const sk = found.skipped;
+    const skipped = `${sk['in-use']} in use · ${sk.cleaning} cleaning · ${sk['out-of-service']} out of service`;
+    const rule = 'Rule: only units marked Free count, ranked by walking distance from the bay, through the room doors and along Corridor T.';
+    if (found.best) {
+      const b = found.best;
+      const lines = [b.w.sameRoom ? 'In the same room: dashed line on the plan.' : 'Route: through the room door and along Corridor T (dashed line on the plan).'];
+      const next = found.ranked.slice(1, 3).map(r => `${r.a.id} · ${r.a.place.label} · ~${r.w.metres} m`);
+      if (next.length) lines.push('Next nearest: ' + next.join('  |  '));
+      return { tone: 'found', kicker: `Nearest free ${typeLabel} to bay ${found.bay.id}`, big: `${b.a.id} · ${b.a.place.label} · ~${b.w.metres} m`, lines, rule: `${rule} Skipped: ${skipped}.`, clear: true };
+    }
+    const lines = [skipped];
+    if (found.cleaning) lines.push(`Soonest back: ${found.cleaning.a.id} is being cleaned · ${found.cleaning.a.place.label} · ~${found.cleaning.w.metres} m`);
+    if (found.offPlanFree.length) lines.push('Free but off this plan: ' + found.offPlanFree.map(a => `${a.id} (${a.place.label})`).join(', '));
+    lines.push('Tell the charge nurse: the dashboard can borrow from another department.');
+    return { tone: 'none', kicker: `Nearest free ${typeLabel} to bay ${found.bay.id}`, big: `No free ${typeLabel} right now`, lines, rule, clear: true };
+  }
+  function renderResult(found) {
+    const c = resultContent(found);
+    const sig = JSON.stringify(c);
+    if (sig === resultSig) return;
+    resultSig = sig;
+    const box = $('#result');
+    box.className = 'result ' + c.tone;
+    const body = el('div', 'r-body');
+    if (c.kicker) el('p', 'r-kicker', c.kicker, body);
+    el('p', 'r-big', c.big, body);
+    for (const line of c.lines) el('p', 'r-line', line, body);
+    if (c.rule) el('p', 'r-rule', c.rule, body);
+    const nodes = [body];
+    if (c.clear) {
+      const b = el('button', 'btn');
+      b.type = 'button';
+      b.setAttribute('data-act', 'clear');
+      b.setAttribute('data-fk', 'clear');
+      b.textContent = 'Clear';
+      nodes.push(b);
+    }
+    box.replaceChildren(...nodes);
+  }
+
+  // Keyed list rows, reordered only when the order changes
+  const rowEls = new Map();          // asset id -> { b, iconBox, iconKey, id, type, loc, chip, sent }
+  const sectEls = new Map();
+  let listSig = '';
+  function rowFor(a) {
+    let r = rowEls.get(a.id);
+    if (r) return r;
+    const b = el('button', 'arow');
+    b.type = 'button';
+    b.setAttribute('data-asset', a.id);
+    b.setAttribute('data-fk', 'row:' + a.id);
+    const iconBox = el('span', null, null, b);
+    const text = el('span', 'a-text', null, b);
+    const top = el('span', 'a-top', null, text);
+    const id = el('b', null, a.id, top);
+    const type = el('span', null, '', top);
+    const loc = el('span', 'a-loc', '', text);
+    const chips = el('span', 'a-chips', null, b);
+    const chip = el('span', 'chip', '', chips);
+    const sent = el('span', 'chip info', '', chips);
+    r = { b, iconBox, iconKey: '', id, type, loc, chip, sent };
+    rowEls.set(a.id, r);
+    return r;
+  }
+  function renderList() {
+    const s = model.snap;
+    const items = s ? s.assets.filter(a => ui.filter === 'all' || a.type === ui.filter) : [];
+    const free = items.filter(a => a.state === 'free').length;
+    setText($('#listMeta'), s ? `${free} free of ${items.length}` : '');
+    const nodes = [];
+    const keys = [];
+    for (const state of LIST_ORDER) {
+      const group = items.filter(a => a.state === state);
+      if (!group.length) continue;
+      if (!sectEls.has(state)) sectEls.set(state, el('p', 'sect'));
+      const sect = sectEls.get(state);
+      setText(sect, `${stateOf(state).label} · ${group.length}`);
+      nodes.push(sect);
+      keys.push('s:' + state);
+      for (const a of group) {
+        const r = rowFor(a);
+        const st = stateOf(a.state);
+        const iconKey = a.type + '|' + a.state;
+        if (r.iconKey !== iconKey) { r.iconBox.replaceChildren(icon(typeOf(a.type), a.state)); r.iconKey = iconKey; }
+        setText(r.type, typeOf(a.type).label);
+        const where = a.place.kind === 'off' && a.place.label !== 'ED (no bay assigned)' ? `${a.place.label} · not on this plan` : a.place.label;
+        setText(r.loc, a.note ? `${where} · ${a.note}` : where);
+        r.chip.className = 'chip ' + st.tone;
+        setText(r.chip, `${st.glyph} ${st.label}`);
+        const p = pending.get(a.id);
+        r.sent.hidden = !p;
+        setText(r.sent, p ? `Sent: ${stateOf(p.state).label}…` : '');
+        r.b.setAttribute('aria-label', assetSentence(a) + (p ? `, change to ${stateOf(p.state).label.toLowerCase()} sent` : '') + '. Tap to change its state.');
+        nodes.push(r.b);
+        keys.push('r:' + a.id);
+      }
+    }
+    const ids = new Set(items.map(a => a.id));
+    for (const id of Array.from(rowEls.keys())) if (!ids.has(id)) rowEls.delete(id);
+    if (!items.length) {
+      const msg = !s ? 'Equipment appears here once the dashboard is running.'
+        : ui.filter === 'all' ? 'The dashboard is not reporting any tracked equipment.'
+        : `No ${typeOf(ui.filter).plural.toLowerCase()} on the tracking feed.`;
+      nodes.push(el('p', 'empty', msg));
+      keys.push('e:' + msg);
+    }
+    const sig = keys.join('|');
+    if (sig !== listSig) { $('#list').replaceChildren(...nodes); listSig = sig; }
+  }
+
+  function renderOverlay() {
+    const s = model.snap;
+    const live = feedState() === 'live';
+    $('#waiting').hidden = Boolean(s);
+    $('#stale').hidden = !s || live;
+    $('#planBox').className = 'plan-box' + (!s || !live ? ' dim' : '');
+    if (s && !live) {
+      setText($('#staleText'), `STALE · last update ${s.simClock || 'unknown'} · no feed from the dashboard`);
+    }
+  }
+
+  /* ---------- State sheet ---------- */
+  function openSheet(id) {
+    if (!model.snap || !model.snap.byId.has(id)) return;
+    ui.sheetId = id;
+    renderSheet();
+    const d = $('#sheet');
+    if (typeof d.showModal === 'function') { if (!d.open) d.showModal(); } else d.setAttribute('open', '');
+    const first = d.querySelector('.state-btn:not(:disabled)') || $('#sheetClose');
+    first.focus();
+  }
+  function closeSheet() {
+    const d = $('#sheet');
+    const id = ui.sheetId;
+    ui.sheetId = null;
+    if (typeof d.close === 'function') { if (d.open) d.close(); } else d.removeAttribute('open');
+    const back = id && Array.from(document.querySelectorAll('[data-fk]')).find(n => n.getAttribute('data-fk') === 'row:' + id || n.getAttribute('data-fk') === 'asset:' + id);
+    if (back) back.focus({ preventScroll: true });
+  }
+  function renderSheet() {
+    if (!ui.sheetId) return;
+    const a = model.snap ? model.snap.byId.get(ui.sheetId) : null;
+    const note = $('#sheetNote');
+    if (!a) {
+      $('#sheetTitle').textContent = ui.sheetId;
+      $('#sheetSub').textContent = 'No longer on the tracking feed';
+      $('#sheetIcon').replaceChildren();
+      for (const b of document.querySelectorAll('.state-btn')) b.disabled = true;
+      note.className = 'sheet-note warning';
+      note.textContent = 'The dashboard stopped reporting this unit. Close this and pick it again from the list.';
+      return;
+    }
+    const t = typeOf(a.type);
+    const st = stateOf(a.state);
+    $('#sheetTitle').textContent = `${a.id} · ${t.label}`;
+    $('#sheetSub').textContent = `${st.label} · ${a.place.label}${a.note ? ' · ' + a.note : ''}`;
+    $('#sheetIcon').replaceChildren(icon(t, a.state));
+    const lock = lockReason(a);
+    const sendable = canSend() && !lock;
+    const p = pending.get(a.id);
+    for (const b of document.querySelectorAll('.state-btn')) {
+      const s = b.getAttribute('data-state');
+      const current = s === a.state;
+      b.disabled = current || !sendable || Boolean(p);
+      b.setAttribute('aria-current', current ? 'true' : 'false');
+      b.querySelector('.sb-cur').textContent = current ? 'Current' : p && p.state === s ? 'Sent…' : '';
+    }
+    if (lock) { note.className = 'sheet-note warning'; note.textContent = lock; }
+    else if (!commandChannel) { note.className = 'sheet-note warning'; note.textContent = 'This browser cannot send to the dashboard.'; }
+    else if (feedState() !== 'live') { note.className = 'sheet-note warning'; note.textContent = 'No feed from the dashboard, so changes cannot be sent. Start the dashboard in another tab.'; }
+    else if (model.snap.downtime) { note.className = 'sheet-note warning'; note.textContent = 'Downtime mode: the dashboard is read-only. Record the change on the paper equipment log.'; }
+    else if (p) { note.className = 'sheet-note'; note.textContent = `Sent: ${stateOf(p.state).label}. Waiting for the dashboard to confirm…`; }
+    else { note.className = 'sheet-note'; note.textContent = 'One tap sends the change to the dashboard. It is recorded in the audit log with this screen as the source.'; }
+  }
+
+  // States the dashboard owns (it refuses a change from this screen): say why instead of failing
+  function lockReason(a) {
+    if (a.state === 'in-use') return `In use with a patient${a.place.kind === 'bay' ? ' at bay ' + a.place.bayId : ''}. It goes to cleaning automatically when the patient no longer needs it.`;
+    if (norm(a.note).includes('selftest')) return 'Failed self-test on the tracking feed: it returns after repair or a loan from another department.';
+    return '';
+  }
+
+  /* ---------- Commands (CHANNELS.md §5) ---------- */
+  function hexId(bytes) {
+    const buf = new Uint8Array(bytes);
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') window.crypto.getRandomValues(buf);
+    else for (let i = 0; i < bytes; i++) buf[i] = Math.floor(Math.random() * 256);
+    return Array.from(buf, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  function setAssetState(id, state) {
+    const a = model.snap ? model.snap.byId.get(id) : null;
+    if (!a || !SETTABLE.includes(state) || a.state === state || pending.has(id) || lockReason(a) || !canSend()) return;
+    const cmdId = 'cmd-' + hexId(4);
+    commandChannel.postMessage({
+      type: 'command', v: 1, id: cmdId, from: SCREEN.from, role: SCREEN.role,
+      action: 'assetState', args: { id: a.id, state },
+    });
+    pending.set(id, { state, sentAt: Date.now(), cmdId });
+    toast(`Sent: ${a.id} → ${stateOf(state).label}. Waiting for the dashboard to confirm.`, '');
+    closeSheet();
+    render();
+  }
+  // The dashboard answers each command in `acks` (CHANNELS.md §4, additive) and in the asset state itself
+  function settlePending() {
+    const s = model.snap;
+    for (const [id, p] of Array.from(pending)) {
+      const a = s.byId.get(id);
+      const ack = s.acks.find(k => k.id === p.cmdId);
+      if (ack && !ack.ok) {
+        pending.delete(id);
+        toast(`Not applied: ${ack.text || 'the dashboard refused the change'}.`, 'warning');
+      } else if (a && a.state === p.state) {
+        pending.delete(id);
+        toast(`Confirmed by the dashboard: ${id} is now ${lower(stateOf(p.state).label)}.`, 'good');
+      }
+    }
+  }
+  function expirePending() {
+    let changed = false;
+    for (const [id, p] of Array.from(pending)) {
+      if (Date.now() - p.sentAt <= CONFIRM_MS) continue;
+      pending.delete(id);
+      changed = true;
+      const a = model.snap ? model.snap.byId.get(id) : null;
+      toast(`Not confirmed: the dashboard still shows ${id} as ${lower(stateOf(a ? a.state : 'unknown').label)}. Check the dashboard is open, then try again.`, 'warning');
+    }
+    return changed;
+  }
+
+  function toast(text, tone) {
+    const t = $('#toast');
+    t.className = 'toast' + (tone ? ' ' + tone : '');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, TOAST_MS);
+  }
+
+  /* ---------- Interaction ---------- */
+  function chooseBay(id) {
+    if (!BAYS.has(id)) return;
+    ui.bay = ui.bay === id && !ui.findType ? null : id;
+    render();
+  }
+  function chooseFind(key) {
+    ui.findType = ui.findType === key ? null : key;
+    render();
+  }
+  function activate(target) {
+    const asset = target.closest('[data-asset]');
+    if (asset) { openSheet(asset.getAttribute('data-asset')); return true; }
+    const bay = target.closest('[data-bay]');
+    if (bay) { chooseBay(bay.getAttribute('data-bay')); return true; }
+    const find = target.closest('[data-find]');
+    if (find) { chooseFind(find.getAttribute('data-find')); return true; }
+    const filter = target.closest('[data-filter]');
+    if (filter) { ui.filter = filter.getAttribute('data-filter'); render(); return true; }
+    const stateBtn = target.closest('.state-btn');
+    if (stateBtn) { if (!stateBtn.disabled && ui.sheetId) setAssetState(ui.sheetId, stateBtn.getAttribute('data-state')); return true; }
+    const act = target.closest('[data-act]');
+    if (act && act.getAttribute('data-act') === 'clear') { ui.bay = null; ui.findType = null; render(); return true; }
+    return false;
+  }
+
+  /* ---------- Theme (same stored choice as the dashboard) ---------- */
+  function applyTheme(theme) {
+    const light = theme === 'light';
+    document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+    $('#theme').setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
+  }
+  function storedTheme() {
+    try { return window.localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; }
+  }
+  function toggleTheme() {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    try { window.localStorage.setItem(THEME_KEY, next); } catch (e) { /* storage blocked: the choice lasts this visit */ }
+  }
+
+  /* ---------- Feed ---------- */
+  function onState(ev) {
+    const snap = readState(ev.data);
+    if (!snap || snap.ts === model.lastTs) return;   // malformed or duplicate
+    model.snap = snap;
+    model.lastTs = snap.ts;
+    model.lastAt = Date.now();
+    settlePending();
+    render();
+  }
+  function tick() {
+    expirePending();
+    render();
+  }
+
+  /* ---------- Wiring ---------- */
+  document.addEventListener('click', ev => {
+    if (!(ev.target instanceof Element)) return;
+    if (ev.target.closest('#theme')) { toggleTheme(); return; }
+    if (ev.target.closest('#sheetClose')) { closeSheet(); return; }
+    if (ev.target === $('#sheet')) { closeSheet(); return; }     // tap on the backdrop
+    activate(ev.target);
+  });
+  // SVG bays and markers are role="button": Enter and Space act like a tap
+  $('#plan').addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    if (ev.target instanceof Element && activate(ev.target)) ev.preventDefault();
+  });
+  $('#sheet').addEventListener('cancel', ev => { ev.preventDefault(); closeSheet(); });
+
+  buildGeometry();
+  buildPlan();
+  buildControls();
+  applyTheme(storedTheme());
+  if (typeof BroadcastChannel === 'function') {
+    const stateChannel = new BroadcastChannel('wasel-state');
+    stateChannel.onmessage = onState;
+    commandChannel = new BroadcastChannel('wasel-command');
+  } else {
+    $('#waitLead').textContent = 'This browser cannot talk to the dashboard (no BroadcastChannel support). Open this screen in a current version of Chrome, Edge, Safari or Firefox.';
+  }
+  render();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

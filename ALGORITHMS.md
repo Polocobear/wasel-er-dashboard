@@ -6,7 +6,7 @@
 > - **Visible reasons:** each card on the decision board carries its `why` string, made from the numbers that crossed a threshold (for example "HR 92→110, SBP 121→104 in 11 min").
 > - **Human approval:** nothing changes the department until someone taps Accept. One policy can auto-accept, and it covers bed placements only. It is off by default, only a role allowed to approve placements can switch it on, and every change is audited.
 > - **Machine learning:** WASEL has one ML component. It matches faces using Facenet512 embeddings, and its output is only a **candidate** identity that a nurse confirms at the door.
-> - **Code references:** every rule below is quoted from the code (`src/00-core.js`, `src/10-engine.js`, `src/15-wasel.js`, `src/20-ai.js`, `dispatch.html`, `responder.html`). Wherever this page cites a function, the function is the source of truth.
+> - **Code references:** every rule below is quoted from the code (`src/00-core.js`, `src/10-engine.js`, `src/15-wasel.js`, `src/16-readiness.js`, `src/20-ai.js`, `src/40-bridge.js`, `dispatch.html`, `responder.html`). Wherever this page cites a function, the function is the source of truth.
 
 Each algorithm uses the same six fields: **Purpose**, **Inputs**, **Rule** (the exact thresholds), **Output**, **Why this design** (the evidence or standard behind it) and **Failure mode and safeguard**.
 
@@ -35,12 +35,16 @@ Each algorithm uses the same six fields: **Purpose**, **Inputs**, **Rule** (the 
   - [17. Allergy and interaction hard stop](#17-allergy-and-interaction-hard-stop)
   - [18. SBAR handover generation](#18-sbar-handover-generation)
   - [19. Face matching (the only machine-learning component)](#19-face-matching-the-only-machine-learning-component)
-- [Part E - Field, dispatch and satellite screens](#part-e---field-dispatch-and-satellite-screens)
+- [Part E - Field, arrival and satellite screens](#part-e---field-arrival-and-satellite-screens)
   - [20. Dispatch unit recommendation](#20-dispatch-unit-recommendation)
-  - [21. Destination ranking and ambulance split](#21-destination-ranking-and-ambulance-split)
-  - [22. Responder priority: START and ESI](#22-responder-priority-start-and-esi)
-  - [23. Readiness score and trauma activation](#23-readiness-score-and-trauma-activation)
-  - [24. Kiosk ESI suggestion and two-person supply approval](#24-kiosk-esi-suggestion-and-two-person-supply-approval)
+  - [21. Ambulance split across hospitals](#21-ambulance-split-across-hospitals)
+  - [22. Responder priority: sliders to START and ESI](#22-responder-priority-sliders-to-start-and-esi)
+  - [23. Responder destination ranking](#23-responder-destination-ranking)
+  - [24. Readiness score](#24-readiness-score)
+  - [25. Trauma team activation](#25-trauma-team-activation)
+  - [26. Burns transfer to a partner unit](#26-burns-transfer-to-a-partner-unit)
+  - [27. Kiosk ESI suggestion](#27-kiosk-esi-suggestion)
+  - [28. Supply two-person approval and command safeguards](#28-supply-two-person-approval-and-command-safeguards)
 - [What is simulated, not decided](#what-is-simulated-not-decided)
 - [Phase 2: where ML could earn its place](#phase-2-where-ml-could-earn-its-place)
 
@@ -75,7 +79,7 @@ Each algorithm uses the same six fields: **Purpose**, **Inputs**, **Rule** (the 
 
 `aiDrivers()` explains every high score by listing the parameters that score 2 or more, largest first, for example "Score driven by RR 28/min, SpO₂ 88%".
 
-**Known gap:** RCP also triggers an urgent response when a single parameter scores 3. The dashboard does not flag that case unless the total reaches 5. The responder page shows it ("Low–medium: one parameter scores 3").
+**Known gap:** RCP also triggers an urgent response when a single parameter scores 3. The dashboard's waiting-room flag does not fire on that case unless the total reaches 5. The kiosk suggestion (section 27) and the responder helper (section 22) do apply it.
 
 ### 2. 12-minute deterioration trend and pattern hints
 
@@ -218,9 +222,9 @@ Each algorithm uses the same six fields: **Purpose**, **Inputs**, **Rule** (the 
     - **short:** committed > qty.
     - **fast:** minutes left < 45.
   - The card is level 1 if short or if minutes left < 20, otherwise level 2.
-- **Output:** A card such as "Request 20 units of O-negative blood from the regional blood bank" with "~14 min at current use · waiting + inbound patients likely need ~9". On accept a FHIR SupplyRequest is sent, and the simulated restock arrives after 15 min.
+- **Output:** A card such as "Request 20 units of O-negative blood from the regional blood bank" with "~14 min at current use · waiting + inbound patients likely need ~9". On accept a FHIR SupplyRequest is sent, and the simulated restock arrives after 15 min. The supply screen also shows a par level of 40% of capacity and use per hour, which is the last 30 minutes' use × 2 (`bridgeSupplies`).
 - **Why this design:** A pure stock threshold misses a fast burn during a mass-casualty incident. Committed demand looks ahead to patients who have not yet reached a bed. Forty-five minutes leaves margin over the 15-minute restock.
-- **Failure mode and safeguard:** A burst of use inflates the 30-minute rate, so the estimate leans early, which is the safe direction. Expected need comes from condition profiles, not individual orders. The blood bank and the charge nurse still decide. Large requests need two approvers (section 24).
+- **Failure mode and safeguard:** A burst of use inflates the 30-minute rate, so the estimate leans early, which is the safe direction. Expected need comes from condition profiles, not individual orders. The blood bank and the charge nurse still decide. Large requests need two approvers (section 28).
 
 ### 11. Overflow forecast (30 minutes)
 
@@ -288,6 +292,7 @@ Each algorithm uses the same six fields: **Purpose**, **Inputs**, **Rule** (the 
 | Borrow ventilators | `ventFaulty > 0` and no loan under way | 2 | Working units free, plus `committed('vent')` |
 | Bring a spare ventilator | a placed patient needed ventilation and none was free (`p.needsVent`) | 1 | Current SpO2 and RR |
 | Switch to backup bed sensors | bed-management feed offline and no fallback yet | 1 | Minutes since the last update; the bed board and capacity broadcast show the last snapshot, marked stale |
+| Portable device at the bedside (equipment screen, `bridgePortableUser`) | an ESI 1 patient in their first 15 min in a zone the defibrillator or crash cart serves, or a trauma-team patient in their first 10 min for ultrasound | display only | The device shows as in use at that bed; when the patient no longer needs it, it is marked cleaning for 20 min |
 
 Each card only appears when its rule holds, and `stillValid()` removes it as soon as the condition clears.
 
@@ -296,7 +301,7 @@ Each card only appears when its rule holds, and `stillValid()` removes it as soo
 - **Purpose:** Make sure no card sits unanswered. Every suggestion has an owner and a clock.
 - **Inputs:** Card type, card level and time open.
 - **Rule (`waselAssignOwner`, `waselEscalate`, `ESC_MIN`):**
-  - **Owners:** Placement, pre-arrival, identity and LWBS cards go to the Receiving nurse. Re-triage and spare-ventilator cards go to the Physician. Everything else goes to the Charge nurse.
+  - **Owners:** Placement, pre-arrival, identity and LWBS cards go to the Receiving nurse. Re-triage, spare-ventilator and trauma-activation cards go to the Physician. Everything else goes to the Charge nurse.
   - **Clock:** `ESC_MIN = {1: 3, 2: 6, 3: 10}` minutes, set by card level.
   - **Escalation:** When the clock runs out, the card moves one step up the chain: Receiving nurse → Charge nurse → ED coordinator, and Physician → ED coordinator. Its level rises by one (to a minimum of 1), and a new clock starts. The ED coordinator is the top of the chain, so the clock stops there.
   - Each escalation sends a page, is written to the audit log and, if the card reaches level 1, is announced to screen readers.
@@ -365,7 +370,7 @@ Each card only appears when its rule holds, and `stillValid()` removes it as soo
   - Patients who opted out show as "Restricted by patient", and their record is never loaded.
   - Every lookup is audited.
 
-## Part E - Field, dispatch and satellite screens
+## Part E - Field, arrival and satellite screens
 
 ### 20. Dispatch unit recommendation
 
@@ -384,11 +389,11 @@ Each card only appears when its rule holds, and `stillValid()` removes it as soo
 - **Why this design:** The rules are short enough to read aloud on a call, and they match the triggers dispatchers already use.
 - **Failure mode and safeguard:** The casualty count is the caller's estimate. Dispatchers can adjust the numbers, and repeating the dispatch with the same `CALL-` ID updates the incident (sending extra ambulances) rather than duplicating it (`receiveIncident`).
 
-### 21. Destination ranking and ambulance split
+### 21. Ambulance split across hospitals
 
 *As implemented in `dispatch.html` (`primaryNeed()`, `withStatus()`, `planSplit()`).*
 
-- **Purpose:** Send each ambulance to the nearest hospital that can actually take its patients.
+- **Purpose:** Split one incident's ambulances across hospitals that can actually take the patients.
 - **Inputs:** This hospital's live capacity (`wasel-capacity`, `CHANNELS.md` §3), three simulated partner hospitals (trauma centre, burns unit, stroke-capable general), and the travel time from the incident place.
 - **Rule:**
   - **Primary need:**
@@ -399,48 +404,164 @@ Each card only appears when its rule holds, and `stillValid()` removes it as soo
     - Otherwise → general.
   - **Hospital status:** "No live feed" (no capacity for 15 s), "On diversion" and "ED full" (0 beds) mark a hospital as unusable. With 3 or fewer free ED beds it is marked "Busy" but stays usable.
   - **Ranking:** Usable hospitals are sorted by travel time, then by more free ED beds.
-  - **Split:**
-    - Specialist ambulances are all of them for Major, half (rounded up) for Serious, and none for a general need.
-    - These go to the nearest hospitals with matching slots, filling each in turn. The slots are trauma + resus bays at a trauma-capable hospital, burns beds at a burns unit, or resus bays.
-    - The remaining ambulances, including any specialist shortfall, go to the nearest EDs. Each ED takes up to `floor(free ED beds ÷ patients per ambulance)` ambulances.
-    - Any ambulances still left are shown as "Hold at the casualty clearing point · request mutual aid".
+  - **Patients per ambulance:** `ceil(casualties ÷ ambulances)`.
+  - **Specialist ambulances:** All of them for Major, half (rounded up) for Serious, and none for a general need.
+  - **Specialist pass:** Each specialist ambulance goes to the nearest hospital that has a matching slot and ED beds for its other patients. The slots are trauma + resus bays at a trauma-capable hospital, burns beds at a burns unit, or resus bays.
+  - **Bed accounting:** The page tracks the ED beds left at each hospital (`edLeft`) as it assigns ambulances, so no hospital is sent more patients than it has room for.
+  - **General pass:** The remaining ambulances, including any specialist shortfall, go to the nearest EDs. Each ED takes up to `floor(ED beds left ÷ patients per ambulance)` ambulances.
+  - **Overflow:** Any ambulances still left are shown as "Hold at the casualty clearing point · request mutual aid".
 - **Output:** A list of rows "n → hospital" with the reason for each, for example "trauma bays free: 3".
 - **Why this design:** Field triage guidelines send the most seriously injured to the right level of care, and everyone else to the nearest ED with room. A greedy fill is simple enough to explain on screen.
-- **Failure mode and safeguard:** Partner capacity is simulated (demo). The second pass does not subtract the specialist bays it has already used from that hospital's ED-bed count, so the split can be optimistic for one hospital. Every hospital's live numbers are shown next to the plan, and the crew and receiving ED confirm by radio as usual.
+- **Failure mode and safeguard:** Partner capacity is simulated (demo), and travel times come from a fixed table. Every hospital's live numbers are shown next to the plan, and the crew and receiving ED confirm by radio as usual.
 
-### 22. Responder priority: START and ESI
+### 22. Responder priority: sliders to START and ESI
 
-*As implemented in `responder.html` and the dashboard parser in `15-wasel.js`. The slider-based responder is being rebuilt at the time of writing. The contract for its triage fields is `CHANNELS.md` §2.*
+*As implemented in `responder.html` (`assess()`, `effective()`).*
 
-- **Purpose:** Give the receiving ED a field priority with its reasons, without free text.
-- **Inputs:** The responder's priority, which is either START (red, yellow, green or black) or ESI 1–5. Also the vital signs (HR, SBP, RR, SpO2, GCS) and, per the contract, the optional triage sliders (AVPU, breathing, bleeding, perfusion, pain, regions, burns %, age band).
+- **Purpose:** Compute a field priority from taps and slides, without free text, and show every rule that fired.
+- **Inputs:**
+  - **Sliders:** responsiveness (A, V, P or U), breathing (normal, fast, laboured or not breathing), bleeding (none, minor, heavy-controlled or uncontrolled), circulation (normal, pale-sweaty or weak-fast), pain (0–10) and age band.
+  - **Tapped fields:** injured regions, burns %, mechanism and treatments.
+  - **Vital signs:** HR, SBP, RR and SpO2, streamed from the monitor.
+- **Rule:** Every rule that holds is listed, and the most urgent one sets the ESI. Child thresholds follow JumpSTART.
+
+| Result | Rules |
+|---|---|
+| ESI 1 (RED) | Not breathing (START **BLACK** unless breathing returns once the airway is opened). Breathing that starts only after the airway was opened, with "not breathing" held for at least 5 s. Unresponsive (U). Uncontrolled bleeding. SBP below 90 (child 70) together with a weak, fast pulse. |
+| ESI 2 (RED) | SBP below 90 (child 70) without a weak, fast pulse. Weak, fast pulse (shock). Laboured breathing. RR above 30 (child 45). RR below 10 (child 15). SpO2 below 90. Responds to pain only (P). Burns ≥ 20% (child ≥ 10%). |
+| ESI 3 (at least YELLOW) | Voice only (V). Heavy bleeding, controlled. Pale and sweaty. Fast breathing. Pain ≥ 7. Chest, abdomen or pelvis injury. Head or neck injury (spinal precautions). Adult burns 10–19%. Elderly with any trauma (under-triage risk). |
+| ESI 4 (GREEN) | No rule above fired, but there is a minor finding: an injured region, pain, burns or minor bleeding. |
+| ESI 5 (GREEN) | No abnormal findings. |
+
+  - **START colour:** BLACK if the patient is apnoeic. Otherwise RED for ESI 1–2, YELLOW for ESI 3 and GREEN for ESI 4–5 (`startForEsi`).
+  - **GCS:** The pre-alert sends a GCS derived from AVPU: A = 15, V = 13, P = 8, U = 3.
+  - **NEWS2-style helper:** The page also shows a NEWS2-style total from the streamed signs (section 1 bands). Any AVPU other than A adds 3, and oxygen adds 2. The total is labelled High (≥ 7), Medium (≥ 5), Low–medium (any single 3) or Low.
+- **Output:** The priority, sent as `{system: 'ESI', level}` with the fired rules shown to the crew. A crew override sets ESI 1–5 by tap. It is logged as "rules said ESI n" and sent with `overridden: true` and `computedLevel`.
+- **Why this design:** The thresholds come from START, the international mass-casualty field standard: RR above 30, a failed perfusion check or not obeying commands means RED, and apnoea after airway opening means BLACK. JumpSTART supplies the paediatric RR band of 15–45. The SpO2 and SBP floors come from field-triage physiology. ESI keeps the same scale the ED uses, so nothing is translated at the door.
+- **Failure mode and safeguard:** The streamed vital signs glide toward the picture the sliders describe, so they are only as accurate as the monitor. The crew can always override, and the override is logged. On the dashboard, a more urgent update becomes a re-triage card (section 3), never a silent change. At the time of writing, the dashboard's reason ranking (`WASEL_SLIDER_URGENCY`) does not list the responder's `not-breathing` and `pale-sweaty` stops. Those reasons therefore sort as urgency 1 on the inbound card. The ESI itself is unaffected.
+
+### 23. Responder destination ranking
+
+*As implemented in `responder.html` (`needsFor()`, `scoreHospital()`, `rankDestinations()`).*
+
+- **Purpose:** Recommend the hospital that best fits this patient's needs, given live capacity and travel time.
+- **Inputs:** The sliders and the effective ESI, live capacity for this hospital (`wasel-capacity`), three simulated partners (trauma centre, burns unit, stroke-capable general), and each hospital's ETA.
 - **Rule:**
-  - **NEWS2-style helper on the responder page (`renderVitals`):** HR, SBP, RR and SpO2 use the NEWS2 bands in section 1, and GCS below 15 scores 3. Oxygen adds 2, and temperature is not collected in the field. A total of 7 or more is "High risk", 5 or more is "Medium risk", and any single parameter at 3 gives "Low–medium". The responder then picks the priority.
-  - **Dashboard mapping (`PREALERT_RULES.startToEsi`):** red → ESI 1, yellow → ESI 3, green → ESI 4, black → ESI 5. Black (expectant) maps to ESI 5, so it never takes a resus bay, but the START colour stays visible.
-  - **Displaying START on the dashboard (`wslStart`):** In MCI mode, WASEL derives a START colour for field patients from ESI: 1–2 → red, 3 → yellow, 4–5 → green. This is a colour mapping, not the START algorithm. A START category sent from the field takes precedence.
-  - **Slider reasons (`waselTriageWhy`):** Reasons are ranked by urgency, 3 meaning an immediate threat to life:
-    - Breathing absent or agonal: 3.
-    - Bleeding catastrophic, uncontrolled or heavy: 3. Heavy-controlled: 2.
-    - Perfusion absent: 3. Weak, delayed or similar: 2.
-    - AVPU P or U: 3. AVPU V: 2.
-    - Burns ≥ 20%: 3. 10–19%: 2.
-    - Pain ≥ 7, body regions and age band: 1.
-- **Output:** The field priority shown with its reasons. A more urgent update raises a re-triage card (section 3).
-- **Why this design:** START is the international mass-casualty field standard, and ESI is the ED standard. WASEL keeps both: the field category is shown as sent, and a more urgent update becomes a re-triage card that the ED confirms.
-- **Failure mode and safeguard:** The dashboard maps GCS 13 or below to AVPU V (`wslApplySigns`), while the responder helper scores any GCS below 15. A GCS of 14 is therefore "alert" on the dashboard. The ED re-measures on arrival. Invalid fields become Unknown and are listed as "ignored invalid …". They never block the pre-alert.
+  - **Needs (`needsFor`):**
+    - Trauma: an injury to the head, neck, chest, abdomen or pelvis, heavy or uncontrolled bleeding, or ESI 1–2 with a trauma mechanism and burns under 20%.
+    - Burns: burns ≥ 10%, or a smoke mechanism with any burns. Major burns: ≥ 20% (child ≥ 10%).
+    - Stroke: a medical mechanism, not alert, and no injuries.
+    - CT: stroke or a head injury.
+    - Blood: heavy bleeding or a weak, fast pulse.
+    - Resus: ESI 1–2.
+  - **Score:** `score = match × capacity × eta`.
+  - **match:** The product of the hospital's fit for each need. Fit ranges from 0.25 to 1, and a specialist centre scores 1. For minor burns the burns factor is `0.6 + 0.4 × fit`.
+  - **capacity:** Starts from the free slots of the bed type needed (burns bed at a burns unit, trauma bay, resus bay, or ED bed):
 
-### 23. Readiness score and trauma activation
+| Free slots | unknown | 0 | 1 | 2 | 3 or more |
+|---|---|---|---|---|---|
+| Capacity factor | 0.45 | 0.15 | 0.6 | 0.8 | 1 |
 
-*In progress. `src/16-readiness.js` is not in the build yet.*
+  - **Capacity multipliers:**
+    - Blood need: O-negative ≥ 6 units → × 1. 2–5 units → × 0.75. Fewer → × 0.45.
+    - CT need with no CT online: × 0.35.
+    - Resus need with no ICU bed free: × 0.8.
+    - Hospital on diversion: × 0.1.
+    - Capacity older than 15 s: × 0.75.
+  - **eta:** `1 ÷ (1 + ETA ÷ urgency)`. The urgency is 12 min for ESI 1–2, 25 min for ESI 3 and 45 min for ESI 4–5, the travel time at which the score halves.
+  - **Hysteresis:** In auto mode the destination changes only when the needs or ESI change, or when another hospital scores more than 15% better (`HOLD_MARGIN = 1.15`).
+- **Output:** A ranked list with one line per hospital, for example "Trauma bay free (2) · O-neg 18 · 12 min". The chosen destination travels in the pre-alert as `{hospital, reason, etaMin}`. A pre-alert for another hospital reserves nothing here (`wslComingHere`); the dashboard lists it as routed elsewhere.
+- **Why this design:** Multiplying the factors means one disqualifying factor, such as diversion or no burns unit for a major burn, sinks a hospital, while near-equal options are ordered by travel time. The urgency scale makes a minute of travel cost more for a sicker patient.
+- **Failure mode and safeguard:** The fit and capacity factors are design values, and partner capacity is simulated. The crew can pick any hospital, which is logged as "crew judgement". Picking the top hospital again returns the page to auto.
 
-The state contract (`CHANNELS.md` §4) already includes the shape for each inbound patient: `readiness: {score, of: 5, items: [{k, ok}]}`. That is a 0–5 checklist of preparation items, for example `{k: 'bed', ok: true}`. This page will document the exact items and the trauma-activation criteria from the code once the module lands. Until then, team paging comes from the pre-arrival rule (section 8).
+### 24. Readiness score
 
-### 24. Kiosk ESI suggestion and two-person supply approval
+*As implemented in `src/16-readiness.js` (`readiness()`).*
 
-*Contract in `CHANNELS.md` §5. Implemented in `src/40-bridge.js` (in progress).*
+- **Purpose:** Show at a glance, for every inbound patient, what is ready before the doors open.
+- **Inputs:** Live bed, team, ventilator, blood and CT state, plus the patient's condition needs.
+- **Rule:** Five checks give a score of 0–5. An item the patient does not need counts as ready.
+  - **Bed:** in a bed, or a bed is reserved. A bed only held by a pending card does not count.
+  - **Team:** trauma team activated, the patient is under ED care, or the ambulance's team has been paged.
+  - **Airway:** not required for ESI 3–5 without a ventilation need. Otherwise ready if at least one ventilator is free.
+  - **Blood:** ready if O-negative stock ≥ the larger of this patient's maximum need and `committed('blood')` for everyone waiting or inbound.
+  - **CT:** needed when the condition needs CT or the trauma team is activated. Ready if a scanner is online and the estimated wait is 30 min or less.
+- **Output:** `{score, of: 5, items: [{k, label, ok, detail}]}`. The bridge sends it in `wasel-state` (`CHANNELS.md` §4).
+- **Why this design:** A short checklist of the five things that delay resuscitation is quicker to read than a free-text plan. Each item carries the live detail behind it, for example "O-neg 14 units · up to 6 for T-104".
+- **Failure mode and safeguard:** The score reads state and changes nothing. A missing item points to the card that fixes it, such as pre-arrival (section 8), supplies (section 10) or equipment (section 15).
 
-- **Kiosk check-in (`kioskCheckin`):** The patient taps a complaint tile (chest pain, abdominal pain, shortness of breath, fever, injury or other), and their vital signs are recorded. The bridge creates a waiting walk-in. Its suggested ESI comes from **NEWS2 plus the complaint**, and **a nurse confirms it** through the identity and re-triage flow. The patient never sets their own priority.
-- **Supply approval (`approveRequest`, `secondApprove`):** A request for **20 or more units** needs a second approver, who must be a different person from the first. Smaller requests are accepted after one approval. Every command is audited, and any action not on the allow-list is rejected and audited.
+### 25. Trauma team activation
+
+*As implemented in `src/16-readiness.js` (`traumaRules()`, `rdyPlanTrauma()`, `readinessAccept()`).*
+
+- **Purpose:** Propose a full trauma team before arrival when field findings meet the activation rules.
+- **Inputs:** Vital signs, ATMIST GCS (or AVPU), burns % (measured by the responder, or estimated from the ICD-10-CM T31 band: 5%, 15% or 35%), and the mechanism and injuries text.
+- **Rule:** These rules apply to EMS patients who are inbound or waiting and not yet activated. Any one rule fires the card:
+
+| Rule | Threshold |
+|---|---|
+| Hypotension | SBP < 90 |
+| Consciousness | GCS ≤ 13, or AVPU V, P or U |
+| Respiratory rate | RR < 10 or > 29 |
+| Burns | ≥ 20% body surface |
+| Penetrating mechanism | stab, knife, gunshot, GSW, shot, bullet, impaled or penetrating, in the mechanism or injuries |
+| Amputation | "amputat…" in the injuries or mechanism |
+
+- **Output:** A level 1 card, "Activate trauma team for T-104", owned by the Physician, that quotes every rule that fired. On accept, a page goes to the team ("trauma surgeon, anaesthetist, 2 nurses, CT + OR alerted"), and the audit log records the rules and the senior who confirmed.
+- **Why this design:** The physiological thresholds match the field triage guideline that `TRAUMA_RULES` cites (ACS): GCS ≤ 13, SBP < 90, and RR < 10 or > 29. Penetrating injury and amputation are its anatomical triggers.
+- **Failure mode and safeguard:** The keyword match does not check the body site, so it can over-trigger, which is the safe direction. Activation is the one card that **only a senior can accept in person**. `readinessAccept` refuses auto-accept and every role except physician or charge nurse.
+
+### 26. Burns transfer to a partner unit
+
+*As implemented in `src/16-readiness.js` (`rdyPlanTransfer()`, `rdyRequestTransfer()`).*
+
+- **Purpose:** Move a major burn to a specialist burns centre without delay, because this ED has none.
+- **Inputs:** Burns %, stage, NEWS2 and SBP.
+- **Rule:**
+  - **Enquiry:** For burns ≥ 20% (`transferBurnsPct`), an automatic, de-identified bed enquiry goes to the partner unit as soon as the patient is known, often while still in the ambulance. The enquiry carries only the encounter, the burns estimate and the ESI. The simulated partner accepts after 3 minutes.
+  - **Card:** Once the patient is in the ED and the partner has accepted, a level 2 card appears: "Transfer T-104 to Burns Unit (demo), accepted bed, ETA 25 min".
+  - **Departure:** On accept, a waiting patient leaves at once. A patient in a bed leaves when **stable**: NEWS2 below 7 and SBP of 90 or more.
+- **Output:** The transfer status (requested, accepted, in transport, completed). The family board shows "Transferred".
+- **Why this design:** Sending the enquiry early means the acceptance is ready at the door. The stability gate keeps an unstable patient in the ED for resuscitation first.
+- **Failure mode and safeguard:** The 20% threshold is a demo setting. ABA burn-centre referral criteria begin at 10% partial-thickness burns, so a site would set this locally. Only a charge nurse or physician can approve the transfer.
+
+### 27. Kiosk ESI suggestion
+
+*As implemented in `src/40-bridge.js` (`bridgeKioskEsi()`, `bridgeKioskCheckin()`).*
+
+- **Purpose:** Let a walk-in check in by tapping a complaint, and flag them at once if their vital signs are dangerous.
+- **Inputs:** Complaint tile (chest pain, abdominal pain, shortness of breath, fever, injury or other), age band, and the vital signs measured at the kiosk.
+- **Rule:**
+  - **Starting level:** The patient starts at the complaint's usual ESI, the least urgent level in its range. Chest pain is ESI 2, abdominal pain and shortness of breath are ESI 3, and fever and injury are ESI 4. "Other" is treated as abdominal pain.
+  - **Rules:** Each of the following can only make the suggestion **more** urgent:
+
+| Rule | Suggests |
+|---|---|
+| Child (under 16): NEWS2 is not validated, so a nurse assesses | at least ESI 3 |
+| SpO2 < 85 or SBP < 80: immediate intervention likely | ESI 1 |
+| NEWS2 ≥ 5, or any single NEWS2 parameter scoring 3 | ESI 2 |
+| ESI danger-zone vital sign: HR > 100, RR > 20 or SpO2 < 92 | ESI 3 |
+| Age 65 or over | ESI 3 |
+
+- **Output:** The patient is registered at the starting ESI. If the suggestion is more urgent, a re-triage card appears, "Re-triage P-1043 (kiosk A-017) from ESI 4 to ESI 2". It is level 1 for ESI 1–2 and level 2 otherwise, and lists its reasons. An Emirates ID read at the kiosk is only a candidate identity until a nurse compares it with the patient.
+- **Why this design:** The danger-zone vital signs come straight from the ESI v4 handbook, and NEWS2 adds the RCP single-parameter trigger. The patient never sets their own priority.
+- **Failure mode and safeguard:** Unmeasured vital signs keep typical values, and the feed line reports how many of the 5 were measured. Kiosk patients are assumed alert, because they checked in unaided. A nurse confirms every kiosk suggestion.
+
+### 28. Supply two-person approval and command safeguards
+
+*As implemented in `src/40-bridge.js` (`bridgeApprove()`, `bridgeCheck()`, `bridgeRateOk()`).*
+
+- **Purpose:** Make sure large orders and remote commands cannot be placed by one tap or one screen alone.
+- **Rule:**
+  - **Two-person approval:** A supply request of **20 or more units** (`secondQty`) needs a second approver, and that approver must be a different person (the names are compared case-insensitively). Smaller requests are accepted after one approval.
+  - **Allow-list:** Each action is accepted only from the one screen allowed to send it (`CHANNELS.md` §5), with typed arguments.
+  - **De-duplication:** Commands are de-duplicated by ID.
+  - **Rate limit:** At most 20 commands per 10 s, from all screens together.
+  - **Downtime:** In downtime mode the dashboard is read-only, except for the actions the bridge allows during downtime.
+  - **Audit:** Every command is audited, whether accepted or rejected.
+- **Output:** An acknowledgement in `wasel-state`, so the sending screen can confirm the tap.
+- **Why this design:** The two-person rule is a standard control for high-value or high-risk orders. Checking the sender, the arguments and the rate limits what a compromised or faulty screen can do.
+- **Failure mode and safeguard:** BroadcastChannel only reaches pages from the same origin, so the screens must be served together. Everything stays auditable on the admin screen.
 
 ## What is simulated, not decided
 
@@ -450,6 +571,8 @@ These parts of the demo make the world WASEL reacts to. They are **not** decisio
 - Walk-in arrivals (a Poisson process at 1 per 7 min, plus incident surges), ambulance timings, treatment times and dispositions.
 - Field identity outcomes in scenarios: candidate 55%, confirmed by NFC 15%, temporary 30%, with confidence between 0.86 and 0.98.
 - Synthetic records (allergies, anticoagulants, the UAE blood-group mix), lab results with HL7 abnormal flags, the partner clinic's wait (an 8–20 min drift), and partner-hospital capacity drift.
+- On the responder tablet, the monitor stream: vital signs glide toward the picture the sliders describe (`vitalTargets`). Partner hospitals' ETAs and capacity also drift.
+- The burns unit's acceptance, which arrives 3 simulated minutes after the enquiry.
 
 ## Phase 2: where ML could earn its place
 
@@ -468,6 +591,7 @@ Humans keep the tap in every phase.
 | Arrival forecasting (hour-of-day and weekday seasonality, events, weather) | 1 walk-in per 7 min plus ambulance ETAs (section 11) | Mean absolute error of the 30- and 60-minute bed demand | Falls back to the rule when the inputs are stale |
 | Length-of-stay and disposition | The fixed 0.75 bed-release and 0.5 boarding factors (section 11) | Error in predicted bed-free time | Only adjusts the forecast; never moves a patient |
 | Supply consumption | The 30-minute burn rate plus committed demand (section 10) | Stock-out events avoided; false requests | Requests still need one or two approvers |
+| Destination ranking | need match × capacity × ETA score (section 23) | Time to definitive care; secondary transfers avoided | Crew keeps the choice; the score's factors stay on screen |
 | Nurse assignment (optimisation, not ML) | Greedy `aiNurseChoice` (section 6) | Load spread, overtime hours, handovers | Same explanation format; nurse named before the tap |
 | Under- and over-triage audit | ESI with the NEWS2 re-triage rule (section 3) | Agreement with outcomes (admission, ICU, death) | Audit only: feeds training, never the live ESI |
 | Face matching calibration | Facenet512 at the 0.70 cutoff (section 19) | False-match rate at a fixed miss rate, broken down by demographic group | Remains candidate-only; nurse confirmation unchanged |

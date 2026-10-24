@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
@@ -160,6 +160,177 @@ footer { color: var(--text-2); font-size: 12px; margin-top: 18px; }
   ol.journey { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
   ol.journey li::after { display: block; right: -9px; }
 }
+/* ==WASEL-TOKENS-START== */
+/* ---------- WASEL design system tokens (synced from src/shell.html) ---------- */
+:root {
+  color-scheme: dark;
+  /* Surfaces, back to front: page → panel → inset → control */
+  --page: #000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --raised: #3a3a3c;
+  --hover: #48484a;
+  --fill: rgba(120, 120, 128, .24);          /* controls, chips, tracks */
+  --fill-strong: rgba(120, 120, 128, .36);   /* their hover */
+  --thumb: #636366;                          /* selected segment */
+  /* Text */
+  --text: #f5f5f7;
+  --text-2: #aeaeb2;
+  --muted: #98989f;
+  /* Lines */
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .15);
+  --grid: rgba(255, 255, 255, .07);
+  --axis: rgba(255, 255, 255, .16);
+  --hatch: rgba(255, 255, 255, .07);
+  /* Accent: system blue */
+  --accent: #0a84ff;
+  --accent-strong: #0071e3;                  /* fill behind white text */
+  --accent-strong-hover: #0064cf;
+  --accent-fg: #409cff;                      /* accent as text */
+  --accent-weak: rgba(10, 132, 255, .18);
+  /* Status fills: same meaning in both themes */
+  --critical: #d70015;
+  --serious: #ff9f0a;
+  --warning: #ffd60a;
+  --good: #30d158;
+  --neutral: #8e8e93;
+  --on-fill: #fff;                           /* text on critical / accent fills */
+  --on-light-fill: #1a1a1a;                  /* text on orange, yellow, green, grey fills */
+  /* Status tints and lines */
+  --critical-weak: rgba(255, 69, 58, .17);
+  --serious-weak: rgba(255, 159, 10, .16);
+  --warning-weak: rgba(255, 214, 10, .14);
+  --good-weak: rgba(48, 209, 88, .15);
+  --critical-line: rgba(255, 69, 58, .5);
+  --good-line: rgba(48, 209, 88, .55);
+  /* Status as text */
+  --critical-fg: #ff7a72;
+  --serious-fg: #ffb340;
+  --warning-fg: #ffd426;
+  --good-fg: #30db5b;
+  /* Depth and materials */
+  --shadow-sm: none;
+  --shadow: 0 24px 60px rgba(0, 0, 0, .6);
+  --ring: 0 0 0 1px rgba(255, 255, 255, .08);  /* hairline edge on floating things */
+  --backdrop: rgba(0, 0, 0, .5);
+  --material: rgba(44, 44, 46, .82);           /* toast, chart tip */
+  /* Type */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --t-micro: 10.5px;
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-title: 15px;
+  --t-sheet: 19px;
+  --t-large: 22px;
+  --t-number: 28px;
+  /* Space: 4 px grid */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --gap: 10px;
+  /* Shape: inner radii nest inside outer ones */
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 14px;
+  --radius: 18px;
+  --radius-xl: 24px;
+  --pill: 999px;
+  /* Control heights */
+  --h-control: 30px;
+  --h-control-sm: 26px;
+  --h-chip: 22px;
+  --h-chip-sm: 18px;
+  /* Backdrop, glass header, critical step card */
+  --page-gradient: radial-gradient(1100px 620px at 0% 0%, rgba(59, 130, 246, .16), transparent 62%),
+                   radial-gradient(900px 560px at 100% 0%, rgba(139, 92, 246, .13), transparent 58%),
+                   #000;
+  --glass: rgba(28, 28, 30, .72);
+  --critical-card: linear-gradient(135deg, #dc3125, #b42318);   /* white text >= 4.6:1 across the gradient */
+  --hatch-bar: rgba(255, 255, 255, .08);                       /* the empty part of a capacity bar */
+  /* Icon tiles: decorative hues only, never the status hues, so an icon is never read as a status */
+  --tile-mix: 22%;
+  --hue-blue: #3b82f6;
+  --hue-indigo: #6366f1;
+  --hue-violet: #8b5cf6;
+  --hue-purple: #a855f7;
+  --hue-sky: #0ea5e9;
+  --hue-cyan: #06b6d4;
+  --hue-slate: #64748b;
+  --ai-gradient: linear-gradient(135deg, #6366f1, #d946ef);
+  /* Icon glyphs (masks; colour comes from the tile hue) */
+  --i-ambulance: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 10H6'/%3E%3Cpath d='M8 8v4'/%3E%3Cpath d='M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2'/%3E%3Cpath d='M19 18h2a1 1 0 0 0 1-1v-3.28a1 1 0 0 0-.684-.948l-1.923-.641a1 1 0 0 1-.578-.502l-1.539-3.076A1 1 0 0 0 16.382 8H14'/%3E%3Cpath d='M8 18h1'/%3E%3Ccircle cx='17' cy='18' r='2'/%3E%3Ccircle cx='7' cy='18' r='2'/%3E%3C/svg%3E");
+  --i-users: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87'/%3E%3Cpath d='M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E");
+  --i-pulse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z'/%3E%3Cpath d='M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27'/%3E%3C/svg%3E");
+  --i-bed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4v16'/%3E%3Cpath d='M2 8h18a2 2 0 0 1 2 2v10'/%3E%3Cpath d='M2 17h20'/%3E%3Cpath d='M6 8v9'/%3E%3C/svg%3E");
+  --i-box: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7.5 4.27 9 5.15'/%3E%3Cpath d='M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z'/%3E%3Cpath d='m3.3 7 8.7 5 8.7-5'/%3E%3Cpath d='M12 22V12'/%3E%3C/svg%3E");
+  --i-sparkles: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z'/%3E%3Cpath d='M20 3v4'/%3E%3Cpath d='M22 5h-4'/%3E%3C/svg%3E");
+  --i-activity: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E");
+  --i-trend: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m22 7-8.5 8.5-5-5L2 17'/%3E%3Cpath d='M16 7h6v6'/%3E%3C/svg%3E");
+  --i-siren: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 18v-6a5 5 0 1 1 10 0v6'/%3E%3Cpath d='M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z'/%3E%3Cpath d='M21 12h1'/%3E%3Cpath d='M18.5 4.5 18 5'/%3E%3Cpath d='M2 12h1'/%3E%3Cpath d='M12 2v1'/%3E%3Cpath d='m4.929 4.929.707.707'/%3E%3Cpath d='M12 12v6'/%3E%3C/svg%3E");
+  --i-shield: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='M9 12h6'/%3E%3Cpath d='M12 9v6'/%3E%3C/svg%3E");
+  --i-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 6v6l4 2'/%3E%3C/svg%3E");
+  --i-steth: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 2v2'/%3E%3Cpath d='M5 2v2'/%3E%3Cpath d='M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1'/%3E%3Cpath d='M8 15a6 6 0 0 0 12 0v-3'/%3E%3Ccircle cx='20' cy='10' r='2'/%3E%3C/svg%3E");
+  --i-exit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4'/%3E%3Cpath d='m16 17 5-5-5-5'/%3E%3Cpath d='M21 12H9'/%3E%3C/svg%3E");
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f4f6fb;
+  --surface: #fff;
+  --surface-2: #f8fafc;
+  --raised: #eef2f6;
+  --hover: #e4e8ee;
+  --fill: rgba(16, 24, 40, .05);
+  --fill-strong: rgba(16, 24, 40, .09);
+  --thumb: #fff;
+  --text: #101828;
+  --text-2: #475467;
+  --muted: #667085;
+  --border: rgba(16, 24, 40, .08);
+  --border-strong: rgba(16, 24, 40, .14);
+  --grid: rgba(16, 24, 40, .06);
+  --axis: rgba(16, 24, 40, .16);
+  --hatch: rgba(16, 24, 40, .06);
+  --hatch-bar: rgba(16, 24, 40, .08);
+  --accent: #3b82f6;
+  --accent-strong: #2563eb;
+  --accent-strong-hover: #1d4ed8;
+  --accent-fg: #1d4ed8;
+  --accent-weak: rgba(37, 99, 235, .09);
+  --critical: #d92d20;
+  --serious: #f79009;
+  --warning: #fdb022;
+  --good: #12b76a;
+  --neutral: #98a2b3;
+  --critical-weak: rgba(240, 68, 56, .09);
+  --serious-weak: rgba(247, 144, 9, .11);
+  --warning-weak: rgba(253, 176, 34, .16);
+  --good-weak: rgba(18, 183, 106, .1);
+  --critical-line: rgba(217, 45, 32, .35);
+  --good-line: rgba(6, 118, 71, .45);
+  --critical-fg: #b42318;
+  --serious-fg: #b54708;
+  --warning-fg: #8d5b00;
+  --good-fg: #067647;
+  --shadow-sm: 0 0 0 1px rgba(16, 24, 40, .05), 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .05);
+  --shadow: 0 24px 60px rgba(16, 24, 40, .18);
+  --ring: 0 0 0 1px rgba(16, 24, 40, .06);
+  --backdrop: rgba(16, 24, 40, .25);
+  --material: rgba(16, 24, 40, .88);
+  --page-gradient: radial-gradient(1100px 620px at 0% 0%, #dde9ff, transparent 62%),
+                   radial-gradient(900px 560px at 100% 0%, #efe6ff, transparent 58%),
+                   radial-gradient(900px 600px at 50% 110%, #e2f6ee, transparent 60%),
+                   #f4f6fb;
+  --glass: rgba(255, 255, 255, .72);
+  --tile-mix: 14%;
+}
+/* ==WASEL-TOKENS-END== */
 </style>
 </head>
 <body>

@@ -117,8 +117,8 @@ const I18N = {
     'tb.mci': 'Declare MCI', 'tb.mciEnd': 'Stand down MCI', 'tb.prealert': 'Simulate responder pre-alert', 'tb.auto': 'Auto-accept bed placements',
     'mode.steady': 'STEADY', 'mode.strain': 'STRAIN', 'mode.surge': 'SURGE', 'mode.mci': 'MCI',
     'mode.title': 'Operating mode', 'mode.since': 'since {time}', 'mode.calm': 'All strain rules clear',
-    'p.inbound': 'Inbound · pre-alerts', 'p.staff': 'Nursing staff', 'p.patients': 'Patients · sorted by AI priority', 'p.beds': 'Bed board',
-    'p.equip': 'Equipment & supplies', 'p.dec': 'AI decision queue', 'p.feed': 'Live data feed', 'p.audit': 'Audit log',
+    'p.inbound': 'Inbound · pre-alerts', 'p.staff': 'Nursing staff', 'p.patients': 'Patients · sorted by clinical priority', 'p.beds': 'Bed board',
+    'p.equip': 'Equipment & supplies', 'p.dec': 'Decision support', 'p.feed': 'Live data feed', 'p.audit': 'Audit log',
     'p.chart': 'ED bed occupancy · last 60 min + forecast',
     'ft.family': 'Family desk', 'ft.standards': 'Standards & security', 'ft.datamap': 'Data map', 'm.close': 'Close',
     'w.or': ' or ', 'w.anyRole': 'an authorised role', 'w.unknown': 'Unknown', 'u.min': '{n} min',
@@ -155,7 +155,7 @@ const I18N = {
     'bed.meta': '{f}/{t} free · {c} cleaning', 'bed.staleMeta': 'Feed offline · snapshot from {time}', 'bed.backup': '{f}/{t} free · via backup RTLS bed sensors',
     'bed.zone': '{zone} · {f}/{t} free', 'bed.stale': 'STALE', 'bed.staleNote': ' · last update {time} · feed offline',
     'bt.free': 'free', 'bt.hold': 'hold', 'bt.clean': 'clean', 'bt.resv': 'resv',
-    'lg.free': 'Free', 'lg.occ': 'Occupied', 'lg.clean': 'Cleaning', 'lg.resv': 'Reserved', 'lg.held': 'Held for AI suggestion',
+    'lg.free': 'Free', 'lg.occ': 'Occupied', 'lg.clean': 'Cleaning', 'lg.resv': 'Reserved', 'lg.held': 'Held for a pending suggestion',
     'eq.monitors': 'Cardiac monitors', 'eq.vents': 'Ventilators', 'eq.ct': 'CT scanners', 'eq.free': '{a}/{b} free', 'eq.ventFree': '{a} free of {b}',
     'eq.ctv': '{on}/{tot} online · queue {q}', 'eq.ctWait': ' · ~{n} min wait', 'eq.ctNone': ' · no scanner online',
     'eq.left': '{q} {unit} · ~{n} min left', 'eq.stable': '{q} {unit} · stable', 'eq.ok': '✓ OK', 'eq.low': '● Low', 'eq.crit': '▲ Critical',
@@ -172,7 +172,7 @@ const I18N = {
     'src.meta': 'Data sources {n}/{m} live · FHIR R4 gateway', 'src.offline': 'offline', 'src.backup': 'backup',
     // Patient drawer
     'd.identity': 'Identity', 'd.field': 'Field report · ATMIST', 'd.noField': 'Walk-in: no pre-hospital report.',
-    'd.vitals': 'Vital signs · NEWS2 {n}', 'd.trends': 'Trends · last 30 min', 'd.ai': 'AI assessment', 'd.history': 'History · shared record',
+    'd.vitals': 'Vital signs · NEWS2 {n}', 'd.trends': 'Trends · last 30 min', 'd.ai': 'Decision support', 'd.history': 'History · shared record',
     'd.sbar': 'SBAR handover', 'd.order': 'Order a medication', 'd.access': 'Access log · this patient', 'd.fhir': 'FHIR R4 Bundle',
     'd.recorded': 'This view was recorded in the audit log.', 'd.closed': 'Encounter closed: {id} has left the emergency department, so the record is no longer live on this board.',
     'al.allergy': 'ALLERGY: {list}', 'al.unknown': 'Allergies UNKNOWN: ask patient/family', 'al.none': 'No known allergies',
@@ -231,8 +231,8 @@ const I18N = {
     'tb.mci': 'إعلان إصابات جماعية', 'tb.mciEnd': 'إنهاء الإصابات الجماعية', 'tb.prealert': 'محاكاة إنذار مسبق من المسعفين', 'tb.auto': 'قبول توزيع الأسرّة تلقائيًا',
     'mode.steady': 'مستقر', 'mode.strain': 'ضغط', 'mode.surge': 'ذروة', 'mode.mci': 'إصابات جماعية',
     'mode.title': 'وضع التشغيل', 'mode.since': 'منذ {time}', 'mode.calm': 'لا توجد مؤشرات ضغط',
-    'p.inbound': 'القادمون · الإنذارات المسبقة', 'p.staff': 'طاقم التمريض', 'p.patients': 'المرضى · حسب أولوية الذكاء الاصطناعي', 'p.beds': 'لوحة الأسرّة',
-    'p.equip': 'المعدات والمستلزمات', 'p.dec': 'قائمة قرارات الذكاء الاصطناعي', 'p.feed': 'تدفق البيانات المباشر', 'p.audit': 'سجل التدقيق',
+    'p.inbound': 'القادمون · الإنذارات المسبقة', 'p.staff': 'طاقم التمريض', 'p.patients': 'المرضى · حسب الأولوية السريرية', 'p.beds': 'لوحة الأسرّة',
+    'p.equip': 'المعدات والمستلزمات', 'p.dec': 'دعم القرار', 'p.feed': 'تدفق البيانات المباشر', 'p.audit': 'سجل التدقيق',
     'p.chart': 'إشغال أسرّة الطوارئ · آخر 60 دقيقة + التوقع',
     'ft.family': 'مكتب العائلات', 'ft.standards': 'المعايير والأمن', 'ft.datamap': 'خريطة البيانات', 'm.close': 'إغلاق',
     'w.or': ' أو ', 'w.anyRole': 'دور مخوّل', 'w.unknown': 'غير معروف', 'u.min': '{n} دقيقة',
@@ -266,7 +266,7 @@ const I18N = {
     'bed.meta': 'شاغرة {f}/{t} · تنظيف {c}', 'bed.staleMeta': 'الربط متوقف · لقطة من {time}', 'bed.backup': 'شاغرة {f}/{t} · عبر حساسات RTLS الاحتياطية',
     'bed.zone': '{zone} · شاغرة {f}/{t}', 'bed.stale': 'بيانات قديمة', 'bed.staleNote': ' · آخر تحديث {time} · الربط متوقف',
     'bt.free': 'شاغر', 'bt.hold': 'معلّق', 'bt.clean': 'تنظيف', 'bt.resv': 'محجوز',
-    'lg.free': 'شاغر', 'lg.occ': 'مشغول', 'lg.clean': 'تنظيف', 'lg.resv': 'محجوز', 'lg.held': 'معلّق لاقتراح الذكاء الاصطناعي',
+    'lg.free': 'شاغر', 'lg.occ': 'مشغول', 'lg.clean': 'تنظيف', 'lg.resv': 'محجوز', 'lg.held': 'محجوز لاقتراح معلّق',
     'z.R': 'الإنعاش', 'z.T': 'الإصابات', 'z.A': 'الحالات الحادة', 'z.F': 'المسار السريع',
     'eq.monitors': 'أجهزة مراقبة القلب', 'eq.vents': 'أجهزة التنفس الاصطناعي', 'eq.ct': 'أجهزة التصوير المقطعي', 'eq.free': 'شاغرة {a}/{b}', 'eq.ventFree': 'شاغرة {a} من {b}',
     'eq.ctv': 'متصلة {on}/{tot} · الطابور {q}', 'eq.ctWait': ' · انتظار ~{n} دقيقة', 'eq.ctNone': ' · لا جهاز متصل',
@@ -289,7 +289,7 @@ const I18N = {
     'ch.cap': 'سعة 100%', 'ch.now': 'الآن', 'ch.tipNow': 'الآن · إشغال {v}%', 'ch.tipPast': '{m} دقيقة · إشغال {v}%', 'ch.tipFc': '+{m} دقيقة (متوقع) · {v}%',
     'src.meta': 'مصادر البيانات المتصلة {n}/{m} · بوابة FHIR R4', 'src.offline': 'متوقف', 'src.backup': 'احتياطي',
     'd.identity': 'الهوية', 'd.field': 'التقرير الميداني · ATMIST', 'd.noField': 'حضر بنفسه: لا يوجد تقرير ما قبل المستشفى.',
-    'd.vitals': 'العلامات الحيوية · NEWS2 {n}', 'd.trends': 'الاتجاهات · آخر 30 دقيقة', 'd.ai': 'تقييم الذكاء الاصطناعي', 'd.history': 'التاريخ المرضي · السجل المشترك',
+    'd.vitals': 'العلامات الحيوية · NEWS2 {n}', 'd.trends': 'الاتجاهات · آخر 30 دقيقة', 'd.ai': 'دعم القرار السريري', 'd.history': 'التاريخ المرضي · السجل المشترك',
     'd.sbar': 'تسليم SBAR', 'd.order': 'طلب دواء', 'd.access': 'سجل الوصول · هذا المريض', 'd.fhir': 'حزمة FHIR R4',
     'd.recorded': 'سُجّل هذا العرض في سجل التدقيق.', 'd.closed': 'انتهت الزيارة: غادر {id} قسم الطوارئ، لذا لم يعد السجل مباشرًا على هذه اللوحة.',
     'al.allergy': 'حساسية: {list}', 'al.unknown': 'الحساسية غير معروفة: اسأل المريض أو العائلة', 'al.none': 'لا حساسية معروفة',
@@ -1099,14 +1099,14 @@ const UI_STANDARDS = [
   ['LOINC', 'Observation terminology', 'Vital signs coded 8867-4 HR, 8480-6 SBP, 9279-1 RR, 59408-5 SpO₂, 8310-5 temperature (record table, FHIR Observation, monitor feed)'],
   ['ICD-10-CM', 'Diagnosis coding', 'Every presenting condition: patient list, record, FHIR Condition, ADT messages'],
   ['SNOMED CT', 'Clinical terminology (mapping target)', 'Conditions carry ICD-10-CM today; the gateway maps them to SNOMED CT for problem-list exchange; "no known allergy" is coded 716186003'],
-  ['ESI v4', 'Triage acuity', 'ESI badge on every patient; drives bed-zone matching, nurse workload weights and AI re-triage suggestions'],
+  ['ESI v4', 'Triage acuity', 'ESI badge on every patient; drives bed-zone matching, nurse workload weights and re-triage suggestions'],
   ['START triage', 'Mass-casualty field triage', 'In MCI mode, inbound pre-alerts show the START colour (RED / YELLOW / GREEN) instead of ESI'],
   ['ATMIST', 'Pre-hospital handover', 'Age, Time, Mechanism, Injuries, Signs, Treatment: one line on each pre-alert card, full field report in the patient record'],
   ['SBAR', 'Structured clinical communication', 'Situation, Background, Assessment, Recommendation block generated in every patient record'],
   ['NEWS2 (RCP 2017)', 'Early-warning score', 'Live score and 12-minute trend per patient; per-parameter points in the record; deterioration alerts'],
   ['NCEMA framework', 'UAE National Emergency Crisis and Disaster Management Authority', 'Operating modes Steady → Strain → Surge → MCI with rules that can be read aloud; mode changes logged as NCEMA messages; MCI declaration and stand-down audited'],
   ['JCI Accreditation Standards for Hospitals', 'Emergency management (Facility Management and Safety)', 'Written surge triggers, escalation owners and clocks on every task, silent-surge actions (staff recall, overflow beds, blood bank standby), family reunification desk'],
-  ['ISO 9241-210', 'Human-centred design', 'Role-specific views; AI suggests and a human decides; one decision queue; low-clutter layout; English and Arabic'],
+  ['ISO 9241-210', 'Human-centred design', 'Role-specific views; the system suggests and a human decides; one decision queue; low-clutter layout; English and Arabic'],
   ['WCAG 2.2 AA', 'Accessibility', 'Real buttons with keyboard support, dialog focus management, live-region announcements, status as text + colour + shape, light/dark themes, right-to-left layout'],
   ['HIPAA Security Rule + NIST SP 800-66 Rev. 2', 'Security safeguards', 'Access control, audit controls (§164.312(b)), automatic logoff (§164.312(a)(2)(iii)), emergency access procedure (break-glass, §164.312(a)(2)(ii)), minimum-necessary display'],
   ['ISO/IEC 27001', 'Information security management', 'Role-based access, event logging, degraded-mode handling of interface outages'],
@@ -1118,7 +1118,7 @@ const UI_STANDARDS = [
   ['I-PASS', 'Structured handover', 'Nurse handovers and reassignments sent as I-PASS summaries (roster feed)'],
 ];
 const UI_CONTROLS = [
-  'Role-based access with least privilege: five roles; each AI suggestion type can be approved only by the roles allowed to act on it.',
+  'Role-based access with least privilege: five roles; each suggestion type can be approved only by the roles allowed to act on it.',
   'Minimum-necessary display: full names for Physician, initial + surname for nurses, initials only on the wall display and for IT; MRN masked outside clinical roles; the wall display and IT see encounter id, priority and ETA on pre-alerts, nothing clinical.',
   'Care-team access: a nurse opens only assigned patients; any other record needs a break-glass reason of at least 10 characters. IT / Admin has no chart rights.',
   'Every record view, break-glass access and blocked attempt is written to the audit log and listed in that patient’s access log.',
@@ -1126,7 +1126,7 @@ const UI_CONTROLS = [
   'Identity: a face match is only ever a candidate and never merges charts; pre-alerts carry no names, images or Emirates ID numbers, and undocumented fields are ignored.',
   'Automatic logoff: clinical roles fall back to the wall display after 5 minutes without input.',
   'Output encoding: all dynamic text is HTML-escaped by default before rendering (XSS); no eval, no inline event handlers, no third-party scripts, fonts or CDNs; a Content-Security-Policy blocks all network access.',
-  'Human in the loop: AI only suggests; the single exception is opt-in auto-accept of bed placements, logged as policy.',
+  'Human in the loop: the system only suggests; the single exception is opt-in auto-accept of bed placements, logged as policy.',
   'Fail-safe data: offline feeds are flagged; stale bed data is overlaid as STALE instead of being shown as current.',
   'Synthetic, fictional patients only; no data leaves the browser. Only the theme and language choices are stored locally; patient data never goes to storage or URLs.',
 ];
@@ -1278,7 +1278,7 @@ function aiAssessment(p, news, parts) {
   const pending = S.sugg.filter(s => s.pid === p.id);
   return html`${f
     ? html`<p>${chipHTML(f.level, (f.level === 'critical' ? '▲ ' : '● ') + LEVEL_LABEL[f.level === 'critical' ? 1 : 2], 'sm')} ${f.text}</p>${f.hint ? html`<p>${f.hint}.</p>` : ''}`
-    : html`<p>${chipHTML('good', '✓ Stable', 'sm')} No deterioration pattern detected over the last 12 minutes.</p>`}${pending.length ? html`<p>In decision queue: ${pending.map(s => s.title).join(' · ')}</p>` : ''}<p class="muted">NEWS2 ${news}: ${risk}. AI output is decision support only; the treating clinician decides.</p>`;
+    : html`<p>${chipHTML('good', '✓ Stable', 'sm')} No deterioration pattern detected over the last 12 minutes.</p>`}${pending.length ? html`<p>In decision queue: ${pending.map(s => s.title).join(' · ')}</p>` : ''}<p class="muted">NEWS2 ${news}: ${risk}. This is rule-based decision support only; the treating clinician decides.</p>`;
 }
 // p.history entries are strings or {name|condition|label, source, date|asOf}
 function historyBlock(p) {
