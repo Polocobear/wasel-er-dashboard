@@ -1,0 +1,3336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Defence in depth: nothing may load from or talk to the network. Even if an
+     injection slipped past esc(), it could not fetch scripts or exfiltrate data. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="ER Crisis Command Center: one live view of beds, patients, staff, equipment and inbound ambulances during a mass-casualty event. Simulated data.">
+<title>ER Command Center</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d03b3b'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23fff'/%3E%3C/svg%3E">
+<style>
+/* =========================================================================
+ * ER Crisis Command Center · shell styles
+ * Dark command-centre wall display by default; light theme via
+ * :root[data-theme="light"]. Status colour is reserved for things that need
+ * action and is always paired with text or a glyph (WCAG 1.4.1).
+ *
+ * Visibility protocol used by 30-ui.js:
+ *   #modal, #acceptAll, .xh, .tip  -> `hidden` attribute
+ *   #toast                         -> `hidden` attribute or `.show` class
+ *   journey › separators are drawn by CSS (UI renders only the 6 .jt tiles)
+ * ========================================================================= */
+
+/* ---------- Theme tokens ---------- */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --raised: #2a2a28;
+  --hover: #33332f;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, .10);
+  --border-strong: rgba(255, 255, 255, .18);
+  --accent: #3987e5;
+  --accent-strong: #1f6fd1;          /* button fill: white text stays >= 4.5:1 */
+  --accent-fg: #6aa6f0;              /* accent as small text on dark surfaces */
+  --accent-weak: rgba(57, 135, 229, .16);
+  --hatch: rgba(255, 255, 255, .07);
+  --shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  --backdrop: rgba(0, 0, 0, .62);
+
+  /* Status (same hues in both themes) */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --critical-weak: rgba(208, 59, 59, .16);
+  --serious-weak: rgba(236, 131, 90, .15);
+  --warning-weak: rgba(250, 178, 25, .13);
+  --good-weak: rgba(12, 163, 12, .15);
+  /* Status as small text: tuned per theme for >= 4.5:1 on every surface */
+  --critical-fg: #f47067;
+  --serious-fg: #ec835a;
+  --warning-fg: #fab219;
+  --good-fg: #4cc44c;
+
+  --radius: 12px;
+  --gap: 8px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --raised: #ebeae5;
+  --hover: #e2e1db;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #6b6a65;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, .10);
+  --border-strong: rgba(11, 11, 11, .18);
+  --accent: #2a78d6;
+  --accent-strong: #1f6fd1;
+  --accent-fg: #1f63b8;
+  --accent-weak: rgba(42, 120, 214, .12);
+  --hatch: rgba(11, 11, 11, .07);
+  --shadow: 0 10px 30px rgba(11, 11, 11, .16);
+  --backdrop: rgba(11, 11, 11, .45);
+  --critical-fg: #b42318;
+  --serious-fg: #b54708;
+  --warning-fg: #8a5a00;
+  --good-fg: #0a7a0a;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text);
+  font: 13px/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body:has(#modal:not([hidden])) { overflow: hidden; }
+h1, h2, h3, p { margin: 0; }
+button, select, input { font: inherit; color: inherit; }
+::selection { background: var(--accent-weak); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.sr-only {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--raised) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--raised); border-radius: 8px; border: 2px solid var(--surface); }
+::-webkit-scrollbar-thumb:hover { background: var(--axis); }
+
+/* ---------- App frame ----------
+ * Fixed vertical budget so 1920x1080 fits without page scroll: everything
+ * except the main grid adds up to <= 540px (the spec's main-grid offset). */
+.app, .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.app { min-height: 100vh; padding: 8px 12px; }
+
+/* ---------- Buttons & form controls ---------- */
+.btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 7px;
+  border: 1px solid var(--border-strong); background: var(--raised); color: var(--text);
+  font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--accent-strong); border-color: transparent; color: #fff; }
+.btn.primary:hover { background: var(--accent); }
+.btn.ghost { background: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--raised); color: var(--text); }
+.btn.sm { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 6px; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; transform: none; }
+.btn.icon { width: 32px; padding: 0; font-size: 16px; }
+
+select {
+  appearance: none; -webkit-appearance: none;
+  height: 30px; padding: 0 28px 0 10px; border-radius: 7px;
+  border: 1px solid var(--border-strong); background-color: var(--raised); color: var(--text);
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  /* CSS-only chevron: no image request, follows the theme colour */
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-2) 50%),
+                    linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+select:hover { background-color: var(--hover); }
+option { background: var(--surface); color: var(--text); }
+input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+/* ---------- Header ---------- */
+.hdr {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "brand banner controls";
+  align-items: center; gap: 16px; min-height: 52px;
+}
+.brand { grid-area: brand; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo {
+  flex: none; width: 38px; height: 38px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: var(--critical); color: #fff;
+  font-size: 30px; font-weight: 800; line-height: 1; padding-bottom: 3px;
+}
+.brand h1 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; line-height: 1.15; white-space: nowrap; }
+.brand p { margin-top: 2px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.simtag {
+  display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid var(--border-strong); color: var(--muted);
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px;
+}
+#banner {
+  grid-area: banner; display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 6px 8px; min-width: 0;
+}
+#banner .chip {
+  display: inline-block; height: 28px; line-height: 26px; padding: 0 13px;
+  font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+.controls { grid-area: controls; display: flex; align-items: center; gap: 10px; }
+.clockbox { text-align: right; margin-right: 6px; }
+#clock {
+  font-size: 30px; font-weight: 650; line-height: 1; letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+}
+#clockSub {
+  margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: .09em;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.field { display: flex; flex-direction: column; gap: 2px; }
+.field > span {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.controls > .btn { align-self: flex-end; }
+
+/* ---------- Scenario toolbar ---------- */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 36px; }
+.tlabel { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+.scn { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.tsep { width: 1px; height: 20px; background: var(--border-strong); margin: 0 4px; }
+.auto {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text-2); cursor: pointer; white-space: nowrap;
+}
+
+/* ---------- Status chips (shared) ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px;
+  border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--text-2);
+  font-size: 11.5px; font-weight: 600; line-height: 1; white-space: nowrap;
+  font-variant-numeric: tabular-nums; vertical-align: middle;
+}
+.chip.sm { height: 18px; padding: 0 6px; font-size: 10.5px; gap: 4px; }
+.chip.critical { background: var(--critical); border-color: var(--critical); color: #fff; }
+.chip.serious { background: var(--serious-weak); border-color: rgba(236, 131, 90, .55); color: var(--serious-fg); }
+.chip.warning { background: var(--warning-weak); border-color: rgba(250, 178, 25, .5); color: var(--warning-fg); }
+.chip.good { background: var(--good-weak); border-color: rgba(12, 163, 12, .5); color: var(--good-fg); }
+.chip.info { background: var(--accent-weak); border-color: rgba(57, 135, 229, .5); color: var(--accent-fg); }
+
+/* ---------- ESI v4 triage badges ---------- */
+.esi {
+  flex: none; display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 7px; line-height: 1;
+  background: var(--raised); color: var(--text);
+}
+.esi b { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.esi small { margin-top: 1px; font-size: 8.5px; font-weight: 700; letter-spacing: .08em; opacity: .85; }
+.esi.mini {
+  display: inline-flex; flex-direction: row; gap: 3px; width: auto; height: 18px; padding: 0 6px;
+  border-radius: 4px; font-size: 10.5px; font-weight: 700; white-space: nowrap; vertical-align: middle;
+}
+.esi.mini b { font-size: inherit; }
+.esi.mini small { margin: 0; font-size: inherit; letter-spacing: 0; opacity: 1; }
+.esi.e1 { background: var(--critical); color: #fff; }
+.esi.e2 { background: var(--serious); color: #0b0b0b; }
+.esi.e3 { background: var(--warning); color: #0b0b0b; }
+.esi.e4 { background: var(--good); color: #0b0b0b; }
+.esi.e5 { background: #898781; color: #0b0b0b; }
+
+/* ---------- Patient journey strip ---------- */
+.journey { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px 22px; min-height: 88px; }
+.jt {
+  position: relative; min-width: 0; display: flex; flex-direction: column; justify-content: center;
+  padding: 6px 12px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.jt + .jt::before {           /* › separator centred in the 22px gap */
+  content: "›"; position: absolute; left: -23px; top: 50%; width: 22px;
+  transform: translateY(-52%); text-align: center;
+  font-size: 22px; line-height: 1; color: var(--muted); pointer-events: none;
+}
+.jl {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; line-height: 1.3;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jv {
+  margin: 2px 0 1px; font-size: 26px; font-weight: 700; line-height: 1.05; letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jv span { margin-left: 4px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--text-2); }
+.js {
+  font-size: 11.5px; line-height: 1.3; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Inline badges must not grow the line box (keeps the strip inside its height budget) */
+.js .esi.mini, .js .chip { height: 14px; padding: 0 4px; font-size: 9.5px; vertical-align: 1px; }
+.jt.critical { border-color: rgba(208, 59, 59, .6); background: linear-gradient(var(--critical-weak), var(--critical-weak)), var(--surface); box-shadow: inset 0 3px 0 var(--critical); }
+.jt.critical .jv { color: var(--critical-fg); }
+.jt.serious { border-color: rgba(236, 131, 90, .5); box-shadow: inset 0 3px 0 var(--serious); }
+.jt.serious .jv { color: var(--serious-fg); }
+.jt.warning { box-shadow: inset 0 3px 0 var(--warning); }
+.jt.good { box-shadow: inset 0 3px 0 var(--good); }
+.jt.info { box-shadow: inset 0 3px 0 var(--accent); }
+
+/* ---------- Panels ---------- */
+.grid-main {
+  display: grid; gap: var(--gap);
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.85fr) minmax(0, 1.25fr);
+  height: max(420px, calc(100vh - 540px));
+}
+.col { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); min-height: 0; min-width: 0; }
+.col.right { grid-template-rows: minmax(0, 1.3fr) minmax(0, 1fr); }
+.bottom {
+  display: grid; gap: var(--gap); height: 270px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+.panel {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+/* Headers wrap rather than clip: in narrow columns the meta drops to a second line */
+.ph {
+  flex: none; display: flex; flex-wrap: wrap; align-items: center; align-content: center; gap: 2px 10px;
+  min-height: 36px; padding: 5px 12px; border-bottom: 1px solid var(--border);
+}
+.ph h2 {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2);
+}
+.meta {
+  margin-left: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.ph .btn { flex: none; height: 24px; }
+.pb {
+  flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  padding: 8px 10px 10px;
+}
+.pb:focus-visible { outline-offset: -2px; }   /* panels clip overflow, so draw the ring inside */
+.empty { padding: 18px 10px; text-align: center; font-size: 12.5px; color: var(--muted); }
+.sect {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 2px 5px; background: var(--surface);
+  /* paints over the scroller's top padding while stuck, whichever box the browser sticks to */
+  box-shadow: 0 -8px 0 var(--surface);
+  font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.sect:not(:first-child) { margin-top: 8px; }
+
+/* ---------- Generic bars ---------- */
+.bar { position: relative; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.bar.good > i, .bar > i.good { background: var(--good); }
+.bar.warning > i, .bar > i.warning { background: var(--warning); }
+.bar.critical > i, .bar > i.critical { background: var(--critical); }
+
+/* ---------- Inbound ambulances ---------- */
+#inbound { display: flex; flex-direction: column; gap: 6px; }
+#inbound > .sect { margin-bottom: -2px; }
+.amb {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
+  border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border);
+}
+.amb-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 12.5px; }
+.amb-top > :first-child { font-weight: 700; white-space: nowrap; }
+.amb-top .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+.eta {
+  margin-left: auto; flex: none; font-size: 15px; font-weight: 700; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.amb .bar { height: 4px; }
+.amb-pts { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--text-2); }
+.amb-pts > * { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.amb-prep { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.amb-prep:empty { display: none; }
+.amb-prep.good { color: var(--good-fg); }
+.amb-prep.warning { color: var(--warning-fg); }
+.amb-prep.info { color: var(--accent-fg); }
+.amb.diverted { background: transparent; border-style: dashed; opacity: .7; }
+.amb.diverted .eta { color: var(--muted); font-size: 12px; }
+
+/* ---------- Nursing staff ---------- */
+.nurse {
+  display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 4px 2px;
+  border-bottom: 1px solid var(--border); font-size: 12.5px;
+}
+.nurse:last-child { border-bottom: 0; }
+.nn { flex: 1 1 auto; min-width: 5.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.nn .chip { margin-left: 6px; }
+.nh { flex: none; width: 4.4em; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nbar { flex: 0 1 76px; min-width: 28px; height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.nbar > i { display: block; height: 100%; border-radius: inherit; background: var(--text-2); }
+.nbar > i.good, .nbar.good > i { background: var(--good); }
+.nbar > i.warning, .nbar.warning > i { background: var(--warning); }
+.nbar > i.critical, .nbar.critical > i { background: var(--critical); }
+.nl { flex: none; min-width: 3.4em; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nurse.off, .nurse.incoming { color: var(--muted); }
+.nurse.off .nn, .nurse.incoming .nn { font-weight: 500; }
+
+/* ---------- Patients (rows are buttons that open the record) ---------- */
+#patients { display: flex; flex-direction: column; gap: 4px; }
+.prow {
+  appearance: none; width: 100%; margin: 0; text-align: left; cursor: pointer;
+  display: grid; align-items: center; column-gap: 10px; row-gap: 3px;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.95fr) 78px minmax(0, .95fr);
+  padding: 6px 10px; border-radius: 8px; border: 1px solid transparent;
+  background: var(--surface-2); color: var(--text); font-size: 12.5px; line-height: 1.3;
+}
+.prow:hover { background: var(--hover); }
+.prow:focus-visible { outline-offset: -2px; }
+.prow[aria-disabled="true"] { cursor: default; }
+.prow.f-critical {
+  background: linear-gradient(90deg, var(--critical-weak), transparent 75%), var(--surface-2);
+  border-color: rgba(208, 59, 59, .45); box-shadow: inset 3px 0 0 var(--critical);
+}
+.prow.f-serious { box-shadow: inset 3px 0 0 var(--serious); }
+.pid, .pcond, .ploc { min-width: 0; overflow: hidden; }
+.pid { font-weight: 600; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.pid > b, .pid > strong { font-weight: 650; }
+.pid > b, .pid > strong, .pcond > b, .pcond > strong, .ploc > b, .ploc > strong {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pid > small, .pid > .muted, .pcond > small, .pcond > .muted, .ploc > small, .ploc > .muted {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; font-weight: 400; color: var(--muted);
+}
+.pcond { color: var(--text); }
+.pvit {
+  display: flex; flex-wrap: wrap; gap: 1px 9px; min-width: 0;
+  font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.pvit > * { white-space: nowrap; }
+.abn { color: var(--critical-fg); font-weight: 700; }
+.pnews {
+  justify-self: start; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 24px; padding: 0 8px; border-radius: 6px; max-width: 100%;
+  background: var(--raised); color: var(--text); border: 1px solid var(--border);
+  font-size: 12px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.pnews small { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; opacity: .8; }
+.pnews.critical { background: var(--critical); border-color: var(--critical); color: #fff; }
+.pnews.serious { background: var(--serious-weak); border-color: rgba(236, 131, 90, .55); color: var(--serious-fg); }
+.ploc { font-size: 12px; color: var(--text-2); white-space: nowrap; text-overflow: ellipsis; }
+.pflag {
+  grid-column: 2 / -1; min-width: 0;
+  font-size: 12px; font-weight: 600; color: var(--text-2); line-height: 1.35;
+}
+.prow.f-critical .pflag { color: var(--critical-fg); }
+.prow.f-serious .pflag { color: var(--serious-fg); }
+
+/* ---------- Bed board ---------- */
+#beds { position: relative; }
+.bedwrap { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.zone { min-width: 0; }
+.zh {
+  display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px;
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  line-height: 14px;
+}
+.beds { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); grid-auto-rows: 32px; gap: 4px; }
+.bed {
+  min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2);
+  font-size: 9.5px; line-height: 1.1; color: var(--text-2); text-align: center;
+  white-space: nowrap; overflow: hidden;
+}
+.bed > b, .bed > strong, .bed > :first-child { font-size: 11.5px; font-weight: 700; color: var(--text); }
+.bed.s-free { background: transparent; border-color: rgba(12, 163, 12, .6); color: var(--good-fg); }
+.bed.s-occupied { background: var(--raised); border-color: transparent; }
+.bed.s-cleaning { background: repeating-linear-gradient(135deg, var(--hatch) 0 4px, transparent 4px 8px), var(--surface-2); color: var(--muted); }
+.bed.s-cleaning > :first-child { color: var(--text-2); }
+.bed.s-reserved { background: var(--accent-weak); border: 1.5px dashed var(--accent); color: var(--accent-fg); }
+.bed.held { border: 1.5px dashed var(--warning); background: var(--warning-weak); color: var(--warning-fg); }
+.bed.e1, .bed.e2, .bed.e3, .bed.e4, .bed.e5 { border-left-width: 4px; border-left-style: solid; }
+.bed.e1 { border-left-color: var(--critical); }
+.bed.e2 { border-left-color: var(--serious); }
+.bed.e3 { border-left-color: var(--warning); }
+.bed.e4 { border-left-color: var(--good); }
+.bed.e5 { border-left-color: #898781; }
+.legend { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.legend > * { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.sw { flex: none; display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-strong); background: var(--surface-2); }
+.sw.s-free, .sw.free { background: transparent; border-color: rgba(12, 163, 12, .7); }
+.sw.s-occupied, .sw.occupied { background: var(--raised); border-left: 3px solid var(--serious); }
+.sw.s-cleaning, .sw.cleaning { background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 4px), var(--surface-2); border-color: var(--axis); }
+.sw.s-reserved, .sw.reserved { background: var(--accent-weak); border: 1.5px dashed var(--accent); }
+.sw.held, .sw.hold { background: var(--warning-weak); border: 1.5px dashed var(--warning); }
+/* Outage: last snapshot stays visible but greyed, under an explicit STALE label */
+#beds > .stale, .bedwrap .stale {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center; padding: 12px; text-align: center;
+  background: repeating-linear-gradient(135deg, var(--hatch) 0 10px, transparent 10px 20px), rgba(13, 13, 13, .55);
+  -webkit-backdrop-filter: grayscale(1); backdrop-filter: grayscale(1);
+  border-radius: 8px; color: var(--warning-fg);
+  font-size: 12.5px; font-weight: 800; letter-spacing: .06em; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+:root[data-theme="light"] #beds > .stale, :root[data-theme="light"] .bedwrap .stale {
+  background: repeating-linear-gradient(135deg, var(--hatch) 0 10px, transparent 10px 20px), rgba(249, 249, 247, .6);
+  text-shadow: none;
+}
+#beds > .stale > *, .bedwrap .stale > * {
+  padding: 6px 12px; border-radius: 6px; background: var(--surface);
+  border: 1px solid var(--warning); text-shadow: none;
+}
+.bedwrap.stale > :not(.stale) { filter: grayscale(1); opacity: .6; }
+
+/* ---------- Equipment & supplies ---------- */
+#equipment {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 2px 18px; align-content: start;
+}
+#equipment > :not(.eq) { grid-column: 1 / -1; }
+.eq { min-width: 0; padding: 4px 0 5px; }
+.eq-top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
+.eq-top > :first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.eq-v { flex: none; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.eq .bar { margin: 4px 0 3px; }
+.eq .bar > i { background: var(--text-2); }
+.eq .bar.good > i, .eq .bar > i.good { background: var(--good); }
+.eq .bar.warning > i, .eq .bar > i.warning { background: var(--warning); }
+.eq .bar.critical > i, .eq .bar > i.critical { background: var(--critical); }
+.eq-note { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- AI decision queue ---------- */
+.cards {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
+}
+.cards > .empty { grid-column: 1 / -1; }
+#decisions > .card + .card { margin-top: 8px; }
+.card {
+  min-width: 0; display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 12px 10px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--muted);
+}
+.card.l1 { border-left-color: var(--critical); background: linear-gradient(90deg, var(--critical-weak), transparent 70%), var(--surface-2); }
+.card.l2 { border-left-color: var(--serious); }
+.card.l3 { border-left-color: var(--accent); }
+.ctype { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.card h3 { font-size: 13.5px; font-weight: 700; line-height: 1.3; }
+.card p { font-size: 12px; line-height: 1.4; color: var(--text-2); }
+.cact { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding-top: 4px; font-size: 11.5px; }
+.cact .muted { font-style: italic; }
+
+/* ---------- Feed / audit tabs ---------- */
+#p-feed .ph { padding-top: 0; padding-bottom: 0; }
+.tabs { display: flex; align-self: stretch; gap: 4px; margin-left: -4px; min-height: 35px; }
+.tab {
+  appearance: none; display: flex; align-items: center; height: 100%; padding: 2px 6px 0;
+  background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap;
+}
+.tab:hover { color: var(--text-2); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline-offset: -2px; }
+.fr {
+  display: flex; align-items: baseline; gap: 8px; padding: 4px 0;
+  border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.35;
+}
+.fr:last-child { border-bottom: 0; }
+.fr time { flex: none; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fr .tag {
+  flex: none; min-width: 5.6em; max-width: 11em; overflow: hidden; text-overflow: ellipsis;
+  padding: 1px 6px; border-radius: 4px; background: var(--raised); color: var(--text-2);
+  font-size: 10.5px; font-weight: 700; text-align: center; white-space: nowrap;
+}
+.fr > :last-child { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+
+/* ---------- Occupancy chart ---------- */
+.chartbox {
+  position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden;
+  margin: 6px 10px 8px; /* no padding: UI sizes the SVG from clientWidth/Height */
+}
+.chartbox > svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; }
+/* Fallback styling only where the UI did not set an attribute itself */
+.chartbox text:not([fill]) { fill: var(--muted); }
+.chartbox text { font-family: var(--font); font-variant-numeric: tabular-nums; }
+.chartbox text:not([font-size]) { font-size: 10.5px; }
+.chartbox line:not([stroke]) { stroke: var(--grid); }
+.chartbox path:not([fill]), .chartbox polyline:not([fill]) { fill: none; }
+.chartbox path:not([stroke]), .chartbox polyline:not([stroke]) { stroke: var(--accent); stroke-width: 2; }
+.xh {
+  position: absolute; top: 0; bottom: 0; width: 0; z-index: 2; pointer-events: none;
+  border-left: 1px dashed var(--text-2);
+}
+.tip {
+  position: absolute; top: 4px; z-index: 3; pointer-events: none;
+  padding: 5px 8px; border-radius: 6px; white-space: nowrap;
+  background: var(--raised); color: var(--text); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+  font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.chartbox:not(:hover) > .xh, .chartbox:not(:hover) > .tip { visibility: hidden; }
+
+/* ---------- Footer: source systems ---------- */
+.foot { display: flex; align-items: center; gap: 12px; min-height: 32px; }
+.sources { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; font-size: 11.5px; color: var(--muted); }
+.src {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px;
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  font-size: 11.5px; font-weight: 600; color: var(--text-2); white-space: nowrap;
+}
+.src .dot { color: var(--good-fg); font-size: 9px; line-height: 1; }
+.src .dot:empty { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.src.offline { border-color: rgba(208, 59, 59, .6); background: var(--critical-weak); color: var(--critical-fg); }
+.src.offline .dot { color: var(--critical-fg); }
+.src.offline .dot:empty { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.foot-act { flex: none; display: flex; gap: 6px; }
+
+/* ---------- Modal ---------- */
+.modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.mback { position: absolute; inset: 0; background: var(--backdrop); }
+.mbox {
+  position: relative; display: flex; flex-direction: column;
+  width: min(980px, 100%); max-height: calc(100vh - 48px);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: var(--shadow);
+}
+.mhead { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--border); }
+#mtitle { flex: 1 1 auto; min-width: 0; font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#mbody { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px 20px; font-size: 13px; }
+#mbody > * + * { margin-top: 12px; }
+#mbody h3, #mbody h4 {
+  margin: 18px 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+#mbody > h3:first-child, #mbody > h4:first-child, .mgrid > * > h3:first-child, .mgrid > * > h4:first-child { margin-top: 0; }
+#mbody p { line-height: 1.5; color: var(--text-2); }
+#mbody ul { margin: 6px 0; padding-left: 18px; color: var(--text-2); line-height: 1.5; }
+#mbody a { color: var(--accent-fg); }
+.mgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
+.mgrid > * { min-width: 0; }
+#mbody table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+#mbody th {
+  padding: 6px 8px; text-align: left; vertical-align: bottom; border-bottom: 1px solid var(--border-strong);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+#mbody td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid var(--border); color: var(--text); }
+#mbody tr:last-child td { border-bottom: 0; }
+#mbody td small { color: var(--muted); }
+#mbody pre {
+  margin: 0; max-height: 320px; overflow: auto; padding: 12px 14px;
+  background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+  font: 11.5px/1.5 var(--mono); color: var(--text-2); white-space: pre; tab-size: 2;
+}
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 16px; margin: 0; font-size: 13px; }
+.kv > :nth-child(odd) { color: var(--muted); }
+.kv dd { margin: 0; }
+.spark { display: block; overflow: visible; }
+.spark:not([width]) { width: 100%; }
+.spark:not([height]) { height: 36px; }
+.spark path:not([fill]), .spark polyline:not([fill]) { fill: none; }
+.spark path:not([stroke]), .spark polyline:not([stroke]) { stroke: var(--accent); stroke-width: 1.5; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: 56px; z-index: 60; transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 8px;
+  background: var(--text); color: var(--page); box-shadow: var(--shadow);
+  font-size: 13px; font-weight: 600; text-align: center;
+}
+.toast:empty { display: none; }
+#toast.show:not(:empty)[hidden] { display: block !important; }   /* either visibility protocol works */
+
+/* ---------- Motion ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  /* New critical banners pulse three times, then stay calm */
+  #banner .chip.critical { animation: pulse 2s ease-out 3; }
+  .toast { animation: rise .2s ease-out; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(208, 59, 59, .6); } 100% { box-shadow: 0 0 0 10px rgba(208, 59, 59, 0); } }
+  @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* ---------- Windows high contrast ---------- */
+@media (forced-colors: active) {
+  .chip, .esi, .bed, .pnews, .card, .src, .bar, .nbar { border: 1px solid CanvasText; }
+  .tab[aria-selected="true"] { border-bottom-color: Highlight; }
+}
+
+/* ---------- ≤1180px: single column, fixed panel heights ---------- */
+@media (max-width: 1180px) {
+  .hdr { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "brand controls" "banner banner"; row-gap: 8px; }
+  #banner { justify-content: flex-start; }
+  .journey { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .journey .jt:nth-child(3n + 1)::before { content: none; }
+  .grid-main, .bottom { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .col, .col.right { display: contents; }
+  #p-inbound { height: 300px; }
+  #p-staff { height: 360px; }
+  #p-patients { height: 560px; }
+  #p-beds { height: 360px; }
+  #p-equip { height: 300px; }
+  #p-dec { height: 420px; }
+  #p-feed { height: 340px; }
+  #p-chart { height: 280px; }
+}
+
+/* ---------- ≤640px: phone ---------- */
+@media (max-width: 640px) {
+  .app { padding: 8px 10px; }
+  .hdr { grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "controls" "banner"; }
+  .brand h1 { font-size: 17px; white-space: normal; }
+  .brand p { white-space: normal; }
+  .controls { flex-wrap: wrap; gap: 8px; }
+  .clockbox { text-align: left; margin-right: auto; }
+  #banner .chip { white-space: normal; height: auto; line-height: 1.3; padding: 5px 12px; border-radius: 12px; }
+  .toolbar .tlabel { width: 100%; }
+  .tsep { display: none; }
+  .auto { margin-left: 0; white-space: normal; }
+  .journey { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; }
+  .journey .jt::before { content: none !important; }
+  .jv { font-size: 22px; }
+  .ph h2 { letter-spacing: .05em; }
+  .prow {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-areas: "esi pid news" "esi cond cond" "vit vit vit" "loc loc loc" "flag flag flag";
+  }
+  .prow > .esi { grid-area: esi; align-self: start; }
+  .prow > .pid { grid-area: pid; }
+  .prow > .pcond { grid-area: cond; }
+  .prow > .pvit { grid-area: vit; }
+  .prow > .pnews { grid-area: news; }
+  .prow > .ploc { grid-area: loc; }
+  .prow > .pflag { grid-area: flag; }
+  .foot { flex-direction: column; align-items: stretch; }
+  .foot-act > .btn { flex: 1; }
+  .modal { padding: 0; }
+  .mbox { width: 100%; max-height: 100vh; height: 100%; border-radius: 0; }
+  .mgrid { grid-template-columns: minmax(0, 1fr); }
+  .toast { bottom: 16px; }
+}
+</style>
+</head>
+<body>
+<noscript><p class="empty">This dashboard needs JavaScript to run its live simulation.</p></noscript>
+<div class="app">
+
+  <header class="hdr">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">+</div>
+      <div>
+        <h1>ER Crisis Command Center</h1>
+        <p>Demo General Hospital · Emergency Department <span class="simtag">Simulated data</span></p>
+      </div>
+    </div>
+    <div id="banner" role="status"></div>
+    <div class="controls">
+      <div class="clockbox">
+        <span class="sr-only">Simulated time</span>
+        <div id="clock">--:--</div>
+        <div id="clockSub">SIM 30×</div>
+      </div>
+      <label class="field"><span>Speed</span>
+        <select id="speed">
+          <option value="1">1×</option>
+          <option value="10">10×</option>
+          <option value="30" selected>30×</option>
+          <option value="60">60×</option>
+        </select>
+      </label>
+      <button type="button" id="pause" class="btn">Pause</button>
+      <label class="field"><span>Role</span>
+        <select id="role">
+          <option value="wall">Wall display</option>
+          <option value="charge" selected>Charge nurse</option>
+          <option value="physician">Physician</option>
+          <option value="admin">IT / Admin</option>
+        </select>
+      </label>
+      <button type="button" id="theme" class="btn icon" aria-label="Switch to light theme" title="Switch theme"><span aria-hidden="true">◐</span></button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <span class="tlabel" id="scnLabel">Run a scenario:</span>
+    <div class="scn" role="group" aria-labelledby="scnLabel">
+      <button type="button" class="btn" data-act="scenario" data-id="pileup">Highway pile-up</button>
+      <button type="button" class="btn" data-act="scenario" data-id="fire">Building fire</button>
+      <button type="button" class="btn" data-act="scenario" data-id="staff">Staff shortage</button>
+      <button type="button" class="btn" data-act="scenario" data-id="equipment">Equipment failure</button>
+      <button type="button" class="btn" data-act="scenario" data-id="outage">System outage</button>
+      <span class="tsep" aria-hidden="true"></span>
+      <button type="button" class="btn ghost" data-act="reset">Reset</button>
+    </div>
+    <label class="auto"><input type="checkbox" id="auto"><span>Auto-accept bed placements</span></label>
+  </div>
+
+  <main class="stack">
+    <section id="journey" class="journey" aria-label="Patient journey: detection to disposition"></section>
+
+    <div class="grid-main">
+      <div class="col left">
+        <section class="panel" id="p-inbound" aria-labelledby="h-inbound">
+          <header class="ph"><h2 id="h-inbound">Inbound · first responders</h2><span id="inboundMeta" class="meta"></span></header>
+          <div id="inbound" class="pb" role="group" aria-labelledby="h-inbound" tabindex="0"></div>
+        </section>
+        <section class="panel" id="p-staff" aria-labelledby="h-staff">
+          <header class="ph"><h2 id="h-staff">Nursing staff</h2><span id="staffMeta" class="meta"></span></header>
+          <div id="staff" class="pb" role="group" aria-labelledby="h-staff" tabindex="0"></div>
+        </section>
+      </div>
+
+      <section class="panel" id="p-patients" aria-labelledby="h-patients">
+        <header class="ph"><h2 id="h-patients">Patients · sorted by AI priority</h2><span id="patientsMeta" class="meta"></span></header>
+        <div id="patients" class="pb"></div>
+      </section>
+
+      <div class="col right">
+        <section class="panel" id="p-beds" aria-labelledby="h-beds">
+          <header class="ph"><h2 id="h-beds">Bed board</h2><span id="bedsMeta" class="meta"></span></header>
+          <div id="beds" class="pb" role="group" aria-labelledby="h-beds" tabindex="0"></div>
+        </section>
+        <section class="panel" id="p-equip" aria-labelledby="h-equip">
+          <header class="ph"><h2 id="h-equip">Equipment &amp; supplies</h2><span id="equipMeta" class="meta"></span></header>
+          <div id="equipment" class="pb" role="group" aria-labelledby="h-equip" tabindex="0"></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <section class="panel" id="p-dec" aria-labelledby="h-dec">
+        <header class="ph">
+          <h2 id="h-dec">AI decision queue</h2><span id="decMeta" class="meta"></span>
+          <button type="button" id="acceptAll" class="btn primary sm" data-act="acceptAll" hidden>Accept all placements</button>
+        </header>
+        <div id="decisions" class="pb"></div>
+      </section>
+
+      <section class="panel" id="p-feed" aria-label="Live data feed and audit log">
+        <header class="ph">
+          <div id="feedTabs" class="tabs" role="tablist" aria-label="Feed view">
+            <button type="button" class="tab" role="tab" id="tab-feed" data-act="tab" data-id="feed" aria-selected="true" aria-controls="feed">Live data feed</button>
+            <button type="button" class="tab" role="tab" id="tab-audit" data-act="tab" data-id="audit" aria-selected="false" aria-controls="feed">Audit log</button>
+          </div>
+        </header>
+        <div id="feed" class="pb" role="tabpanel" aria-label="Messages" tabindex="0"></div>
+      </section>
+
+      <section class="panel" id="p-chart" aria-labelledby="h-chart">
+        <header class="ph"><h2 id="h-chart">ED bed occupancy · last 60 min + forecast</h2><span id="chartMeta" class="meta"></span></header>
+        <div id="chart" class="chartbox" role="img" aria-label="ED bed occupancy over the last 60 minutes with a 30-minute forecast" aria-describedby="chartMeta"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <div id="sources" class="sources" role="group" aria-label="Source system status"></div>
+    <div class="foot-act">
+      <button type="button" class="btn ghost sm" data-act="standards">Standards &amp; security</button>
+      <button type="button" class="btn ghost sm" data-act="datamap">Data map</button>
+    </div>
+  </footer>
+</div>
+
+<div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle" tabindex="-1" hidden>
+  <div class="mback" data-act="close" aria-hidden="true"></div>
+  <div class="mbox">
+    <div class="mhead">
+      <h2 id="mtitle"></h2>
+      <button type="button" class="btn ghost sm" data-act="close" aria-label="Close dialog">✕ Close</button>
+    </div>
+    <div id="mbody"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<div id="sr" class="sr-only" aria-live="polite"></div>
+
+<script>
+'use strict';
+/* =========================================================================
+ * ER Crisis Command Center · 00-core.js
+ * Shared foundation: utilities, clinical reference data, state factory.
+ *
+ * Standards used across the system:
+ *   ESI v4 triage (5 levels) · NEWS2 early-warning score (RCP, 2017)
+ *   LOINC vital-sign codes · ICD-10-CM condition codes
+ *   HL7 FHIR R4 / HL7 v2.5 / IEEE 11073 SDC feeds · WCAG 2.2 AA
+ *
+ * Module rules: 10-engine.js and 20-ai.js never touch the DOM (they also
+ * run headless in Node for testing). 30-ui.js is the only renderer.
+ * ========================================================================= */
+
+/* ---------- Utilities ---------- */
+const $ = (sel, root) => (root || document).querySelector(sel);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const rint = (a, b) => Math.floor(rnd(a, b + 1));
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const r0 = v => Math.round(v);
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+// Every dynamic value that reaches innerHTML goes through esc() (XSS-safe rendering).
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ESC_MAP[c]);
+function weighted(entries) {               // entries: [[key, weight], ...]
+  const total = entries.reduce((s, e) => s + e[1], 0);
+  let r = Math.random() * total;
+  for (const [k, w] of entries) { if ((r -= w) <= 0) return k; }
+  return entries[entries.length - 1][0];
+}
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+const mins = sec => Math.max(0, Math.round(sec / 60));
+const pad2 = n => String(n).padStart(2, '0');
+function simDate(t) { return new Date(S.clock0 + t * 1000); }
+function fmtClock(t) { const d = simDate(t); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+function fmtClockS(t) { const d = simDate(t); return fmtClock(t) + ':' + pad2(d.getSeconds()); }
+const pct = x => Math.round(x * 100) + '%';
+function median(xs) {
+  if (!xs.length) return null;
+  const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+/* ---------- Triage (ESI v4) ---------- */
+const ESI_LABEL = { 1: 'Resuscitation', 2: 'Emergent', 3: 'Urgent', 4: 'Less urgent', 5: 'Non-urgent' };
+// Nursing workload weight per patient by ESI (1.0 = one nurse fully occupied)
+const W_ESI = { 1: 1, 2: 0.5, 3: 0.34, 4: 0.25, 5: 0.2 };
+
+/* ---------- Vital signs (LOINC) ---------- */
+const LOINC = {
+  hr:   { code: '8867-4',  name: 'Heart rate',               unit: '/min' },
+  rr:   { code: '9279-1',  name: 'Respiratory rate',         unit: '/min' },
+  spo2: { code: '59408-5', name: 'Oxygen saturation (SpO2)', unit: '%' },
+  sbp:  { code: '8480-6',  name: 'Systolic blood pressure',  unit: 'mm[Hg]' },
+  temp: { code: '8310-5',  name: 'Body temperature',         unit: 'Cel' },
+};
+function fmtV(key, v) { return key === 'temp' ? v.toFixed(1) : String(Math.round(v)); }
+
+/* ---------- NEWS2 (Royal College of Physicians, 2017; SpO2 scale 1) ---------- */
+function news2(v, onO2) {
+  const rr = r0(v.rr), sp = r0(v.spo2), sbp = r0(v.sbp), hr = r0(v.hr), t = Math.round(v.temp * 10) / 10;
+  let s = 0;
+  s += rr <= 8 ? 3 : rr <= 11 ? 1 : rr <= 20 ? 0 : rr <= 24 ? 2 : 3;
+  s += sp <= 91 ? 3 : sp <= 93 ? 2 : sp <= 95 ? 1 : 0;
+  s += onO2 ? 2 : 0;
+  s += sbp <= 90 ? 3 : sbp <= 100 ? 2 : sbp <= 110 ? 1 : sbp <= 219 ? 0 : 3;
+  s += hr <= 40 ? 3 : hr <= 50 ? 1 : hr <= 90 ? 0 : hr <= 110 ? 1 : hr <= 130 ? 2 : 3;
+  s += v.avpu === 'A' ? 0 : 3;
+  s += t <= 35.0 ? 3 : t <= 36.0 ? 1 : t <= 38.0 ? 0 : t <= 39.0 ? 1 : 2;
+  return s;
+}
+// Per-parameter NEWS2 points (patient detail breakdown)
+function news2Parts(v, onO2) {
+  const rr = r0(v.rr), sp = r0(v.spo2), sbp = r0(v.sbp), hr = r0(v.hr), t = Math.round(v.temp * 10) / 10;
+  return {
+    rr: rr <= 8 ? 3 : rr <= 11 ? 1 : rr <= 20 ? 0 : rr <= 24 ? 2 : 3,
+    spo2: sp <= 91 ? 3 : sp <= 93 ? 2 : sp <= 95 ? 1 : 0,
+    o2: onO2 ? 2 : 0,
+    sbp: sbp <= 90 ? 3 : sbp <= 100 ? 2 : sbp <= 110 ? 1 : sbp <= 219 ? 0 : 3,
+    hr: hr <= 40 ? 3 : hr <= 50 ? 1 : hr <= 90 ? 0 : hr <= 110 ? 1 : hr <= 130 ? 2 : 3,
+    avpu: v.avpu === 'A' ? 0 : 3,
+    temp: t <= 35.0 ? 3 : t <= 36.0 ? 1 : t <= 38.0 ? 0 : t <= 39.0 ? 1 : 2,
+  };
+}
+
+/* ---------- Conditions (ICD-10-CM) ----------
+ * esi: [min,max] triage range · v: presenting vitals · avpu: P(not alert)
+ * det: P(deteriorates while untreated) · delay: [min,max] minutes before drift starts
+ * drift: change per minute while deteriorating · needs: resources on placement
+ *   (blood/burn: [min,max] units; ct/o2/vent: probability)
+ * treat: [min,max] minutes in an ED bed · dispo: outcome weights        */
+const COND = {
+  // Road traffic collision / trauma
+  polytrauma: { label: 'Multiple injuries (polytrauma)', icd: 'T07.XXXA', esi: [1, 1], v: { hr: 132, sbp: 84, rr: 28, spo2: 90, temp: 36.2 }, avpu: 0.4, det: 0.6, delay: [0, 2], drift: { hr: 1.5, sbp: -1.2, rr: 0.3, spo2: -0.2 }, needs: { blood: [4, 6], ct: 1, o2: 1, vent: 0.3 }, treat: [40, 80], dispo: { or: 0.7, icu: 0.3 }, team: 'trauma team' },
+  pneumo:     { label: 'Traumatic pneumothorax', icd: 'S27.0XXA', esi: [1, 2], v: { hr: 122, sbp: 104, rr: 28, spo2: 88, temp: 36.8 }, det: 0.5, delay: [1, 4], drift: { hr: 1.2, sbp: -0.6, rr: 0.4, spo2: -0.4 }, needs: { ct: 1, o2: 1 }, treat: [40, 90], dispo: { icu: 0.5, ward: 0.5 }, team: 'trauma team' },
+  abdo:       { label: 'Intra-abdominal injury', icd: 'S36.90XA', esi: [3, 3], v: { hr: 92, sbp: 122, rr: 18, spo2: 97, temp: 36.9 }, det: 0.9, delay: [3, 7], drift: { hr: 2.2, sbp: -1.8, rr: 0.4, spo2: -0.15 }, needs: { blood: [2, 4], ct: 1 }, treat: [50, 100], dispo: { or: 0.8, icu: 0.2 }, team: 'trauma team' },
+  femur:      { label: 'Fracture of femur', icd: 'S72.90XA', esi: [2, 2], v: { hr: 106, sbp: 124, rr: 20, spo2: 97, temp: 36.9 }, det: 0.15, delay: [2, 8], drift: { hr: 0.8, sbp: -0.6, rr: 0.2, spo2: 0 }, needs: { blood: [0, 2], ct: 0.5 }, treat: [60, 120], dispo: { or: 0.7, ward: 0.3 }, team: 'trauma team' },
+  headinj:    { label: 'Head injury', icd: 'S09.90XA', esi: [2, 3], v: { hr: 88, sbp: 146, rr: 16, spo2: 96, temp: 37.0 }, avpu: 0.3, det: 0.3, delay: [3, 10], drift: { hr: -0.5, sbp: 1.0, rr: -0.2, spo2: -0.1 }, needs: { ct: 1 }, treat: [60, 120], dispo: { icu: 0.35, ward: 0.5, discharge: 0.15 }, team: 'trauma team' },
+  ribs:       { label: 'Multiple rib fractures', icd: 'S22.49XA', esi: [2, 3], v: { hr: 104, sbp: 128, rr: 24, spo2: 94, temp: 36.9 }, det: 0.25, delay: [3, 10], drift: { hr: 0.6, sbp: -0.3, rr: 0.3, spo2: -0.2 }, needs: { ct: 1, o2: 1 }, treat: [60, 120], dispo: { ward: 0.8, icu: 0.2 }, team: 'trauma team' },
+  wrist:      { label: 'Fracture of distal radius', icd: 'S52.509A', esi: [4, 4], v: { hr: 90, sbp: 132, rr: 16, spo2: 99, temp: 36.8 }, treat: [30, 60], dispo: { discharge: 0.85, ward: 0.15 } },
+  whiplash:   { label: 'Sprain of cervical spine', icd: 'S13.4XXA', esi: [4, 5], v: { hr: 84, sbp: 130, rr: 16, spo2: 99, temp: 36.8 }, treat: [20, 40], dispo: { discharge: 1 } },
+  laceration: { label: 'Open wound of head', icd: 'S01.90XA', esi: [4, 4], v: { hr: 88, sbp: 128, rr: 16, spo2: 99, temp: 36.8 }, treat: [25, 45], dispo: { discharge: 1 } },
+  // Building fire
+  smokeMild:  { label: 'Smoke inhalation', icd: 'T59.811A', esi: [3, 3], v: { hr: 98, sbp: 132, rr: 22, spo2: 93, temp: 37.0 }, det: 0.2, delay: [3, 10], drift: { hr: 0.6, sbp: 0, rr: 0.3, spo2: -0.25 }, needs: { o2: 1 }, treat: [40, 90], dispo: { discharge: 0.6, ward: 0.4 }, team: 'burn team' },
+  smokeSev:   { label: 'Smoke inhalation, airway burn', icd: 'T59.811A', esi: [2, 2], v: { hr: 116, sbp: 118, rr: 28, spo2: 89, temp: 37.4 }, det: 0.7, delay: [1, 5], drift: { hr: 1.0, sbp: -0.4, rr: 0.5, spo2: -0.4 }, needs: { o2: 1, vent: 0.6 }, treat: [50, 100], dispo: { icu: 0.8, ward: 0.2 }, team: 'burn team' },
+  burnMinor:  { label: 'Burn, <10% body surface', icd: 'T31.0', esi: [4, 4], v: { hr: 96, sbp: 130, rr: 18, spo2: 98, temp: 37.0 }, needs: { burn: [1, 1] }, treat: [30, 60], dispo: { discharge: 0.9, ward: 0.1 } },
+  burnMod:    { label: 'Burn, 10–19% body surface', icd: 'T31.10', esi: [2, 2], v: { hr: 112, sbp: 122, rr: 22, spo2: 96, temp: 37.2 }, det: 0.3, delay: [3, 10], drift: { hr: 0.8, sbp: -0.5, rr: 0.2, spo2: -0.1 }, needs: { burn: [2, 3], o2: 0.5 }, treat: [60, 120], dispo: { ward: 0.8, icu: 0.2 }, team: 'burn team' },
+  burnMajor:  { label: 'Burn, 30–39% body surface', icd: 'T31.30', esi: [1, 1], v: { hr: 128, sbp: 96, rr: 26, spo2: 91, temp: 36.4 }, det: 0.6, delay: [0, 3], drift: { hr: 1.0, sbp: -0.8, rr: 0.3, spo2: -0.3 }, needs: { burn: [3, 4], o2: 1, vent: 0.5, blood: [0, 2] }, treat: [60, 120], dispo: { icu: 1 }, team: 'burn team' },
+  // Everyday ED
+  chestPain:  { label: 'Chest pain', icd: 'R07.9', esi: [2, 2], v: { hr: 98, sbp: 150, rr: 18, spo2: 97, temp: 36.9 }, det: 0.15, delay: [3, 12], drift: { hr: 0.8, sbp: -1, rr: 0.2, spo2: -0.1 }, treat: [60, 150], dispo: { ward: 0.5, discharge: 0.4, icu: 0.1 }, team: 'cardiac team' },
+  abdoPain:   { label: 'Abdominal pain', icd: 'R10.9', esi: [3, 3], v: { hr: 92, sbp: 128, rr: 18, spo2: 98, temp: 37.6 }, treat: [60, 150], dispo: { discharge: 0.6, ward: 0.3, or: 0.1 } },
+  dyspnea:    { label: 'Shortness of breath', icd: 'R06.00', esi: [3, 3], v: { hr: 102, sbp: 138, rr: 24, spo2: 93, temp: 37.1 }, det: 0.2, delay: [3, 12], drift: { hr: 0.6, sbp: 0, rr: 0.3, spo2: -0.2 }, needs: { o2: 1 }, treat: [60, 140], dispo: { ward: 0.5, discharge: 0.5 } },
+  asthma:     { label: 'Asthma exacerbation', icd: 'J45.901', esi: [3, 3], v: { hr: 108, sbp: 130, rr: 26, spo2: 93, temp: 37.0 }, needs: { o2: 1 }, treat: [40, 90], dispo: { discharge: 0.8, ward: 0.2 } },
+  sepsis:     { label: 'Sepsis', icd: 'A41.9', esi: [3, 3], v: { hr: 104, sbp: 112, rr: 22, spo2: 95, temp: 38.6 }, det: 0.8, delay: [4, 10], drift: { hr: 1.2, sbp: -1.2, rr: 0.3, spo2: -0.15 }, treat: [60, 120], dispo: { icu: 0.4, ward: 0.6 } },
+  stroke:     { label: 'Acute ischaemic stroke', icd: 'I63.9', esi: [1, 2], v: { hr: 88, sbp: 178, rr: 18, spo2: 96, temp: 37.0 }, avpu: 0.5, needs: { ct: 1 }, treat: [40, 80], dispo: { icu: 0.5, ward: 0.5 }, team: 'stroke team' },
+  fever:      { label: 'Fever', icd: 'R50.9', esi: [4, 4], v: { hr: 100, sbp: 124, rr: 18, spo2: 98, temp: 38.7 }, treat: [30, 60], dispo: { discharge: 1 } },
+  ankle:      { label: 'Ankle sprain', icd: 'S93.409A', esi: [5, 5], v: { hr: 82, sbp: 126, rr: 15, spo2: 99, temp: 36.8 }, treat: [20, 40], dispo: { discharge: 1 } },
+};
+
+const MIX = {
+  walkin:    [['chestPain', 3], ['abdoPain', 4], ['dyspnea', 3], ['asthma', 2], ['sepsis', 1.2], ['stroke', 0.6], ['fever', 4], ['ankle', 3], ['laceration', 2], ['wrist', 1.5]],
+  pileup:    [['polytrauma', 1.5], ['pneumo', 2], ['abdo', 2.5], ['femur', 3], ['headinj', 3], ['ribs', 2], ['wrist', 3], ['whiplash', 4], ['laceration', 3]],
+  fire:      [['smokeMild', 5], ['smokeSev', 3], ['burnMinor', 3], ['burnMod', 2], ['burnMajor', 1.5]],
+  minor:     [['wrist', 3], ['whiplash', 4], ['laceration', 4], ['ankle', 2]],
+  fireMinor: [['smokeMild', 3], ['burnMinor', 3]],
+};
+
+const DISPO_LABEL = { discharge: 'discharge home', ward: 'ward bed', icu: 'ICU bed', or: 'operating room' };
+
+/* ---------- ED layout ---------- */
+const ZONES = [
+  { id: 'R', name: 'Resus', count: 4 },
+  { id: 'T', name: 'Trauma', count: 6 },
+  { id: 'A', name: 'Acute', count: 12 },
+  { id: 'F', name: 'Fast track', count: 8 },
+];
+const ZONE_PREF = { 1: ['R', 'T', 'A'], 2: ['T', 'A', 'R'], 3: ['A', 'T'], 4: ['F', 'A'], 5: ['F', 'A'] };
+const zoneName = id => (ZONES.find(z => z.id === id) || { name: id }).name;
+
+/* ---------- The 10 source systems the command center unifies ---------- */
+const SOURCES = [
+  { id: 'ehr',    name: 'EHR',                      short: 'EHR',       std: 'HL7 FHIR R4',          feeds: 'Patient, Encounter, Condition (ICD-10-CM)', panel: 'Patient list, patient record' },
+  { id: 'adt',    name: 'Registration (ADT)',       short: 'ADT',       std: 'HL7 v2.5 ADT',         feeds: 'Arrivals (A04), transfers (A02), discharges (A03)', panel: 'Journey strip, patient list' },
+  { id: 'beds',   name: 'Bed management',           short: 'Beds',      std: 'FHIR Location',        feeds: 'Bed status, cleaning, reservations', panel: 'Bed board' },
+  { id: 'lis',    name: 'Laboratory (LIS)',         short: 'Lab',       std: 'HL7 v2 ORU · LOINC',   feeds: 'Lab results, critical values', panel: 'Patient record' },
+  { id: 'ris',    name: 'Radiology (RIS/PACS)',     short: 'Radiology', std: 'DICOM · HL7 v2 ORM',   feeds: 'CT scanner status and queue', panel: 'Equipment' },
+  { id: 'pharm',  name: 'Pharmacy & blood bank',    short: 'Pharmacy',  std: 'FHIR · GS1 barcodes',  feeds: 'Blood units, medication and supply stock', panel: 'Supplies' },
+  { id: 'rtls',   name: 'Asset tracking (RTLS)',    short: 'RTLS',      std: 'BLE / RFID tags',      feeds: 'Location of ventilators and monitors; backup bed sensors', panel: 'Equipment, bed board' },
+  { id: 'mon',    name: 'Monitors & wearables',     short: 'Monitors',  std: 'IEEE 11073 SDC',       feeds: 'HR, BP, RR, SpO2, temperature (LOINC-coded)', panel: 'Patient list, NEWS2' },
+  { id: 'ems',    name: 'Ambulance dispatch (EMS)', short: 'EMS',       std: 'FHIR · CAD feed',      feeds: 'Incidents, ambulance ETAs, field triage', panel: 'Journey strip, inbound' },
+  { id: 'roster', name: 'Staff rostering',          short: 'Roster',    std: 'REST API · OAuth 2.0', feeds: 'Shifts, hours on duty, on-call list', panel: 'Staff' },
+];
+
+/* ---------- Roles (role-based access, minimum necessary) ----------
+ * names: 'full' | 'partial' | 'none' (wall display & IT see initials only)
+ * act: suggestion types this role may approve · detail: may open records  */
+const ROLES = {
+  wall:      { label: 'Wall display', names: 'none', detail: false, audit: false, act: [] },
+  charge:    { label: 'Charge nurse', names: 'partial', detail: true, audit: false,
+               act: ['placement', 'prearrival', 'retriage', 'supply', 'fatigue', 'callin', 'reassign', 'capacity', 'ct', 'vent', 'needvent', 'outage'] },
+  physician: { label: 'Physician', names: 'full', detail: true, audit: false, act: ['placement', 'prearrival', 'retriage', 'needvent'] },
+  admin:     { label: 'IT / Admin', names: 'none', detail: false, audit: true, act: ['outage'] },
+};
+const prefs = { role: 'charge', autoAccept: false };
+function canAct(type) { return ROLES[prefs.role].act.includes(type); }
+
+const SUGG_LABEL = {
+  placement: 'Bed placement', prearrival: 'Pre-arrival prep', retriage: 'Re-triage', supply: 'Supplies',
+  fatigue: 'Staffing', callin: 'Staffing', reassign: 'Staffing', capacity: 'Capacity',
+  ct: 'Equipment', vent: 'Equipment', needvent: 'Equipment', outage: 'System',
+};
+const LEVEL_LABEL = { 1: 'Critical', 2: 'High', 3: 'Routine' };
+
+/* ---------- Synthetic people (fictional) ---------- */
+const NAMES = {
+  m: ['Ahmed', 'Omar', 'Rahul', 'Jose', 'Yousef', 'Arjun', 'Khalid', 'John', 'Hassan', 'Ravi', 'Faisal', 'Imran', 'Mohammed', 'Vikram', 'Ali', 'Daniel', 'Tariq', 'Suresh'],
+  f: ['Fatima', 'Aisha', 'Priya', 'Maria', 'Sara', 'Mariam', 'Anjali', 'Noura', 'Emily', 'Layla', 'Grace', 'Hind', 'Zainab', 'Reem', 'Joy', 'Meera', 'Huda', 'Ana'],
+  last: ['Al Mansoori', 'Khan', 'Nair', 'Santos', 'Hassan', 'Al Hashimi', 'Sharma', 'Reyes', 'Ibrahim', 'Thomas', 'Al Zaabi', 'Fernandes', 'Haddad', 'Qureshi', 'Menon', 'Cruz', 'Saleh', 'Pillai', 'Abdullah', 'Rahman', 'George', 'Iyer'],
+};
+const NURSES = ['A. Haddad', 'S. Fernandes', 'R. Menon', 'L. Cruz', 'M. Saleh', 'J. Thomas', 'N. Al Zaabi', 'P. Nair', 'K. Qureshi', 'D. Reyes', 'H. Ibrahim', 'T. Pillai', 'F. Rahman', 'G. Santos'];
+const ONCALL = ['B. Kurian', 'E. Morales', 'Y. Al Ali', 'C. Dsouza', 'W. Tan', 'R. Joseph', 'S. Mathew', 'A. Varghese'];
+
+/* ---------- State ---------- */
+let S = null;
+
+function newState(speed) {
+  return {
+    t: 0,                          // simulated seconds since start (may be negative for seeded history)
+    clock0: Date.now(),            // wall-clock origin for displayed times
+    speed: speed || 30,            // simulated seconds per real second
+    running: true,
+    banners: [],                   // [{text, level:'critical'|'serious'|'warning'|'good', key}]
+    incidents: [],                 // see spec.md
+    patients: [], ambulances: [], beds: [], nurses: [],
+    eq: {
+      monitors: 30, vents: 10, ventFaulty: 0,
+      ct: [{ id: 'CT-1', loc: 'ED', online: true, busyUntil: 0 }, { id: 'CT-2', loc: 'Radiology', online: true, busyUntil: 0 }],
+      ctQueue: [],                 // patient ids awaiting CT
+    },
+    sup: {
+      blood: { label: 'O-negative blood', unit: 'units', qty: 22, cap: 40, restock: 20, ask: 'Request 20 units of O-negative blood from the regional blood bank', log: [], pending: false },
+      burn:  { label: 'Burn dressing kits', unit: 'kits', qty: 16, cap: 40, restock: 20, ask: 'Request 20 burn dressing kits from central sterile supply', log: [], pending: false },
+      o2:    { label: 'Portable O₂ cylinders', unit: 'cyl.', qty: 30, cap: 60, restock: 20, ask: 'Request 20 portable O₂ cylinders from the medical gas store', log: [], pending: false },
+    },
+    src: {},                       // id -> {status:'live'|'offline', last:t}
+    sugg: [], dismissed: {},       // dismissed: key -> sim time until which it stays suppressed
+    feed: [], audit: [],
+    occ: [],                       // [{t, occ}] occupancy % sampled per sim minute (max 60)
+    d2b: [],                       // [{t, m}] door-to-bed minutes
+    done: [],                      // [{t, dispo}] completed encounters
+    sched: [],                     // [{at, fn}]
+    icu: { cap: 8, used: 6 }, or: { cap: 4, used: 2 },
+    diversionUntil: 0, walkBoost: null,
+    bedsOffline: false, bedsFallback: false, bedsSnapshot: null, bedsSnapAt: 0, outageUntil: 0,
+    ctRepair: false, ventLoan: false,
+    fc: { pts: [], fullIn: null }, // latest forecast (written by aiPlan)
+    nextPid: 1001, nextAmb: 11, nextInc: 1, nextSugg: 1, nextOnCall: 0, nextNurse: 15,
+    lastSample: -60, lastVitMsg: 0, lastBeat: 0,
+  };
+}
+
+/* ---------- Lookups ---------- */
+const P = id => S.patients.find(p => p.id === id) || null;
+const bed = id => S.beds.find(b => b.id === id) || null;
+const nurse = id => S.nurses.find(n => n.id === id) || null;
+const amb = id => S.ambulances.find(a => a.id === id) || null;
+const ambEsi = a => Math.min(...a.pts.map(P).filter(Boolean).map(p => p.esi), 5);
+const bedsBusy = () => S.beds.filter(b => b.status !== 'free').length;
+const monitorsInUse = () => S.patients.filter(p => p.monitor).length;
+const ventsInUse = () => S.patients.filter(p => p.vent).length;
+const ventsFree = () => Math.max(0, S.eq.vents - S.eq.ventFaulty - ventsInUse());
+const monitorsFree = () => Math.max(0, S.eq.monitors - monitorsInUse());
+const ctOnline = () => S.eq.ct.filter(u => u.online).length;
+const ctWait = () => ctOnline() ? Math.round(S.eq.ctQueue.length * 7 / ctOnline()) : null;
+
+/* ---------- Event plumbing ---------- */
+// Integration feed: one line per message received from a source system.
+function emit(srcId, std, text) {
+  if (srcId === 'beds' && S.bedsOffline) {
+    if (!S.bedsFallback) return;   // feed is down: message never arrives
+    std = 'RTLS backup';
+  }
+  S.feed.unshift({ t: S.t, src: srcId, std, text });
+  if (S.feed.length > 80) S.feed.pop();
+  if (S.src[srcId] && S.src[srcId].status === 'live') S.src[srcId].last = S.t;
+}
+// Audit trail (HIPAA §164.312(b) audit controls): who did what, under which role.
+function audit(text) {
+  S.audit.unshift({ t: S.t, role: ROLES[prefs.role].label, text });
+  if (S.audit.length > 150) S.audit.pop();
+}
+function schedule(delaySec, fn) { S.sched.push({ at: S.t + delaySec, fn }); }
+function runSchedule() {
+  if (!S.sched.length) return;
+  const due = S.sched.filter(e => e.at <= S.t);
+  if (!due.length) return;
+  S.sched = S.sched.filter(e => e.at > S.t);
+  due.forEach(e => e.fn());
+}
+function addBanner(text, level, key) {
+  S.banners = S.banners.filter(b => b.key !== key);
+  S.banners.push({ text, level, key });
+}
+function clearBanner(key) { S.banners = S.banners.filter(b => b.key !== key); }
+
+
+/* =========================================================================
+ * ER Crisis Command Center · 10-engine.js
+ * Live simulation of the ED and the 10 source systems that feed it:
+ * arrivals (EMS + walk-in), physiology, beds, staff, equipment, supplies,
+ * disposition, and the five crisis scenarios.
+ *
+ * Pure state transitions on S plus feed messages via emit(); no DOM access.
+ * Time is simulated seconds (S.t). step(dt) advances in chunks of <= 10 s and
+ * hands control to the AI layer (assessAll/aiPlan) after every chunk.
+ * ========================================================================= */
+
+/* ---------- Tuning ---------- */
+const SIM_CFG = {
+  maxChunkSec: 10,            // largest single advance() so vitals/arrivals stay smooth
+  walkInPerMin: 1 / 7,        // baseline walk-in arrival rate
+  cleaningMin: 8,             // bed turnaround after a patient leaves
+  ctScanMin: 7,
+  labEverySec: 150,           // one LIS result message
+  keepD2bSec: 2 * 3600,
+  keepDoneSec: 2 * 3600,
+  keepSupLogSec: 3600,
+  dropArrivedSec: 120,        // arrived ambulances linger briefly on the inbound board
+  dropDivertedSec: 180,
+  pruneOffNurseSec: 2 * 3600,
+};
+
+// Adult age bands per condition (NEWS2 is validated for patients aged 16+)
+const AGE_BAND = {
+  chestPain: [42, 86], stroke: [52, 90], sepsis: [36, 91], dyspnea: [34, 88],
+  asthma: [16, 48], ankle: [16, 46], whiplash: [18, 64], fever: [16, 72],
+};
+
+/* ---------- Laboratory results (HL7 v2 ORU^R01, LOINC-coded) ---------- */
+const LAB_TESTS = {
+  hgb:  { code: '718-7',   name: 'Hemoglobin',        unit: 'g/dL',    dp: 1, lo: 12,  hi: 17.5, critLo: 8 },
+  lact: { code: '2524-7',  name: 'Lactate',           unit: 'mmol/L',  dp: 1, lo: 0.5, hi: 2,    critHi: 4 },
+  trop: { code: '10839-9', name: 'Troponin I',        unit: 'ng/mL',   dp: 2, lo: 0,   hi: 0.04, critHi: 0.5 },
+  cohb: { code: '20563-3', name: 'Carboxyhemoglobin', unit: '%',       dp: 0, lo: 0,   hi: 3,    critHi: 15 },
+  wbc:  { code: '6690-2',  name: 'Leukocytes',        unit: '10*3/uL', dp: 1, lo: 4,   hi: 11,   critHi: 30 },
+  glu:  { code: '2345-7',  name: 'Glucose',           unit: 'mg/dL',   dp: 0, lo: 70,  hi: 140,  critLo: 50, critHi: 400 },
+};
+// Most informative first result per condition: [test, min, max]
+const LAB_BY_COND = {
+  polytrauma: ['hgb', 6.8, 9.6], abdo: ['hgb', 7.4, 10.5], femur: ['hgb', 9.5, 12.5], pneumo: ['hgb', 11, 14],
+  burnMod: ['hgb', 15, 18.5], burnMajor: ['lact', 2.2, 4.8], sepsis: ['lact', 2.4, 5.4], chestPain: ['trop', 0.01, 0.9],
+  smokeMild: ['cohb', 4, 12], smokeSev: ['cohb', 12, 28], fever: ['wbc', 11, 19], abdoPain: ['wbc', 7, 16],
+};
+
+const countPts = n => n + (n === 1 ? ' pt' : ' pts');
+const occupiesBed = p => p.stage === 'treatment' || p.stage === 'boarding';
+
+/* ---------- Session setup ---------- */
+function init() {
+  S = newState(S ? S.speed : 30);
+
+  for (const z of ZONES) {
+    for (let i = 1; i <= z.count; i++) S.beds.push({ id: z.id + i, zone: z.id, status: 'free', pid: null, until: 0, hold: null });
+  }
+  const hours = shuffle([11.7, 10.5, 8.2, 7.5, 6.9, 5.1, 4.4, 3.9, 3.2, 2.8, 2.1, 1.6, 1.2, 0.6]);
+  NURSES.forEach((name, i) => S.nurses.push({
+    id: 'N' + (i + 1), name, hours: hours[i], status: 'on', handover: false,
+    arriveAt: null, covers: null, offReason: null, offAt: null,
+  }));
+  for (const s of SOURCES) S.src[s.id] = { status: 'live', last: 0 };
+
+  // Baseline census: patients already in treatment (placed silently, no door-to-bed sample)
+  const census = rint(16, 18);
+  for (let i = 0; i < census; i++) {
+    const p = makePatient(weighted(MIX.walkin), 'Walk-in');
+    if (p.esi <= 2 && Math.random() < 0.6) p.src = 'EMS';
+    const b = seedBedFor(p);
+    if (!b) continue;
+    p.stage = 'waiting';
+    p.arrivedAt = -rnd(20, 200) * 60;
+    S.patients.push(p);
+    place(p, b, bestNurse(p), 'baseline', true);
+    p.bedAt = p.arrivedAt + rnd(4, 20) * 60;
+    p.treatEnd = S.t + rnd(8, 120) * 60;
+    // Vitals reflect the treatment already received since bedAt
+    const inBedMin = (S.t - p.bedAt) / 60;
+    relaxVitals(p, 1 - Math.pow(0.93, inBedMin));
+    if (Math.random() < Math.min(1, 0.02 * inBedMin)) p.v.avpu = 'A';
+    seedHistory(p);
+  }
+
+  // Waiting room: an early sepsis that starts to decline within minutes (shows the
+  // early-warning loop without any scenario) plus two routine walk-ins
+  ['sepsis', weighted(MIX.walkin), weighted(MIX.walkin)].forEach((key, i) => {
+    const p = makePatient(key, 'Walk-in');
+    if (i === 0) { p.det = true; p.detStart = S.t + rnd(2, 5) * 60; }
+    p.stage = 'waiting';
+    p.arrivedAt = -rnd(3, 25) * 60;
+    S.patients.push(p);
+    seedHistory(p);
+  });
+
+  for (let i = 0; i < S.icu.used; i++) schedule(rnd(25, 220) * 60, icuStepDown);
+  for (let i = 0; i < S.or.used; i++) schedule(rnd(15, 90) * 60, orFinish);
+
+  // Last hour of occupancy: mean-reverting wander (±6 points) that ends at today's census
+  const now = bedsBusy() / S.beds.length * 100;
+  let w = rnd(-4, 4);
+  for (let m = 60; m >= 1; m--) {
+    w = clamp(w * 0.85 + rnd(-2, 2), -6, 6);
+    S.occ.push({ t: S.t - m * 60, occ: clamp(now + w * Math.min(1, m / 8), 0, 100) });
+  }
+  for (let i = 0; i < 8; i++) S.d2b.push({ t: S.t - rnd(0, 55) * 60, m: rnd(4, 22) });
+  S.d2b.sort((a, b) => a.t - b.t);
+  // Encounters completed in the last hour, so the disposition stage has a baseline
+  const recent = rint(5, 8);
+  for (let i = 0; i < recent; i++) {
+    S.done.push({ t: S.t - rnd(1, 59) * 60, dispo: weighted(Object.entries(COND[weighted(MIX.walkin)].dispo)) });
+  }
+  S.done.sort((a, b) => a.t - b.t);
+
+  emit('ehr', 'FHIR', 'Gateway connected · ' + SOURCES.length + ' source systems streaming');
+  audit('Session started (demo sign-in)');
+  // First plan now, so the first frame (and every reset) shows scores, forecast and decisions
+  assessAll();
+  aiPlan();
+}
+
+// Random free bed in the first preferred zone that has one (baseline looks organic, not R1, R2, R3…)
+function seedBedFor(p) {
+  for (const z of ZONE_PREF[p.esi]) {
+    const free = S.beds.filter(b => b.zone === z && b.status === 'free');
+    if (free.length) return pick(free);
+  }
+  return null;
+}
+
+/* ---------- Patients ---------- */
+function makePatient(condKey, src) {
+  const c = COND[condKey];
+  const sex = Math.random() < 0.5 ? 'M' : 'F';
+  const band = AGE_BAND[condKey] || [18, 82];
+  const v = {
+    hr: c.v.hr + rnd(-4, 4), sbp: c.v.sbp + rnd(-6, 6), rr: c.v.rr + rnd(-1.5, 1.5),
+    spo2: Math.min(100, c.v.spo2 + rnd(-1, 1)), temp: c.v.temp + rnd(-0.2, 0.2),
+    avpu: Math.random() < (c.avpu || 0) ? 'V' : 'A',
+  };
+  return {
+    id: 'P-' + S.nextPid++, mrn: String(rint(1000000, 9999999)),
+    first: pick(sex === 'M' ? NAMES.m : NAMES.f), last: pick(NAMES.last), sex, age: rint(band[0], band[1]),
+    cond: condKey, src, esi: rint(c.esi[0], c.esi[1]), v, onO2: false,
+    det: Math.random() < (c.det || 0),
+    detStart: S.t + (c.delay ? rnd(c.delay[0], c.delay[1]) : 0) * 60,
+    stage: 'inbound', amb: null, arrivedAt: null, reservedBed: null,
+    bed: null, nurse: null, bedAt: null, treatEnd: null, dispo: null, boardSince: null, boardUntil: null,
+    monitor: false, vent: false, needsVent: false, retriaged: false, diverted: false,
+    hist: [], news: news2(v, false), trend: 0, flag: null,
+  };
+}
+
+// Ten per-minute samples before now, so trends and sparklines have context from the first frame
+function seedHistory(p) {
+  const v = p.v;
+  p.hist = [];
+  for (let k = 10; k >= 1; k--) {
+    const s = {
+      hr: v.hr + rnd(-2.5, 2.5), sbp: v.sbp + rnd(-4, 4), rr: v.rr + rnd(-1, 1),
+      spo2: Math.min(100, v.spo2 + rnd(-0.8, 0.8)), temp: v.temp, avpu: v.avpu,
+    };
+    p.hist.push({ t: S.t - k * 60, hr: r0(s.hr), sbp: r0(s.sbp), rr: r0(s.rr), spo2: r0(s.spo2), news: news2(s, p.onO2) });
+  }
+}
+
+function arrive(p) {
+  const c = COND[p.cond];
+  p.stage = 'waiting';
+  p.arrivedAt = S.t;
+  sample(p);
+  emit('adt', 'HL7 v2', `ADT^A04 registered ${p.id} · triage ESI ${p.esi} · ${c.label} (ICD-10-CM ${c.icd})`);
+  if (!p.reservedBed) return;
+  const b = bed(p.reservedBed);
+  if (b && b.status === 'reserved' && b.pid === p.id) place(p, b, bestNurse(p), 'pre-arrival');
+  else p.reservedBed = null;
+}
+
+// Put a patient in a bed and start the encounter. Returns false if the bed is not
+// available to this patient, so a stale decision can never double-book a bed.
+function place(p, b, n, how, silent) {
+  if (!p || !b || p.bed || p.stage === 'done') return false;
+  const ownReservation = b.status === 'reserved' && b.pid === p.id;
+  if (b.status !== 'free' && !ownReservation) return false;
+  if (p.reservedBed && p.reservedBed !== b.id) {
+    const rb = bed(p.reservedBed);
+    if (rb && rb.status === 'reserved' && rb.pid === p.id) { rb.status = 'free'; rb.pid = null; }
+  }
+
+  const c = COND[p.cond], needs = c.needs || {};
+  b.status = 'occupied'; b.pid = p.id; b.hold = null;
+  p.stage = 'treatment'; p.bed = b.id; p.nurse = n ? n.id : null; p.reservedBed = null;
+  p.bedAt = S.t; p.treatEnd = S.t + rnd(c.treat[0], c.treat[1]) * 60;
+  p.placedHow = how;
+  p.det = false;               // treatment stops untreated deterioration
+  if (!silent && p.arrivedAt != null) {
+    S.d2b.push({ t: S.t, m: (S.t - p.arrivedAt) / 60 });
+    S.d2b = S.d2b.filter(e => e.t >= S.t - SIM_CFG.keepD2bSec);
+  }
+
+  // Equipment and supplies the encounter takes on arrival in the bed
+  const issued = [];
+  if (p.esi <= 3 && monitorsFree() > 0) p.monitor = true;
+  if (needs.vent && (Math.random() < needs.vent || p.v.spo2 < 90)) {
+    if (ventsFree() > 0) p.vent = true; else p.needsVent = true;
+  }
+  if (needs.o2 && Math.random() < needs.o2) { p.onO2 = true; useSup('o2', 1); }
+  for (const key of ['blood', 'burn']) {
+    if (!needs[key]) continue;
+    const k = rint(needs[key][0], needs[key][1]);
+    if (k > 0) { useSup(key, k); issued.push([key, k]); }
+  }
+  if (needs.ct && Math.random() < needs.ct && !S.eq.ctQueue.includes(p.id)) S.eq.ctQueue.push(p.id);
+
+  if (!silent) {
+    emit('beds', 'FHIR', `Location ${b.id} → occupied (${p.id})`);
+    for (const [key, k] of issued) emit('pharm', 'GS1', `Dispensed ${S.sup[key].label} × ${k} → ${p.id} (barcode scan)`);
+  }
+  return true;
+}
+
+function useSup(key, n) {
+  const sp = S.sup[key];
+  if (!sp || !(n > 0)) return;
+  sp.qty = Math.max(0, sp.qty - n);
+  sp.log.push({ t: S.t, n });
+  while (sp.log.length && sp.log[0].t < S.t - SIM_CFG.keepSupLogSec) sp.log.shift();
+}
+
+function leave(p, text) {
+  const b = bed(p.bed);
+  if (b && b.pid === p.id) { b.status = 'cleaning'; b.until = S.t + SIM_CFG.cleaningMin * 60; b.pid = null; b.hold = null; }
+  p.stage = 'done';
+  p.monitor = false; p.vent = false; p.needsVent = false;
+  S.done.push({ t: S.t, dispo: p.dispo });
+  S.eq.ctQueue = S.eq.ctQueue.filter(id => id !== p.id);
+  emit('adt', 'HL7 v2', (p.dispo === 'discharge' ? 'ADT^A03' : 'ADT^A02') + ' ' + p.id + ' · ' + text);
+}
+
+/* ---------- Disposition and exit block (ward, ICU, OR capacity) ---------- */
+function disposition(p) {
+  p.dispo = weighted(Object.entries(COND[p.cond].dispo));
+  if (p.dispo === 'discharge') { leave(p, 'Discharged home'); return; }
+  p.stage = 'boarding';
+  p.boardSince = S.t;
+  if (p.dispo === 'ward') p.boardUntil = S.t + rnd(8, 35) * 60;
+  tryLeave(p);
+}
+
+function tryLeave(p) {
+  if (p.dispo === 'ward') {
+    if (S.t >= p.boardUntil) leave(p, 'Admitted to ward');
+  } else if (p.dispo === 'icu') {
+    if (S.icu.used < S.icu.cap) {
+      S.icu.used++;
+      schedule(rnd(90, 240) * 60, icuStepDown);
+      leave(p, 'Admitted to ICU');
+    }
+  } else if (p.dispo === 'or') {
+    if (S.or.used < S.or.cap) {
+      S.or.used++;
+      schedule(rnd(60, 120) * 60, orFinish);
+      leave(p, 'Taken to operating room');
+    }
+  }
+}
+
+function icuStepDown() {
+  S.icu.used = Math.max(0, S.icu.used - 1);
+  emit('ehr', 'FHIR', `ICU patient stepped down to ward · ICU ${S.icu.cap - S.icu.used}/${S.icu.cap} beds free`);
+}
+
+function orFinish() {
+  S.or.used = Math.max(0, S.or.used - 1);
+  emit('ehr', 'FHIR', `Operating room case completed · ${S.or.cap - S.or.used}/${S.or.cap} theatres free`);
+}
+
+/* ---------- EMS ---------- */
+function dispatchAmb(inc, mixKey, n) {
+  const a = {
+    id: 'AMB-' + S.nextAmb++, incident: inc.id, pts: [], dispatchedAt: S.t,
+    sceneUntil: S.t + rnd(3, 8) * 60, eta: 0, status: 'onscene', arrivedAt: null, divertedAt: null,
+    prepared: false, prepBed: null, team: null,
+  };
+  a.eta = a.sceneUntil + rnd(5, 12) * 60;
+  for (let i = 0; i < n; i++) {
+    const p = makePatient(weighted(MIX[mixKey]), 'EMS');
+    p.amb = a.id;
+    // En-route care keeps casualties compensated; untreated decline (e.g. a silent
+    // abdominal bleed) starts after handover, in the waiting room where the AI must catch it.
+    p.detStart += a.eta - S.t;
+    a.pts.push(p.id);
+    S.patients.push(p);
+  }
+  S.ambulances.push(a);
+  emit('ems', 'CAD', `${a.id} on scene · ${countPts(n)} field-triaged · worst ESI ${ambEsi(a)}`);
+  if (S.diversionUntil > S.t && ambEsi(a) >= 4) divert(a);
+  return a;
+}
+
+function divert(a) {
+  if (!a || a.status === 'arrived' || a.status === 'diverted') return;
+  const esi = ambEsi(a);
+  const pts = a.pts.map(P).filter(p => p && p.stage === 'inbound');
+  a.status = 'diverted';
+  a.divertedAt = S.t;
+  for (const p of pts) {
+    p.stage = 'done';
+    p.diverted = true;
+    const rb = p.reservedBed ? bed(p.reservedBed) : null;
+    if (rb && rb.status === 'reserved' && rb.pid === p.id) { rb.status = 'free'; rb.pid = null; }
+    p.reservedBed = null;
+  }
+  emit('ems', 'CAD', `${a.id} diverted to nearest available ED · ${countPts(pts.length)} · worst ESI ${esi}`);
+}
+
+/* ---------- Staff ---------- */
+function callIn(etaMin) {
+  const n = {
+    id: 'N' + S.nextNurse++, name: ONCALL[S.nextOnCall++ % ONCALL.length], hours: 0, status: 'incoming',
+    handover: false, arriveAt: S.t + etaMin * 60, covers: null, offReason: null, offAt: null,
+  };
+  S.nurses.push(n);
+  emit('roster', 'REST API', `On-call nurse ${n.name} called in · ETA ${Math.round(etaMin)} min`);
+  return n;
+}
+
+function nurseArrives(n) {
+  n.status = 'on';
+  emit('roster', 'REST API', `On-call nurse ${n.name} arrived · on duty`);
+  const old = n.covers ? nurse(n.covers) : null;
+  if (!old) return;
+  const pts = S.patients.filter(p => p.nurse === old.id && occupiesBed(p));
+  for (const p of pts) p.nurse = n.id;
+  if (old.status === 'on') { old.status = 'off'; old.offReason = 'Handed over'; old.offAt = S.t; }
+  old.handover = false;
+  emit('roster', 'I-PASS', `Structured handover: ${old.name} → ${n.name} (${pts.length} patient${pts.length === 1 ? '' : 's'})`);
+}
+
+/* ---------- Clock ---------- */
+function step(dt) {
+  if (!S || !(dt > 0)) return;
+  let left = dt;
+  while (left > 1e-6) {
+    const d = Math.min(SIM_CFG.maxChunkSec, left);
+    advance(d);
+    left -= d;
+  }
+}
+
+function advance(d) {
+  const dm = d / 60;
+  S.t += d;
+  runSchedule();
+  advanceAmbulances();
+  advanceWalkIns(dm);
+  for (const p of S.patients) {
+    updateVitals(p, dm);
+    if (p.stage === 'treatment' && S.t >= p.treatEnd) disposition(p);
+    else if (p.stage === 'boarding') tryLeave(p);
+  }
+  S.patients = S.patients.filter(p => p.stage !== 'done');
+  advanceBeds();
+  advanceCt();
+  advanceStaff(d);
+  advanceTelemetry(d);
+  if (S.bedsOffline && S.t >= S.outageUntil) restoreBeds();
+  resolveBanners();
+  // AI layer (20-ai.js) re-reads the whole state after every change
+  assessAll();
+  aiPlan();
+}
+
+function advanceAmbulances() {
+  for (const a of S.ambulances) {
+    if (a.status === 'onscene' && S.t >= a.sceneUntil) {
+      a.status = 'enroute';
+      emit('ems', 'CAD', `${a.id} departed scene · ${countPts(a.pts.length)} · ETA ${mins(a.eta - S.t)} min`);
+    }
+    if (a.status === 'enroute' && S.t >= a.eta) {
+      a.status = 'arrived';
+      a.arrivedAt = S.t;
+      const pts = a.pts.map(P).filter(p => p && p.stage === 'inbound');
+      emit('ems', 'CAD', `${a.id} arrived · handover of ${countPts(pts.length)} received`);
+      for (const p of pts) arrive(p);
+    }
+  }
+  S.ambulances = S.ambulances.filter(a =>
+    !(a.status === 'arrived' && S.t - a.arrivedAt > SIM_CFG.dropArrivedSec) &&
+    !(a.status === 'diverted' && S.t - a.divertedAt > SIM_CFG.dropDivertedSec));
+}
+
+// Poisson walk-ins; during an MCI the "worried well" and minor casualties self-present
+function advanceWalkIns(dm) {
+  if (S.walkBoost && S.t >= S.walkBoost.until) S.walkBoost = null;
+  const boost = S.walkBoost;
+  const rate = SIM_CFG.walkInPerMin + (boost ? boost.rate : 0);
+  if (Math.random() >= rate * dm) return;
+  const mix = boost && Math.random() < 0.6 ? boost.mix : 'walkin';
+  const p = makePatient(weighted(MIX[mix]), 'Walk-in');
+  S.patients.push(p);
+  arrive(p);
+}
+
+function advanceBeds() {
+  for (const b of S.beds) {
+    if (b.status === 'cleaning' && S.t >= b.until) {
+      b.status = 'free';
+      b.until = 0;
+      emit('beds', 'FHIR', `Location ${b.id} → available (cleaned)`);
+    }
+  }
+}
+
+function advanceCt() {
+  for (const u of S.eq.ct) {
+    if (!u.online || u.busyUntil > S.t) continue;
+    let p = null;
+    while (!p && S.eq.ctQueue.length) {
+      const next = P(S.eq.ctQueue.shift());
+      if (next && occupiesBed(next)) p = next;
+    }
+    if (!p) return;
+    u.busyUntil = S.t + SIM_CFG.ctScanMin * 60;
+    emit('ris', 'DICOM', `${u.id} (${u.loc}) scanning ${p.id}`);
+  }
+}
+
+function advanceStaff(d) {
+  for (const n of S.nurses) {
+    if (n.status === 'on') n.hours += d / 3600;
+    else if (n.status === 'incoming' && S.t >= n.arriveAt) nurseArrives(n);
+  }
+  S.nurses = S.nurses.filter(n => n.status !== 'off' || S.t - n.offAt < SIM_CFG.pruneOffNurseSec ||
+    S.patients.some(p => p.nurse === n.id));
+}
+
+function advanceTelemetry(d) {
+  if (S.t - S.lastSample >= 60) {
+    S.lastSample = S.t;
+    for (const p of S.patients) sample(p);
+    S.occ.push({ t: S.t, occ: bedsBusy() / S.beds.length * 100 });
+    if (S.occ.length > 60) S.occ.shift();
+    S.d2b = S.d2b.filter(e => e.t >= S.t - SIM_CFG.keepD2bSec);
+    S.done = S.done.filter(e => e.t >= S.t - SIM_CFG.keepDoneSec);
+  }
+  if (S.t - S.lastBeat >= 30) {
+    S.lastBeat = S.t;
+    for (const id in S.src) if (S.src[id].status === 'live') S.src[id].last = S.t;
+  }
+  if (S.t - S.lastVitMsg >= 20) {
+    S.lastVitMsg = S.t;
+    emitVitalsMessage();
+  }
+  if (Math.floor(S.t / SIM_CFG.labEverySec) > Math.floor((S.t - d) / SIM_CFG.labEverySec)) emitLabResult();
+}
+
+function emitVitalsMessage() {
+  const pool = S.patients.filter(p => p.stage !== 'inbound');
+  if (!pool.length) return;
+  const p = pick(pool), key = pick(['hr', 'hr', 'spo2', 'sbp', 'rr', 'temp']), L = LOINC[key];
+  emit('mon', 'IEEE 11073', `Observation LOINC ${L.code} ${L.name} = ${fmtV(key, p.v[key])} ${L.unit} · ${p.id}`);
+}
+
+function emitLabResult() {
+  const pool = S.patients.filter(p => p.stage === 'treatment');
+  if (!pool.length) return;
+  const p = pick(pool);
+  const [key, lo, hi] = LAB_BY_COND[p.cond] || ['glu', 82, 176];
+  const T = LAB_TESTS[key], val = rnd(lo, hi);
+  // HL7 v2 OBX-8 abnormal flags: LL/HH critical, L/H outside reference range
+  const flag = val < (T.critLo ?? -Infinity) ? 'LL' : val > (T.critHi ?? Infinity) ? 'HH'
+    : val < T.lo ? 'L' : val > T.hi ? 'H' : '';
+  const tail = flag ? ` [${flag}${flag.length === 2 ? ', critical' : ''}]` : '';
+  emit('lis', 'HL7 v2', `ORU^R01 ${p.id} · LOINC ${T.code} ${T.name} = ${val.toFixed(T.dp)} ${T.unit}${tail}`);
+}
+
+/* ---------- Physiology ---------- */
+function updateVitals(p, dm) {
+  const v = p.v, c = COND[p.cond];
+  if (occupiesBed(p)) {
+    relaxVitals(p, 1 - Math.pow(0.93, dm));
+    if (v.avpu !== 'A' && Math.random() < 0.02 * dm) v.avpu = 'A';
+  } else if (p.det && c.drift && S.t >= p.detStart) {
+    v.hr += c.drift.hr * dm;
+    v.sbp += c.drift.sbp * dm;
+    v.rr += c.drift.rr * dm;
+    v.spo2 += c.drift.spo2 * dm;
+  }
+  v.hr += rnd(-1.5, 1.5) * dm;
+  v.sbp += rnd(-1.5, 1.5) * dm;
+  v.rr += rnd(-0.4, 0.4) * dm;
+  v.spo2 += rnd(-0.3, 0.3) * dm;
+  v.hr = clamp(v.hr, 30, 190);
+  v.sbp = clamp(v.sbp, 50, 220);
+  v.rr = clamp(v.rr, 6, 45);
+  v.spo2 = clamp(v.spo2, 70, 100);
+  v.temp = clamp(v.temp, 34, 41);
+}
+
+// Exponential return toward normal physiology while under treatment (k = fraction closed)
+function relaxVitals(p, k) {
+  const v = p.v;
+  v.hr += (84 - v.hr) * k;
+  v.sbp += (122 - v.sbp) * k;
+  v.rr += (16 - v.rr) * k;
+  v.spo2 += ((p.onO2 || p.vent ? 97 : 96) - v.spo2) * k;
+  v.temp += (37 - v.temp) * k / 2;
+}
+
+function sample(p) {
+  const v = p.v;
+  p.hist.push({ t: S.t, hr: r0(v.hr), sbp: r0(v.sbp), rr: r0(v.rr), spo2: r0(v.spo2), news: news2(v, p.onO2) });
+  if (p.hist.length > 90) p.hist.shift();
+}
+
+/* ---------- Crisis scenarios ---------- */
+function incident(name, where, via, est, kind) {
+  const inc = { id: 'INC-' + S.nextInc++, name, place: where, via, est, startedAt: S.t, kind };
+  S.incidents.push(inc);
+  emit('ems', 'CAD', `${inc.id} detected via ${via}: ${name}, ${where} · est. ${est} casualties`);
+  return inc;
+}
+
+const SCEN = {
+  pileup() {
+    const inc = incident('Multi-vehicle collision', 'E311 highway, km 42', '998 call + smart traffic cameras', 22, 'pileup');
+    [3, 3, 2, 3, 2, 3, 2, 2, 2].forEach((n, i) => schedule(i * 80, () => dispatchAmb(inc, 'pileup', n)));
+    S.walkBoost = { until: S.t + 50 * 60, rate: 1 / 4, mix: 'minor' };
+    addBanner('MCI active · Highway pile-up · 22 casualties expected', 'critical', 'mci-pileup');
+  },
+  fire() {
+    const inc = incident('Residential tower fire', 'Tower B, Sector 4', '997 call + building fire-alarm link', 15, 'fire');
+    [3, 2, 3, 2, 2, 3].forEach((n, i) => schedule(i * 90, () => dispatchAmb(inc, 'fire', n)));
+    S.walkBoost = { until: S.t + 40 * 60, rate: 1 / 6, mix: 'fireMinor' };
+    addBanner('MCI active · Residential tower fire · 15 casualties expected', 'critical', 'mci-fire');
+  },
+  staff() {
+    const pool = S.nurses.filter(n => n.status === 'on' && !n.handover)
+      .sort((a, b) => nurseLoad(b) - nurseLoad(a)).slice(0, 3);
+    if (!pool.length) return;
+    for (const n of pool) { n.status = 'off'; n.offReason = 'Redeployed to ICU'; n.offAt = S.t; }
+    const ids = pool.map(n => n.id);
+    const uncovered = S.patients.filter(p => occupiesBed(p) && ids.includes(p.nurse)).length;
+    emit('roster', 'REST API', `${pool.map(n => n.name).join(', ')} redeployed to ICU · ${uncovered} ED patient${uncovered === 1 ? '' : 's'} without a nurse`);
+    addBanner(`Staff shortage · ${pool.length} nurse${pool.length === 1 ? '' : 's'} redeployed to ICU`, 'serious', 'staff');
+  },
+  equipment() {
+    const ct1 = S.eq.ct.find(u => u.id === 'CT-1');
+    if (ct1) ct1.online = false;
+    S.eq.ventFaulty = Math.min(S.eq.vents, S.eq.ventFaulty + 2);
+    emit('ris', 'DICOM', 'CT-1 (ED) reported offline: gantry fault');
+    emit('rtls', 'RTLS', 'Ventilators V-03, V-08 failed self-test');
+    addBanner('Equipment failure · CT-1 offline · 2 ventilators out of service', 'serious', 'equip');
+  },
+  outage() {
+    if (S.bedsOffline) { S.outageUntil = S.t + 25 * 60; return; }
+    S.bedsOffline = true;
+    S.bedsFallback = false;
+    S.bedsSnapshot = S.beds.map(b => ({ ...b }));
+    S.bedsSnapAt = S.t;
+    S.outageUntil = S.t + 25 * 60;
+    S.src.beds.status = 'offline';
+    // emit() drops bed messages while the interface is down, so the timeout is logged directly
+    S.feed.unshift({ t: S.t, src: 'beds', std: 'FHIR', text: 'Bed management interface not responding (timeout)' });
+    if (S.feed.length > 80) S.feed.pop();
+    addBanner('Bed management feed offline · bed board may be stale', 'serious', 'outage');
+  },
+};
+
+const SCEN_LABEL = {
+  pileup: 'Highway pile-up', fire: 'Residential tower fire', staff: 'Staff shortage',
+  equipment: 'Equipment failure', outage: 'Bed system outage',
+};
+
+function runScenario(id) {
+  // id comes from a DOM data attribute: only own keys of SCEN are runnable
+  if (!Object.prototype.hasOwnProperty.call(SCEN, id)) return false;
+  SCEN[id]();
+  audit('Scenario started: ' + SCEN_LABEL[id]);
+  return true;
+}
+
+function restoreBeds() {
+  const snap = S.bedsSnapshot || [];
+  const changed = S.beds.filter(b => {
+    const was = snap.find(x => x.id === b.id);
+    return !was || was.status !== b.status;
+  }).length;
+  S.bedsOffline = false;
+  S.bedsFallback = false;
+  S.bedsSnapshot = null;
+  S.src.beds.status = 'live';
+  S.src.beds.last = S.t;
+  emit('beds', 'FHIR', `Bed management feed restored · ${changed} bed change${changed === 1 ? '' : 's'} reconciled`);
+  clearBanner('outage');
+}
+
+// Banners reflect live conditions: they stand down once the underlying problem is resolved
+function resolveBanners() {
+  for (const inc of S.incidents) {
+    if (inc.closedAt != null || S.t - inc.startedAt < 20 * 60) continue;
+    const inField = S.ambulances.some(a => a.incident === inc.id && (a.status === 'onscene' || a.status === 'enroute'));
+    const acuteWaiting = S.patients.some(p => p.stage === 'waiting' && p.esi <= 2);
+    if (inField || acuteWaiting) continue;
+    inc.closedAt = S.t;
+    emit('ems', 'CAD', `${inc.id} stand-down: scene cleared, all casualties transported`);
+    if (!S.incidents.some(i => i.kind === inc.kind && i.closedAt == null)) clearBanner('mci-' + inc.kind);
+  }
+  if (S.banners.some(b => b.key === 'equip') && S.eq.ct.every(u => u.online) && S.eq.ventFaulty === 0) clearBanner('equip');
+  if (S.banners.some(b => b.key === 'staff')) {
+    const lastRedeploy = Math.max(-Infinity, ...S.nurses.filter(n => n.offReason === 'Redeployed to ICU').map(n => n.offAt));
+    if (S.t - lastRedeploy >= 10 * 60 && !orphans().length) clearBanner('staff');
+  }
+}
+
+
+/* =========================================================================
+ * ER Crisis Command Center · 20-ai.js
+ * AI decision layer: it does the watching, counting and matching.
+ *   assess()  NEWS2 plus a 12-minute vital-sign trend for every patient
+ *   aiPlan()  turns the whole ED picture into ranked, explained suggestions
+ *   accept() / dismiss()  the only way a suggestion changes anything
+ * Humans decide. Nothing here acts without accept(); only bed placements may
+ * be auto-accepted, and only under the charge nurse's auto-accept policy.
+ *
+ * Safety: findings are worded "consistent with", never as a diagnosis.
+ * Privacy: suggestion and feed texts carry patient IDs only, never names.
+ * Invariant: every bed.hold is the id of a live suggestion (dropSugg releases).
+ * No DOM access: this module also runs headless.
+ * ========================================================================= */
+
+/* ---------- Patient assessment (NEWS2 + trend) ---------- */
+const AI_TREND_SEC = 12 * 60;   // look-back span for trend and vital-sign deltas
+const AI_MIN_SPAN = 4 * 60;     // shorter spans are noise, not a trend
+
+function assessAll() { for (const p of S.patients) assess(p); }
+
+function assess(p) {
+  const v = p.v, h = p.hist || [];
+  p.news = news2(v, p.onO2);
+  // hist is ascending: walk back to the oldest sample still inside the look-back span
+  let ref = null;
+  for (let i = h.length - 1; i >= 0 && h[i].t >= S.t - AI_TREND_SEC; i--) ref = h[i];
+  p.trend = ref ? p.news - ref.news : 0;
+
+  let parts = null, hrUp = false, sbpDown = false, spo2Down = false, rrUp = false;
+  if (ref && S.t - ref.t >= AI_MIN_SPAN) {
+    const hr0 = r0(ref.hr), hr1 = r0(v.hr), sbp0 = r0(ref.sbp), sbp1 = r0(v.sbp);
+    const sp0 = r0(ref.spo2), sp1 = r0(v.spo2), rr0 = r0(ref.rr), rr1 = r0(v.rr);
+    hrUp = hr1 - hr0 >= 15; sbpDown = sbp0 - sbp1 >= 12; spo2Down = sp0 - sp1 >= 3; rrUp = rr1 - rr0 >= 6;
+    if (hrUp || sbpDown || spo2Down || rrUp) {
+      parts = [];
+      if (hrUp) parts.push(`HR ${hr0}→${hr1}`);
+      if (sbpDown) parts.push(`SBP ${sbp0}→${sbp1}`);
+      if (spo2Down) parts.push(`SpO₂ ${sp0}→${sp1}%`);
+      if (rrUp) parts.push(`RR ${rr0}→${rr1}`);
+    }
+  }
+
+  const untreated = p.stage === 'waiting' || p.stage === 'inbound';
+  if (untreated && parts && (p.trend >= 2 || p.news >= 5)) {
+    p.flag = { level: 'critical', det: true,
+      text: `Deteriorating: ${parts.join(', ')} in ${mins(S.t - ref.t)} min`,
+      hint: aiPattern(hrUp, sbpDown, spo2Down, rrUp, v.temp) };
+  } else if (untreated && p.news >= 7) {
+    p.flag = { level: 'critical', det: true, text: `NEWS2 ${p.news}: urgent clinical review`, hint: aiDrivers(p) };
+  } else if (untreated && p.news >= 5) {
+    p.flag = { level: 'serious', det: false, text: `NEWS2 ${p.news}: review within 30 min`, hint: aiDrivers(p) };
+  } else if (p.stage === 'boarding' && S.t - p.boardSince > 20 * 60) {
+    p.flag = { level: 'serious', det: false,
+      text: `Boarding ${mins(S.t - p.boardSince)} min: awaiting ${DISPO_LABEL[p.dispo]}`, hint: aiBoardHint(p) };
+  } else {
+    p.flag = null;
+  }
+}
+
+// Pattern helper: the physiology a set of changes fits. Never a diagnosis.
+function aiPattern(hrUp, sbpDown, spo2Down, rrUp, temp) {
+  if (hrUp && sbpDown) return temp >= 38 ? 'Pattern consistent with septic shock' : 'Pattern consistent with internal bleeding / shock';
+  if (spo2Down || rrUp) return 'Pattern consistent with respiratory deterioration';
+  return 'Physiological trend worsening';
+}
+
+// Which NEWS2 parameters drive a high score, biggest first: "Score driven by RR 28/min, SpO₂ 88%"
+function aiDrivers(p) {
+  const pts = news2Parts(p.v, p.onO2), v = p.v;
+  const items = [
+    [pts.rr, `RR ${r0(v.rr)}/min`], [pts.spo2, `SpO₂ ${r0(v.spo2)}%`], [pts.sbp, `SBP ${r0(v.sbp)}`],
+    [pts.hr, `HR ${r0(v.hr)}`], [pts.avpu, 'responds to voice only (AVPU V)'],
+    [pts.temp, `temp ${v.temp.toFixed(1)} °C`], [pts.o2, 'on supplemental O₂'],
+  ].filter(x => x[0] >= 2).sort((a, b) => b[0] - a[0]);
+  return items.length ? 'Score driven by ' + items.map(x => x[1]).join(', ') : 'Several vital signs mildly abnormal';
+}
+
+function aiBoardHint(p) {
+  const where = `Holding ED bed ${p.bed}`;
+  if (p.dispo === 'icu') return `${where} · ICU ${S.icu.used}/${S.icu.cap} beds occupied`;
+  if (p.dispo === 'or') return `${where} · operating rooms ${S.or.used}/${S.or.cap} in use`;
+  const m = mins((p.boardUntil || S.t) - S.t);
+  return `${where} · ward bed expected ${m ? 'in ~' + m + ' min' : 'now'}`;
+}
+
+// Queue order: acuity first, then physiology, trend, time waited, active alarm.
+function priority(p) {
+  const waitMin = p.stage === 'waiting' && p.arrivedAt != null ? (S.t - p.arrivedAt) / 60 : 0;
+  return (6 - p.esi) * 20 + (p.news || 0) * 4 + Math.max(0, p.trend || 0) * 6
+    + Math.min(waitMin, 60) * 0.4 + (p.flag && p.flag.level === 'critical' ? 25 : 0);
+}
+
+/* ---------- Matching: beds and nurses ---------- */
+function findBed(p) {
+  for (const z of ZONE_PREF[p.esi]) {
+    for (const b of S.beds) if (b.zone === z && b.status === 'free' && !b.hold) return b;
+  }
+  return null;
+}
+
+// One pass: ESI-weighted load already assigned, and load promised by pending placements.
+function aiLoads(exceptPid) {
+  const target = {}, load = {}, held = {};
+  for (const s of S.sugg) if (s.type === 'placement' && s.nurse && s.pid !== exceptPid) target[s.pid] = s.nurse;
+  for (const p of S.patients) {
+    const w = W_ESI[p.esi] || 0;
+    if (p.nurse && (p.stage === 'treatment' || p.stage === 'boarding')) load[p.nurse] = (load[p.nurse] || 0) + w;
+    const to = target[p.id];
+    if (to) held[to] = (held[to] || 0) + w;
+  }
+  return { load, held };
+}
+function nurseLoad(n) { return aiLoads().load[n.id] || 0; }
+function heldLoad(n, exceptPid) { return aiLoads(exceptPid).held[n.id] || 0; }
+
+// Lowest score wins: workload after taking p, with penalties for overload and long hours.
+function aiNurseChoice(p) {
+  const { load, held } = aiLoads(p.id), w = W_ESI[p.esi] || 0;
+  let best = null, bestScore = Infinity, bestBefore = 0, light = null, lightBefore = Infinity;
+  for (const n of S.nurses) {
+    if (n.status !== 'on' || n.handover) continue;
+    const before = (load[n.id] || 0) + (held[n.id] || 0);
+    let score = before + w;
+    if (score > 1.15) score += 1;
+    if (n.hours >= 10) score += 0.25;
+    if (n.hours >= 12) score += 0.6;
+    if (before < lightBefore) { light = n; lightBefore = before; }
+    if (score < bestScore) { best = n; bestScore = score; bestBefore = before; }
+  }
+  // Only the hours penalty can beat the lightest load, so `passed` is the tired nurse spared
+  const passed = best && lightBefore < bestBefore - 1e-9 ? light : null;
+  return best && { n: best, before: bestBefore, after: bestBefore + w, passed };
+}
+function bestNurse(p) { const c = aiNurseChoice(p); return c ? c.n : null; }
+
+function fatigueLevel(n) { return n.hours >= 12 ? 'over' : n.hours >= 10 ? 'tired' : 'ok'; }
+
+function orphans() {
+  return S.patients.filter(p => (p.stage === 'treatment' || p.stage === 'boarding')
+    && (!p.nurse || (nurse(p.nurse) || {}).status !== 'on'));
+}
+
+/* ---------- Supplies and capacity forecast ---------- */
+function minutesLeft(key) {
+  const sp = S.sup[key], from = S.t - 30 * 60;
+  let used = 0;
+  for (let i = sp.log.length - 1; i >= 0 && sp.log[i].t >= from; i--) used += sp.log[i].n;
+  const rate = used / 30;
+  return rate > 0 ? Math.round(sp.qty / rate) : null;
+}
+
+// Expected need of patients not yet in a bed: ranges count their mean, probabilities their value.
+function committed(key) {
+  let need = 0;
+  for (const p of S.patients) {
+    if (p.stage !== 'inbound' && p.stage !== 'waiting') continue;
+    const c = COND[p.cond], r = c && c.needs ? c.needs[key] : null;
+    if (Array.isArray(r)) need += (r[0] + r[1]) / 2;
+    else if (r) need += r;
+  }
+  return Math.round(need);
+}
+
+// Bed demand for the next 30 minutes: occupied + waiting + arriving − expected to leave.
+function forecast() {
+  const total = S.beds.length || 1, busy = bedsBusy(), ends = [], etas = [];
+  let waitingN = 0, boardingN = 0;
+  for (const p of S.patients) {
+    if (p.stage === 'waiting') waitingN++;
+    else if (p.stage === 'boarding') boardingN++;
+    else if (p.stage === 'treatment') ends.push(p.treatEnd);
+  }
+  for (const a of S.ambulances) if (a.status === 'onscene' || a.status === 'enroute') etas.push(a);
+  // Walk-ins: base 1 per 7 min, plus the incident surge only for the minutes it still lasts
+  const boost = S.walkBoost && S.walkBoost.until > S.t ? S.walkBoost : null;
+  const pts = [];
+  let fullIn = null;
+  for (let m = 0; m <= 30; m++) {
+    const at = S.t + m * 60;
+    let arrivals = m / 7 + (boost ? boost.rate * Math.min(m, (boost.until - S.t) / 60) : 0), ended = 0;
+    for (const a of etas) if (a.eta <= at) arrivals += a.pts.length;
+    for (const e of ends) if (e <= at) ended++;
+    const demand = busy + waitingN + arrivals - (ended * 0.75 + boardingN * Math.min(1, m / 30) * 0.5);
+    pts.push({ m, occ: Math.max(0, demand / total * 100) });
+    if (fullIn === null && demand > total) fullIn = m;
+  }
+  return { pts, fullIn };
+}
+
+/* ---------- Suggestion bookkeeping ---------- */
+function addSugg(obj) {
+  const s = Object.assign({ id: 'S' + S.nextSugg++, at: S.t }, obj);
+  S.sugg.push(s);
+  // Auto-accepted placements are applied at once; announcing them too would be noise
+  if (s.level === 1 && !(s.type === 'placement' && prefs.autoAccept)) aiAnnounce(s.title);
+  return s;
+}
+
+function dropSugg(s) {
+  const i = S.sugg.findIndex(x => x.id === s.id);
+  if (i >= 0) S.sugg.splice(i, 1);
+  const b = s.bed ? bed(s.bed) : null;
+  if (b && b.hold === s.id) b.hold = null;
+}
+
+function blocked(key) {
+  return (S.dismissed[key] || 0) > S.t || S.sugg.some(s => s.key === key);
+}
+
+function stillValid(s) {
+  const p = s.pid ? P(s.pid) : null, b = s.bed ? bed(s.bed) : null;
+  const heldHere = !!b && b.status === 'free' && b.hold === s.id;
+  switch (s.type) {
+    case 'placement': return !!p && p.stage === 'waiting' && heldHere;
+    case 'prearrival': {
+      const a = amb(s.amb);
+      return !!a && !!p && (a.status === 'onscene' || a.status === 'enroute') && heldHere;
+    }
+    case 'retriage': return !!p && (p.stage === 'waiting' || p.stage === 'inbound') && p.esi > s.to;
+    case 'supply': return !!S.sup[s.item] && !S.sup[s.item].pending;
+    case 'fatigue': { const n = nurse(s.nurse); return !!n && n.status === 'on' && !n.handover; }
+    case 'reassign': return orphans().length > 0;
+    case 'callin': return S.t - s.at < 20 * 60;
+    case 'capacity': return S.diversionUntil <= S.t;
+    case 'ct': { const u = aiCt1(); return !!u && !u.online && !S.ctRepair; }
+    case 'vent': return S.eq.ventFaulty > 0 && !S.ventLoan;
+    case 'needvent': return !!p && p.needsVent && !p.vent;
+    case 'outage': return S.bedsOffline && !S.bedsFallback;
+    default: return false;
+  }
+}
+
+// Still valid but superseded, so re-plan: the named nurse can no longer take
+// patients (the card would mislead), or the overflow forecast has cleared.
+function aiOutdated(s) {
+  if (s.type === 'placement' && s.nurse) { const n = nurse(s.nurse); return !n || n.status !== 'on' || n.handover; }
+  if (s.type === 'capacity') return S.fc.fullIn === null;
+  return false;
+}
+
+/* ---------- The plan: runs after every engine advance ---------- */
+function aiPlan() {
+  if (!S.announce) S.announce = [];
+
+  // 1. Retire suggestions the situation has moved past (releases their bed holds)
+  for (const s of S.sugg.slice()) if (!stillValid(s) || aiOutdated(s)) dropSugg(s);
+  for (const b of S.beds) if (b.hold && !S.sugg.some(s => s.id === b.hold)) b.hold = null;
+  for (const k in S.dismissed) if (S.dismissed[k] <= S.t) delete S.dismissed[k];
+
+  // 2. Capacity forecast (also feeds the occupancy chart)
+  S.fc = forecast();
+
+  // 3. Re-triage untreated patients whose vital signs are deteriorating
+  for (const p of S.patients) {
+    if ((p.stage !== 'waiting' && p.stage !== 'inbound') || !p.flag || !p.flag.det) continue;
+    const to = p.news >= 9 || r0(p.v.sbp) <= 85 ? 1 : 2, key = 'retriage:' + p.id;
+    if (to >= p.esi || blocked(key)) continue;
+    addSugg({ key, type: 'retriage', level: 1, pid: p.id, to,
+      title: `Re-triage ${p.id} from ESI ${p.esi} to ESI ${to}`,
+      why: `${p.flag.text}. ${p.flag.hint}.` + (p.flag.text.startsWith('NEWS2') ? '' : ` NEWS2 ${p.news}.`) });
+  }
+
+  // 4. Pre-arrival: critical ambulances within 15 min get a bed and a team before the doors open
+  for (const a of S.ambulances) {
+    if ((a.status !== 'onscene' && a.status !== 'enroute') || a.prepared || a.eta - S.t > 15 * 60) continue;
+    const key = 'prearrival:' + a.id;
+    if (blocked(key) || ambEsi(a) > 2) continue;
+    let p = null;
+    for (const id of a.pts) {
+      const q = P(id);
+      if (q && (!p || q.esi < p.esi || (q.esi === p.esi && (q.news || 0) > (p.news || 0)))) p = q;
+    }
+    const b = p && findBed(p);
+    if (!b) continue;
+    const team = aiTeam(p), others = a.pts.length - 1;
+    const s = addSugg({ key, type: 'prearrival', level: p.esi === 1 ? 1 : 2, pid: p.id, bed: b.id, amb: a.id,
+      title: `Prepare for ${a.id}: reserve ${zoneName(b.zone)} ${b.id}, page ${team}`,
+      why: `ETA ${aiEta(a)} · field triage ESI ${p.esi} · ${COND[p.cond].label}`
+        + (others > 0 ? ` · ${aiCount(others, 'more patient')} on board` : '') + '. Bed and team ready before the doors open.' });
+    b.hold = s.id;
+  }
+
+  // Waiting queue, highest priority first (steps 5 and 6)
+  const queue = [], prio = {};
+  let waitingN = 0, inboundN = 0;
+  for (const p of S.patients) {
+    if (p.stage === 'inbound') inboundN++;
+    if (p.stage !== 'waiting') continue;
+    waitingN++;
+    if (p.reservedBed) continue;
+    const pr = priority(p);
+    queue.push({ p, pr });
+    prio[p.id] = pr;
+  }
+  queue.sort((x, y) => y.pr - x.pr);
+
+  // 5. Bed stealing: a much sicker patient with no bed takes one held for a far less urgent patient
+  const freedFrom = {};
+  for (const w of queue) {
+    if (blocked('placement:' + w.p.id) || findBed(w.p)) continue;
+    const zones = ZONE_PREF[w.p.esi];
+    let victim = null, victimPr = w.pr - 15;
+    for (const s of S.sugg) {
+      if (s.type !== 'placement' || prio[s.pid] === undefined || prio[s.pid] >= victimPr) continue;
+      const b = bed(s.bed);
+      if (b && zones.includes(b.zone)) { victim = s; victimPr = prio[s.pid]; }
+    }
+    if (victim) { freedFrom[w.p.id] = victim.pid; dropSugg(victim); }
+  }
+
+  // 6. Placement: best free bed in the ESI-appropriate zone + best-fit nurse, bed held until decided
+  let monSeq = monitorsInUse();   // narrates which monitor RTLS would assign next
+  for (const s of S.sugg) if (s.type === 'placement') { const q = P(s.pid); if (q && q.esi <= 3) monSeq++; }
+  for (const { p } of queue) {
+    const key = 'placement:' + p.id;
+    if (blocked(key)) continue;
+    const b = findBed(p);
+    if (!b) continue;
+    const c = aiNurseChoice(p), n = c ? c.n : null, why = [];
+    if (p.flag) why.push(`NEWS2 ${p.news}${p.trend > 0 ? ' ↑' + p.trend : ''}${p.flag.det ? ', deteriorating' : ''}`);
+    why.push(aiZoneReason(p, b));
+    const waited = mins(S.t - p.arrivedAt);
+    why.push(waited ? `waited ${waited} min` : 'just arrived');
+    if (freedFrom[p.id]) why.push(`bed released from lower-priority ${freedFrom[p.id]}`);
+    why.push(!n ? 'no nurse on duty can take a patient: assign one at placement'
+      : `${n.name} ${c.passed ? 'best fit' : 'lightest load'} (${pct(c.before)} → ${pct(c.after)}), ${n.hours.toFixed(1)} h on shift`
+        + (c.passed ? `; ${c.passed.name} is lighter but at ${c.passed.hours.toFixed(1)} h` : ''));
+    if (p.esi <= 3) why.push(++monSeq <= S.eq.monitors ? `monitor M-${pad2(monSeq)} free nearby (RTLS)` : 'all cardiac monitors in use');
+    const s = addSugg({ key, type: 'placement', level: p.esi <= 2 ? 1 : p.esi === 3 ? 2 : 3,
+      pid: p.id, bed: b.id, nurse: n ? n.id : null,
+      title: `Place ${p.id} (ESI ${p.esi}) in ${zoneName(b.zone)} ${b.id}` + (n ? ` with ${n.name}` : ''),
+      why: why.join(' · ') });
+    b.hold = s.id;
+  }
+
+  // 7. Supplies: low stock, faster burn than restock time, or more committed than on the shelf
+  for (const item in S.sup) {
+    const sp = S.sup[item], key = 'supply:' + item;
+    if (sp.pending || blocked(key)) continue;
+    const left = minutesLeft(item), need = committed(item);
+    const low = sp.qty <= sp.cap * 0.25, short = need > sp.qty, fast = left !== null && left < 45;
+    if (!low && !short && !fast) continue;
+    const why = [`${sp.qty} ${sp.unit} left` + (low ? ` (${pct(sp.qty / sp.cap)} of stock)` : ''),
+      left !== null ? `~${left} min at current use` : 'no use in the last 30 min'];
+    if (need > 0) why.push(`waiting + inbound patients likely need ~${need}`);
+    addSugg({ key, type: 'supply', level: short || (left !== null && left < 20) ? 1 : 2, item,
+      title: sp.ask, why: why.join(' · ') });
+  }
+
+  // 8. Reassign patients whose nurse left; the pending card's count is kept current
+  const orph = orphans();
+  if (orph.length) {
+    const title = `Reassign ${aiCount(orph.length, 'patient')} left without a nurse`;
+    const why = aiOrphanWhy(orph) + 'Balanced by ESI-weighted workload and hours on shift; structured I-PASS handover sent to each new nurse.';
+    const s = S.sugg.find(x => x.key === 'reassign');
+    if (s) { s.title = title; s.why = why; }
+    else if (!blocked('reassign')) addSugg({ key: 'reassign', type: 'reassign', level: 1, title, why });
+  }
+
+  // 9-10. Fatigue relief and call-in, from one pass over the roster
+  const { load } = aiLoads();
+  let onN = 0, sumLoad = 0, incoming = false;
+  for (const n of S.nurses) {
+    if (n.status === 'incoming') incoming = true;
+    if (n.status !== 'on' || n.handover) continue;
+    onN++; sumLoad += load[n.id] || 0;
+    const key = 'fatigue:' + n.id;
+    if (n.hours < 12 || blocked(key)) continue;
+    let k = 0;
+    for (const p of S.patients) if (p.nurse === n.id && (p.stage === 'treatment' || p.stage === 'boarding')) k++;
+    addSugg({ key, type: 'fatigue', level: 2, nurse: n.id,
+      title: `Relieve ${n.name} (${n.hours.toFixed(1)} h on shift): call in on-call nurse`,
+      why: `Over the 12 h safe-shift limit, where error risk rises · caring for ${aiCount(k, 'patient')}, load ${pct(load[n.id] || 0)}`
+        + ' · cover arrives in ~20 min, then structured I-PASS handover of every patient' });
+  }
+  const avg = onN ? sumLoad / onN : Infinity;
+  if ((avg > 0.85 || onN <= 11) && !incoming && !blocked('callin')) {
+    addSugg({ key: 'callin', type: 'callin', level: 2, title: 'Call in 2 on-call nurses',
+      why: (onN <= 11 ? `Only ${onN} nurses free to take patients (${NURSES.length} rostered)` : `${onN} nurses free to take patients`)
+        + (onN ? `, average load ${pct(avg)}${avg > 0.85 ? ' (target ≤ 85%)' : ''}` : '')
+        + ` · ${waitingN} waiting, ${inboundN} inbound · on-call ETA ~25 min` });
+  }
+
+  // 11. Capacity: divert low-acuity ambulances before the ED overflows; critical ones keep coming
+  const fc = S.fc;
+  if (fc.fullIn !== null && S.diversionUntil <= S.t) {
+    let lowAcuity = 0;
+    for (const a of S.ambulances) if ((a.status === 'onscene' || a.status === 'enroute') && ambEsi(a) >= 4) lowAcuity++;
+    const why = `ED beds full ${fc.fullIn === 0 ? 'now' : 'in ~' + fc.fullIn + ' min'}: ${S.beds.length - bedsBusy()} free, `
+      + `${waitingN} waiting, ${inboundN} inbound. Critical patients still come here.`
+      + (lowAcuity ? ` ${aiCount(lowAcuity, 'low-acuity ambulance')} already en route would be redirected.` : '');
+    const s = S.sugg.find(x => x.key === 'capacity');
+    if (s) s.why = why;
+    else if (fc.fullIn <= 20 && !blocked('capacity')) {
+      addSugg({ key: 'capacity', type: 'capacity', level: 1, title: 'Divert ESI 4–5 ambulances to nearby EDs for 45 min', why });
+    }
+  }
+
+  // 12. Equipment and system failures
+  const ct1 = aiCt1();
+  if (ct1 && !ct1.online && !S.ctRepair && !blocked('ct')) {
+    const q = S.eq.ctQueue.length, wait = ctWait();
+    addSugg({ key: 'ct', type: 'ct', level: 2, title: 'Send biomedical engineering to repair CT-1 (ED)',
+      why: 'CT-1 offline: all scans now go to CT-2 (Radiology) · '
+        + (q ? `${aiCount(q, 'patient')} queued` + (wait !== null ? `, ~${wait} min wait` : '') : 'no scans queued yet') + ' · repair takes ~30 min once dispatched' });
+  }
+  if (S.eq.ventFaulty > 0 && !S.ventLoan && !blocked('vent')) {
+    const k = S.eq.ventFaulty, need = committed('vent');
+    addSugg({ key: 'vent', type: 'vent', level: 2, title: `Borrow ${aiCount(k, 'ventilator')} from the anaesthesia pool`,
+      why: `${aiCount(k, 'ventilator')} failed self-test · ${ventsFree()} of ${S.eq.vents - k} working units free`
+        + (need > 0 ? ` · waiting + inbound patients may need ~${need}` : '') + ' · loan arrives in ~10 min' });
+  }
+  for (const p of S.patients) {
+    const key = 'needvent:' + p.id;
+    if (!p.needsVent || p.vent || blocked(key)) continue;
+    addSugg({ key, type: 'needvent', level: 1, pid: p.id,
+      title: `Bring a spare ventilator to ${p.bed || 'the ED'} for ${p.id}`,
+      why: `${p.id} needs ventilation (now SpO₂ ${r0(p.v.spo2)}%, RR ${r0(p.v.rr)}) and no ED ventilator was free at placement`
+        + ' · nearest spare is in the ICU store (RTLS)' });
+  }
+  if (S.bedsOffline && !S.bedsFallback && !blocked('outage')) {
+    addSugg({ key: 'outage', type: 'outage', level: 1, title: 'Bed management feed offline: switch to backup bed sensors',
+      why: `No bed updates since ${fmtClock(S.bedsSnapAt)}` + (mins(S.t - S.bedsSnapAt) ? ` (${mins(S.t - S.bedsSnapAt)} min)` : '')
+        + ' · the bed board is showing stale data'
+        + ' · RTLS occupancy sensors can confirm every bed until the feed recovers' });
+  }
+
+  // 13. Auto-accept policy covers bed placements only
+  if (prefs.autoAccept) for (const s of S.sugg.slice()) if (s.type === 'placement') accept(s, 'auto');
+}
+
+/* ---------- Human decisions ---------- */
+// Applies an approved suggestion. Role checks happen in the UI (canAct) before this is called.
+function accept(s, actor) {
+  if (!S.sugg.some(x => x.id === s.id)) return false;
+  if (!stillValid(s)) { dropSugg(s); return false; }
+  const p = s.pid ? P(s.pid) : null, b = s.bed ? bed(s.bed) : null;
+  switch (s.type) {
+    case 'placement': {
+      let n = s.nurse ? nurse(s.nurse) : null;
+      if (!n || n.status !== 'on' || n.handover) n = bestNurse(p);
+      place(p, b, n, actor);
+      break;
+    }
+    case 'prearrival': {
+      const a = amb(s.amb), team = aiTeam(p);
+      b.status = 'reserved'; b.pid = p.id; b.hold = null;
+      p.reservedBed = b.id;
+      a.prepared = true; a.prepBed = b.id; a.team = team;
+      emit('beds', 'FHIR', `Location ${b.id} → reserved for ${p.id} (${a.id})`);
+      emit('roster', 'Paging', `${team.charAt(0).toUpperCase() + team.slice(1)} paged to ${b.id} for ${a.id}`);
+      break;
+    }
+    case 'retriage': {
+      p.esi = s.to; p.retriaged = true;
+      emit('ehr', 'FHIR', `Encounter ${p.id} priority updated → ESI ${s.to}`);
+      // New acuity means a new zone and urgency: re-plan any pending bed for this patient
+      const old = S.sugg.find(x => x.key === 'placement:' + p.id);
+      if (old) dropSugg(old);
+      break;
+    }
+    case 'supply': {
+      const sp = S.sup[s.item];
+      sp.pending = true;
+      emit('pharm', 'FHIR', `SupplyRequest sent: ${sp.label} × ${sp.restock} · ETA 15 min`);
+      schedule(15 * 60, () => {
+        const before = sp.qty;
+        sp.qty = Math.min(sp.cap, sp.qty + sp.restock); sp.pending = false;
+        emit('pharm', 'GS1', `Received ${sp.label} × ${sp.qty - before} (barcode scan) · stock now ${sp.qty} ${sp.unit}`);
+      });
+      break;
+    }
+    case 'fatigue': {
+      const n = nurse(s.nurse);
+      n.handover = true;
+      const cover = callIn(20);
+      cover.covers = n.id;
+      break;
+    }
+    case 'callin': callIn(25); callIn(25); break;
+    case 'reassign': {
+      const byNurse = {};
+      for (const q of orphans()) {
+        const n = bestNurse(q);
+        if (!n) continue;
+        q.nurse = n.id;
+        (byNurse[n.id] || (byNurse[n.id] = { name: n.name, ids: [] })).ids.push(q.id);
+      }
+      const names = Object.keys(byNurse);
+      if (!names.length) return false;   // nobody on duty can take them: keep the card visible
+      for (const id of names) emit('roster', 'I-PASS', `Structured handover to ${byNurse[id].name}: ${byNurse[id].ids.join(', ')}`);
+      break;
+    }
+    case 'capacity': {
+      S.diversionUntil = S.t + 45 * 60;
+      const low = S.ambulances.filter(a => (a.status === 'onscene' || a.status === 'enroute') && ambEsi(a) >= 4);
+      for (const a of low) divert(a);
+      emit('ems', 'CAD', `Diversion until ${fmtClock(S.diversionUntil)}: ESI 4–5 ambulances go to nearby EDs`
+        + (low.length ? ` · ${aiCount(low.length, 'unit')} en route redirected` : ''));
+      break;
+    }
+    case 'ct': {
+      S.ctRepair = true;
+      emit('ris', 'HL7 v2', 'Work order: biomedical engineering dispatched to CT-1 (ED) · repair ETA 30 min');
+      schedule(30 * 60, () => {
+        const u = aiCt1();
+        if (u) u.online = true;
+        S.ctRepair = false;
+        emit('ris', 'DICOM', 'CT-1 (ED) back online after repair · scan queue shared by 2 scanners');
+      });
+      break;
+    }
+    case 'vent': {
+      const k = S.eq.ventFaulty;
+      S.ventLoan = true;
+      emit('rtls', 'RTLS', `Loan of ${aiCount(k, 'ventilator')} requested from the anaesthesia pool · ETA 10 min`);
+      schedule(10 * 60, () => {
+        S.eq.ventFaulty = 0; S.ventLoan = false;
+        emit('rtls', 'BLE tag', `${aiCount(k, 'loaned ventilator')} arrived and tagged · faulty units sent for repair`);
+      });
+      break;
+    }
+    case 'needvent': {
+      p.vent = true; p.needsVent = false;
+      S.eq.vents += 1;
+      emit('rtls', 'BLE tag', `Ventilator V-${pad2(S.eq.vents)} located in ICU store → ${p.bed || 'ED'} for ${p.id}`);
+      break;
+    }
+    case 'outage': {
+      S.bedsFallback = true;
+      emit('beds', 'RTLS backup', 'Bed board switched to backup RTLS bed sensors');
+      break;
+    }
+    default: return false;
+  }
+  audit((actor === 'auto' ? 'Auto-accepted (policy): ' : 'Accepted: ') + s.title);
+  dropSugg(s);
+  return true;
+}
+
+function dismiss(s) {
+  S.dismissed[s.key] = S.t + 10 * 60;   // stays quiet for 10 sim-minutes, then may return
+  audit('Dismissed: ' + s.title);
+  dropSugg(s);
+}
+
+/* ---------- Small helpers ---------- */
+function aiAnnounce(text) {
+  const a = S.announce || (S.announce = []);
+  a.push(text);
+  if (a.length > 5) a.shift();   // the UI drains this; cap it in case nobody does
+}
+function aiCount(k, word) { return k + ' ' + word + (k === 1 ? '' : 's'); }
+function aiTeam(p) { return (COND[p.cond] && COND[p.cond].team) || 'resus team'; }
+function aiCt1() { return S.eq.ct.find(u => u.id === 'CT-1') || null; }
+function aiEta(a) { const m = Math.round((a.eta - S.t) / 60); return m < 1 ? '<1 min' : m + ' min'; }
+
+function aiZoneReason(p, b) {
+  const pref = ZONE_PREF[p.esi], i = pref.indexOf(b.zone);
+  if (i <= 0) return `${zoneName(b.zone)} ${b.zone === 'R' || b.zone === 'T' ? 'bay' : 'zone'} matches ESI ${p.esi}`;
+  return `${pref.slice(0, i).map(zoneName).join(' and ')} full · ${zoneName(b.zone)} is next-best for ESI ${p.esi}`;
+}
+
+// "R. Menon redeployed to ICU (3), never assigned (1). "
+function aiOrphanWhy(list) {
+  const by = {};
+  for (const p of list) by[p.nurse || ''] = (by[p.nurse || ''] || 0) + 1;
+  return Object.keys(by).map(id => {
+    const n = id ? nurse(id) : null;
+    if (!id) return `never assigned (${by[id]})`;
+    const why = n && n.offReason ? n.offReason.charAt(0).toLowerCase() + n.offReason.slice(1) : 'off duty';
+    return n ? `${n.name} ${why} (${by[id]})` : `nurse unavailable (${by[id]})`;
+  }).join(', ') + '. ';
+}
+
+
+/* =========================================================================
+ * ER Crisis Command Center · 30-ui.js
+ * The only module that touches the DOM. It owns the real-time loop, wires
+ * user input, enforces role-based display rules and renders state `S`.
+ *
+ * Security model in this layer:
+ *   - Escape by default: markup is built with the `html` tagged template,
+ *     which HTML-escapes every interpolated value via esc() unless the value
+ *     is itself markup produced by `html`. setHTML() refuses raw strings.
+ *   - Minimum necessary: names and MRNs are masked per role (pname/pmrn).
+ *   - Access checks + audit: record views and blocked attempts are logged.
+ *   - Automatic logoff after 5 minutes without input for clinical roles.
+ * ========================================================================= */
+
+/* ---------- Escape-by-default HTML builder ---------- */
+class SafeHTML {
+  constructor(s) { this.s = s; }
+  toString() { return this.s; }
+}
+function htmlFragment(v) {
+  if (v instanceof SafeHTML) return v.s;
+  if (Array.isArray(v)) return v.map(htmlFragment).join('');
+  if (v === false || v == null) return '';
+  return esc(v);
+}
+function html(strings, ...vals) {
+  let out = strings[0];
+  for (let i = 0; i < vals.length; i++) out += htmlFragment(vals[i]) + strings[i + 1];
+  return new SafeHTML(out);
+}
+
+// Writes markup only when it changed: keeps buttons clickable, scroll and focus stable.
+const UI_HTML_CACHE = new WeakMap();
+function setHTML(el, content) {
+  if (!el) return false;
+  const markup = content instanceof SafeHTML ? content.s : esc(content);
+  if (UI_HTML_CACHE.get(el) === markup) return false;
+  const active = document.activeElement;
+  let keep = null;
+  if (active && active !== el && el.contains(active) && active.dataset && active.dataset.act) {
+    keep = { act: active.dataset.act, id: active.dataset.id };
+  }
+  el.innerHTML = markup;
+  UI_HTML_CACHE.set(el, markup);
+  if (keep) {
+    let sel = '[data-act="' + CSS.escape(keep.act) + '"]';
+    if (keep.id != null) sel += '[data-id="' + CSS.escape(keep.id) + '"]';
+    const again = el.querySelector(sel);
+    if (again) again.focus({ preventScroll: true });
+  }
+  return true;
+}
+function setText(el, text) {
+  if (el && el.textContent !== text) el.textContent = text;
+}
+function showEl(el, visible) {
+  if (!el) return;
+  el.hidden = !visible;
+  el.style.display = visible ? '' : 'none';
+}
+
+/* ---------- UI state & constants ---------- */
+const UI_LOCK_MS = 5 * 60 * 1000;      // automatic logoff for clinical roles
+const UI_CHART_MS = 1500;              // occupancy chart redraw throttle
+const UI_THEME_KEY = 'ercc.theme';
+const UI_MINUS = '−';
+const UI_SRC_BY_ID = Object.fromEntries(SOURCES.map(s => [s.id, s]));
+const UI = {
+  tab: 'feed', modal: null, lastFocus: null,
+  lastTick: Date.now(), lastInput: Date.now(), lastPointer: 'mouse',
+  theme: 'dark', toastTimer: 0,
+  chartAt: 0, chartW: 0, chartH: 0, geo: null, hoverPx: null,
+};
+
+/* ---------- Small helpers ---------- */
+const nounCount = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
+const agoText = t => { const m = mins(S.t - t); return m < 1 ? 'just now' : m + ' min ago'; };
+const isActiveCare = p => p.stage === 'treatment' || p.stage === 'boarding';
+const condInfo = p => COND[p.cond] || { label: String(p.cond), icd: '' };
+const unitText = u => (u === 'mm[Hg]' ? 'mmHg' : u === 'Cel' ? '°C' : u);
+const LEVEL_ICON = { critical: '▲', serious: '●', warning: '●', good: '✓', info: '●' };
+const LEVEL_WORD = { critical: 'critical', serious: 'needs attention', warning: 'watch', good: 'normal' };
+
+function chipHTML(level, text, size) {
+  return html`<span class="chip${size ? ' ' + size : ''} ${level}">${text}</span>`;
+}
+function esiBadge(esi) {
+  return html`<span class="esi e${esi}" title="ESI ${esi} · ${ESI_LABEL[esi]}"><b>${esi}</b><small>ESI</small></span>`;
+}
+function esiMini(esi) {
+  return html`<span class="esi mini e${esi}">ESI ${esi}</span>`;
+}
+function approverLabels(type) {
+  const labels = Object.values(ROLES).filter(r => r.act.includes(type)).map(r => r.label);
+  return labels.length ? labels.join(' or ') : 'an authorised role';
+}
+// During a bed-feed outage (without backup sensors) the board shows the last snapshot, flagged stale.
+function bedView() {
+  const stale = S.bedsOffline && !S.bedsFallback && Array.isArray(S.bedsSnapshot);
+  return { beds: stale ? S.bedsSnapshot : S.beds, stale };
+}
+function byPriority(list) {
+  return list.map(p => [p, priority(p)]).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+}
+
+/* ---------- Privacy: name & MRN masking by role (minimum necessary) ---------- */
+function pname(p) {
+  const mode = ROLES[prefs.role].names;
+  if (mode === 'full') return p.first + ' ' + p.last;
+  if (mode === 'partial') return p.first.charAt(0) + '. ' + p.last;
+  return p.first.charAt(0) + '.' + p.last.charAt(0) + '.';
+}
+function pmrn(p) {
+  return prefs.role === 'physician' || prefs.role === 'charge' ? String(p.mrn) : '•••' + String(p.mrn).slice(-4);
+}
+
+/* ---------- Toast & screen-reader announcements ---------- */
+function toast(msg) {
+  const el = $('#toast');
+  if (!el) return;
+  el.textContent = msg;
+  showEl(el, true);
+  el.classList.add('show');
+  clearTimeout(UI.toastTimer);
+  UI.toastTimer = setTimeout(() => { el.classList.remove('show'); showEl(el, false); }, 3500);
+}
+function renderAnnouncements() {
+  if (!Array.isArray(S.announce) || !S.announce.length) return;
+  const msgs = S.announce.splice(0, S.announce.length);
+  const sr = $('#sr');
+  if (!sr) return;
+  const shown = msgs.slice(-3);
+  const text = 'New critical decision: ' + shown.join('. ') + (msgs.length > 3 ? '. And ' + (msgs.length - 3) + ' more.' : '.');
+  sr.textContent = '';
+  setTimeout(() => { sr.textContent = text; }, 60);
+}
+
+/* ---------- Header ---------- */
+function renderHeader() {
+  setText($('#clock'), fmtClock(S.t));
+  setText($('#clockSub'), S.running ? 'SIM ' + S.speed + '×' : 'PAUSED');
+  const items = S.banners.slice(-2).map(b => chipHTML(b.level, (b.level === 'critical' ? '▲ ' : '● ') + b.text));
+  if (S.diversionUntil > S.t) {
+    items.push(chipHTML('warning', '● Diverting ESI 4–5 ambulances · ' + mins(S.diversionUntil - S.t) + ' min left'));
+  }
+  setHTML($('#banner'), items.length ? html`${items}` : chipHTML('good', '● Normal operations'));
+  const pb = $('#pause');
+  if (pb) {
+    setText(pb, S.running ? 'Pause' : 'Resume');
+    pb.setAttribute('aria-pressed', String(!S.running));
+  }
+}
+
+/* ---------- Journey strip: detection → disposition ---------- */
+function journeyTile(n, label, level, value, unit, subs) {
+  return html`<div class="jt ${level}" role="group" aria-label="Step ${n}, ${label}: ${LEVEL_WORD[level]}"><div class="jl">${LEVEL_ICON[level]} ${n} · ${label}</div><div class="jv">${value}<span> ${unit}</span></div>${subs.filter(Boolean).map(s => html`<div class="js">${s}</div>`)}</div>`;
+}
+function renderJourney() {
+  const t = S.t, pts = S.patients;
+
+  // 1 Detection
+  const inc = S.incidents[S.incidents.length - 1];
+  const boost = S.walkBoost && t < S.walkBoost.until ? S.walkBoost.rate : 0;
+  const every = 1 / (1 / 7 + boost);
+  const walk = 'Walk-ins ~1 per ' + (every >= 2 ? Math.round(every) : every.toFixed(1)) + ' min' + (boost ? ' (surge)' : '');
+  const t1 = journeyTile(1, 'Detection', inc ? 'critical' : 'good', S.incidents.length,
+    S.incidents.length === 1 ? 'incident' : 'incidents',
+    inc ? [inc.name + ' · ' + inc.place, 'via ' + inc.via] : ['No active incident', walk]);
+
+  // 2 First responders
+  const onScene = S.ambulances.filter(a => a.status === 'onscene');
+  const scenePts = onScene.flatMap(a => a.pts.map(P).filter(Boolean));
+  const esiMix = [1, 2, 3, 4, 5].map(e => [e, scenePts.filter(p => p.esi === e).length]).filter(x => x[1] > 0)
+    .map(([e, k]) => k + '× ESI ' + e).join(' · ');
+  const t2 = journeyTile(2, 'First responders',
+    scenePts.some(p => p.esi === 1) ? 'critical' : onScene.length ? 'serious' : 'good',
+    onScene.length, onScene.length === 1 ? 'unit on scene' : 'units on scene',
+    onScene.length ? [nounCount(scenePts.length, 'patient') + ' field-triaged', esiMix] : ['No units on scene', 'EMS dispatch standing by']);
+
+  // 3 En route
+  const enroute = S.ambulances.filter(a => a.status === 'enroute');
+  const enPts = enroute.reduce((s, a) => s + a.pts.length, 0);
+  const nextEta = enroute.length ? Math.min(...enroute.map(a => a.eta)) : null;
+  const diverted = S.ambulances.filter(a => a.status === 'diverted').length;
+  const nextMin = nextEta == null ? null : mins(nextEta - t);
+  const t3 = journeyTile(3, 'En route',
+    enroute.some(a => ambEsi(a) <= 2) ? 'serious' : enroute.length ? 'warning' : 'good',
+    enPts, enPts === 1 ? 'patient inbound' : 'patients inbound',
+    enroute.length
+      ? [nounCount(enroute.length, 'ambulance'), nextMin < 1 ? 'Next arrival now' : 'Next arrival in ' + nextMin + ' min', diverted ? diverted + ' diverted' : '']
+      : ['No ambulances en route', diverted ? diverted + ' diverted' : '']);
+
+  // 4 Waiting
+  const waiting = pts.filter(p => p.stage === 'waiting');
+  const urgent = waiting.filter(p => p.esi <= 2).length;
+  const longest = waiting.length ? Math.max(...waiting.map(p => mins(t - p.arrivedAt))) : 0;
+  const t4 = journeyTile(4, 'Waiting',
+    urgent ? 'critical' : waiting.length > 5 ? 'serious' : waiting.length ? 'warning' : 'good',
+    waiting.length, 'waiting',
+    [urgent + ' ESI 1–2 waiting', waiting.length ? 'Longest wait ' + longest + ' min' : 'No queue']);
+
+  // 5 In treatment
+  const inCare = pts.filter(isActiveCare).length;
+  const { beds, stale } = bedView();
+  const free = beds.filter(b => b.status === 'free').length;
+  const d2b = median(S.d2b.filter(d => d.t >= t - 3600).map(d => d.m));
+  const t5 = journeyTile(5, 'In treatment',
+    free === 0 ? 'critical' : free <= 3 ? 'serious' : free <= 6 ? 'warning' : 'good',
+    inCare, 'of ' + S.beds.length + ' beds',
+    [nounCount(free, 'bed') + ' free' + (stale ? ' (stale data)' : ''), 'Door-to-bed median ' + (d2b == null ? '—' : Math.round(d2b) + ' min')]);
+
+  // 6 Disposition
+  const recent = S.done.filter(d => d.t >= t - 3600);
+  const cnt = k => recent.filter(d => d.dispo === k).length;
+  const boarding = pts.filter(p => p.stage === 'boarding').length;
+  const icuFree = Math.max(0, S.icu.cap - S.icu.used);
+  const t6 = journeyTile(6, 'Disposition',
+    icuFree === 0 && boarding ? 'critical' : boarding > 3 ? 'serious' : boarding ? 'warning' : 'good',
+    recent.length, 'done · last 60 min',
+    [cnt('discharge') + ' home · ' + cnt('ward') + ' ward · ' + cnt('icu') + ' ICU · ' + cnt('or') + ' OR',
+     boarding + ' boarding · ICU ' + icuFree + ' free']);
+
+  setHTML($('#journey'), html`${[t1, t2, t3, t4, t5, t6]}`);
+}
+
+/* ---------- Inbound ambulances ---------- */
+function ambCard(a) {
+  const inc = S.incidents.find(i => i.id === a.incident);
+  if (a.status === 'diverted') {
+    return html`<div class="amb diverted"><div class="amb-top"><b>${a.id}</b><span class="muted">${inc ? inc.id : ''}</span><span class="eta">Diverted</span></div><div class="amb-prep">${nounCount(a.pts.length, 'patient')} (ESI 4–5) sent to a nearby ED · ${agoText(a.divertedAt)}</div></div>`;
+  }
+  const span = Math.max(1, a.eta - a.dispatchedAt);
+  const progress = clamp((S.t - a.dispatchedAt) / span * 100, 0, 100);
+  const etaMin = mins(a.eta - S.t);
+  const state = a.status === 'onscene' ? 'On scene' : 'En route';
+  const pts = a.pts.map(P).filter(Boolean).sort((x, y) => x.esi - y.esi);
+  let prep = '';
+  if (a.prepared) {
+    const pb = bed(a.prepBed);
+    prep = html`<div class="amb-prep">✓ ${pb ? zoneName(pb.zone) + ' ' : ''}${a.prepBed} reserved · ${a.team || 'resus team'} paged</div>`;
+  } else if (S.sugg.some(s => s.type === 'prearrival' && s.amb === a.id)) {
+    prep = html`<div class="amb-prep muted">Prep suggested — see decision queue</div>`;
+  }
+  return html`<div class="amb"><div class="amb-top"><b>${a.id}</b><span class="muted">${state}${inc ? ' · ' + inc.id : ''}</span><span class="eta">${etaMin < 1 ? 'Arriving' : 'ETA ' + etaMin + ' min'}</span></div><div class="bar" aria-hidden="true"><i style="width:${Math.round(progress)}%"></i></div><div class="amb-pts">${pts.map(p => html`<span>${esiMini(p.esi)} ${condInfo(p).label}</span> `)}</div>${prep}</div>`;
+}
+function renderInbound() {
+  const list = S.ambulances.filter(a => a.status !== 'arrived')
+    .sort((a, b) => (a.status === 'diverted') - (b.status === 'diverted') || a.eta - b.eta);
+  const active = list.filter(a => a.status !== 'diverted');
+  const nPts = active.reduce((s, a) => s + a.pts.length, 0);
+  setText($('#inboundMeta'), active.length ? nounCount(nPts, 'patient') + ' · ' + nounCount(active.length, 'ambulance') : 'None inbound');
+  const emsLive = S.src.ems && S.src.ems.status === 'live';
+  setHTML($('#inbound'), list.length
+    ? html`${list.map(ambCard)}`
+    : html`<p class="empty">No ambulances inbound. EMS dispatch feed ${emsLive ? 'live' : 'offline'}.</p>`);
+}
+
+/* ---------- Staff (nurse workload & fatigue) ---------- */
+function nurseRow(n) {
+  const load = nurseLoad(n), loadPct = Math.round(load * 100);
+  const k = S.patients.filter(x => x.nurse === n.id && isActiveCare(x)).length;
+  const cls = load > 1 ? 'critical' : load > 0.85 ? 'warning' : 'good';
+  const fat = fatigueLevel(n);
+  const hrs = n.hours.toFixed(1) + ' h';
+  let hours = hrs;
+  if (n.status === 'on' && fat === 'over') hours = html`<span class="chip sm critical" title="Over 12 h on shift: fatigue risk">▲ ${hrs}</span>`;
+  else if (n.status === 'on' && fat === 'tired') hours = html`<span class="chip sm warning" title="Over 10 h on shift">● ${hrs}</span>`;
+  let note = '';
+  if (n.status === 'incoming') {
+    const covered = n.covers ? nurse(n.covers) : null;
+    note = 'incoming · ETA ' + mins(n.arriveAt - S.t) + ' min' + (covered ? ' · relieves ' + covered.name : '');
+  } else if (n.status === 'off') {
+    note = 'off · ' + (n.offReason || 'off shift');
+  } else if (n.handover) {
+    const cover = S.nurses.find(x => x.covers === n.id && x.status === 'incoming');
+    note = 'handover pending' + (cover ? ' → ' + cover.name : '');
+  } else if (fat === 'over') {
+    note = 'over 12 h on shift';
+  } else if (fat === 'tired') {
+    note = 'over 10 h on shift';
+  }
+  return html`<div class="nurse${n.status === 'on' ? '' : ' muted'}"><span class="nn">${n.name}${note ? html`<small> · ${note}</small>` : ''}</span><span class="nh">${hours}</span><span class="nbar" aria-hidden="true"><i class="${cls}" style="width:${Math.min(100, loadPct)}%"></i></span><span class="nl">${loadPct}%${load > 1 ? ' ▲' : ''} · ${nounCount(k, 'pt')}</span></div>`;
+}
+function renderStaff() {
+  const t = S.t;
+  const on = S.nurses.filter(n => n.status === 'on');
+  const active = on.filter(n => !n.handover);
+  const avg = active.length ? active.reduce((s, n) => s + nurseLoad(n), 0) / active.length : 0;
+  const tired = on.filter(n => fatigueLevel(n) !== 'ok').length;
+  setText($('#staffMeta'), on.length + ' on duty · avg load ' + Math.round(avg * 100) + '% · ' + tired + ' fatigued · 6 doctors');
+  const list = S.nurses
+    .filter(n => n.status !== 'off' || t - (n.offAt || 0) <= 1800)
+    .map(n => [n, nurseLoad(n)])
+    .sort((a, b) => b[1] - a[1] || b[0].hours - a[0].hours)
+    .map(x => x[0]);
+  const orph = orphans();
+  const alert = orph.length
+    ? html`<p class="chip critical">▲ ${nounCount(orph.length, 'patient')} without an assigned nurse</p>`
+    : '';
+  setHTML($('#staff'), html`${alert}${list.map(nurseRow)}`);
+}
+
+/* ---------- Patients ---------- */
+function vitalsHTML(p) {
+  const hr = r0(p.v.hr), sbp = r0(p.v.sbp), spo2 = r0(p.v.spo2), rr = r0(p.v.rr);
+  const items = [
+    ['HR', hr, '', hr > 110 ? '▲' : hr < 50 ? '▼' : ''],
+    ['SBP', sbp, '', sbp <= 100 ? '▼' : sbp >= 200 ? '▲' : ''],
+    ['SpO₂', spo2, '%', spo2 <= 93 ? '▼' : ''],
+    ['RR', rr, '', rr >= 25 ? '▲' : rr <= 8 ? '▼' : ''],
+  ];
+  return html`${items.map(([k, val, u, arrow]) => arrow
+    ? html`<b class="abn">${k} ${val}${u}${arrow}</b> `
+    : html`<span>${k} ${val}${u}</span> `)}`;
+}
+function locationText(p) {
+  if (p.stage === 'waiting') return 'Waiting ' + mins(S.t - p.arrivedAt) + ' min';
+  if (p.stage === 'inbound') return 'Inbound' + (p.amb ? ' · ' + p.amb : '');
+  if (p.stage === 'boarding') {
+    return p.bed + ' · awaiting ' + (DISPO_LABEL[p.dispo] || 'transfer') + ' ' + mins(S.t - p.boardSince) + ' min';
+  }
+  const n = p.nurse ? nurse(p.nurse) : null;
+  return p.bed + ' · ' + (n && n.status === 'on' ? n.name : '⚠ no nurse');
+}
+function trendText(trend) {
+  return trend > 0 ? ' ↑' + trend : trend < 0 ? ' ↓' + (-trend) : '';
+}
+function patientRow(p) {
+  const c = condInfo(p), f = p.flag;
+  const news = p.news != null ? p.news : news2(p.v, p.onO2);
+  const newsCls = news >= 7 ? ' critical' : news >= 5 ? ' serious' : '';
+  const loc = locationText(p);
+  const label = pname(p) + ', ' + p.id + ', ESI ' + p.esi + ', ' + c.label + ', NEWS2 ' + news +
+    (p.trend > 0 ? ' rising' : p.trend < 0 ? ' falling' : '') + ', ' + loc +
+    (f ? ', alert: ' + f.text : '') + '. Open record.';
+  return html`<button type="button" class="prow${f ? ' f-' + f.level : ''}" data-act="patient" data-id="${p.id}" aria-label="${label}">${esiBadge(p.esi)}<span class="pid"><b>${pname(p)}</b> <small>${p.id} · ${p.age} ${p.sex}${p.retriaged ? ' · re-triaged' : ''}</small></span><span class="pcond">${c.label} <small>ICD-10-CM ${c.icd}</small></span><span class="pvit">${vitalsHTML(p)}</span><span class="pnews${newsCls}">NEWS2 ${news}${trendText(p.trend)}</span><span class="ploc">${loc}</span>${f ? html`<span class="pflag">${f.level === 'critical' ? '▲' : '●'} ${f.text}${f.hint ? ' · ' + f.hint : ''}</span>` : ''}</button>`;
+}
+function renderPatients() {
+  const waiting = byPriority(S.patients.filter(p => p.stage === 'waiting'));
+  const inCare = byPriority(S.patients.filter(isActiveCare));
+  const flagged = waiting.concat(inCare).filter(p => p.flag).length;
+  setText($('#patientsMeta'), waiting.length + ' waiting · ' + inCare.length + ' in treatment · ' + flagged + ' flagged');
+  setHTML($('#patients'), html`<div class="sect" role="heading" aria-level="3">Waiting for a bed · ${waiting.length}</div>${waiting.length ? waiting.map(patientRow) : html`<p class="empty">Nobody waiting for a bed.</p>`}<div class="sect" role="heading" aria-level="3">In treatment · ${inCare.length}</div>${inCare.length ? inCare.map(patientRow) : html`<p class="empty">No patients in treatment.</p>`}`);
+}
+
+/* ---------- Bed board ---------- */
+function bedTile(b) {
+  let cls = 's-' + b.status, sub = '', tip = b.id + ' · ' + b.status;
+  if (b.status === 'occupied') {
+    const p = P(b.pid);
+    sub = p ? 'ESI ' + p.esi : 'occ';
+    if (p) { cls += ' e' + p.esi; tip += ' · ' + p.id; }
+  } else if (b.status === 'free') {
+    sub = b.hold ? 'hold' : 'free';
+    if (b.hold) { cls += ' held'; tip += ' · held for suggestion ' + b.hold; }
+  } else if (b.status === 'cleaning') {
+    sub = 'clean';
+  } else {
+    sub = 'resv';
+    if (b.pid) tip += ' · ' + b.pid;
+  }
+  return html`<div class="bed ${cls}" title="${tip}"><b>${b.id}</b><small>${sub}</small></div>`;
+}
+function renderBeds() {
+  const { beds, stale } = bedView();
+  const free = beds.filter(b => b.status === 'free').length;
+  const cleaning = beds.filter(b => b.status === 'cleaning').length;
+  let meta = free + '/' + beds.length + ' free · ' + cleaning + ' cleaning';
+  if (stale) meta = 'Feed offline · snapshot from ' + fmtClock(S.bedsSnapAt);
+  else if (S.bedsOffline && S.bedsFallback) meta = free + '/' + beds.length + ' free · via backup RTLS bed sensors';
+  setText($('#bedsMeta'), meta);
+  const zones = ZONES.map(z => {
+    const zb = beds.filter(b => b.zone === z.id);
+    const zf = zb.filter(b => b.status === 'free').length;
+    return html`<div class="zone"><div class="zh">${z.name} · ${zf}/${zb.length} free</div><div class="beds">${zb.map(bedTile)}</div></div>`;
+  });
+  const overlay = stale
+    ? html`<div class="stale" role="status"><b>STALE</b> · last update ${fmtClock(S.bedsSnapAt)} · feed offline</div>`
+    : '';
+  const legend = [['s-free', 'Free'], ['s-occupied', 'Occupied'], ['s-cleaning', 'Cleaning'], ['s-reserved', 'Reserved'], ['held', 'Held for AI suggestion']];
+  setHTML($('#beds'), html`<div class="bedwrap">${zones}${overlay}</div><div class="legend">${legend.map(([c, l]) => html`<span><i class="sw ${c}" aria-hidden="true"></i> ${l}</span> `)}</div>`);
+}
+
+/* ---------- Equipment & supplies (bars show what is LEFT) ---------- */
+function eqRow(label, value, frac, level, note, status) {
+  return html`<div class="eq"><div class="eq-top"><span>${label}</span><span class="eq-v">${value}${status ? html` ${status}` : ''}</span></div><div class="bar ${level}" aria-hidden="true"><i style="width:${Math.round(clamp(frac, 0, 1) * 100)}%"></i></div>${note ? html`<div class="eq-note">${note}</div>` : ''}</div>`;
+}
+const fracLevel = f => (f > 0.3 ? 'good' : f > 0.1 ? 'warning' : 'critical');
+function renderEquipment() {
+  const rows = [];
+  let alerts = 0;
+
+  const mf = monitorsFree(), mt = S.eq.monitors;
+  const mLvl = fracLevel(mf / Math.max(1, mt));
+  if (mLvl !== 'good') alerts++;
+  rows.push(eqRow('Cardiac monitors', mf + '/' + mt + ' free', mf / Math.max(1, mt), mLvl, ''));
+
+  const vAvail = Math.max(0, S.eq.vents - S.eq.ventFaulty), vf = ventsFree();
+  const needV = S.patients.filter(p => p.needsVent && !p.vent).length;
+  const ids = [];
+  for (let i = 1; i <= S.eq.vents; i++) if (!(S.eq.ventFaulty && (i === 3 || i === 8))) ids.push(i);
+  const nearest = ids.length ? 'V-' + pad2(ids[Math.min(ids.length - 1, ventsInUse())]) : '';
+  const vNotes = [];
+  if (S.eq.ventFaulty) vNotes.push(S.eq.ventFaulty + ' failed self-test' + (S.ventLoan ? ' · loan from anaesthesia on the way' : ''));
+  if (needV) vNotes.push('▲ ' + nounCount(needV, 'patient') + ' waiting for a ventilator');
+  vNotes.push(vf ? 'nearest free ' + nearest + ' · ICU store (RTLS)' : 'none free');
+  const vLvl = needV ? 'critical' : fracLevel(vf / Math.max(1, vAvail));
+  if (vLvl !== 'good' || S.eq.ventFaulty) alerts++;
+  rows.push(eqRow('Ventilators', vf + ' free of ' + vAvail, vf / Math.max(1, vAvail), vLvl, vNotes.join(' · ')));
+
+  const ctTot = S.eq.ct.length, ctOn = ctOnline(), queue = S.eq.ctQueue.length, wait = ctWait();
+  const ctLvl = ctOn === ctTot ? (wait != null && wait > 20 ? 'warning' : 'good') : ctOn ? 'warning' : 'critical';
+  if (ctLvl !== 'good') alerts++;
+  const offline = S.eq.ct.filter(u => !u.online).map(u => u.id + ' (' + u.loc + ') offline');
+  const ctNote = offline.length ? offline.join(' · ') + (S.ctRepair ? ' · engineer on site' : '') : '';
+  rows.push(eqRow('CT scanners', ctOn + '/' + ctTot + ' online · queue ' + queue + (wait != null ? ' · ~' + wait + ' min wait' : ' · no scanner online'),
+    ctOn / Math.max(1, ctTot), ctLvl, ctNote));
+
+  for (const key of Object.keys(S.sup)) {
+    const sp = S.sup[key], left = minutesLeft(key), need = committed(key);
+    const crit = sp.qty <= sp.cap * 0.1 || (left != null && left < 20) || need > sp.qty;
+    const low = !crit && (sp.qty <= sp.cap * 0.25 || (left != null && left < 45));
+    if (crit || low) alerts++;
+    const status = crit ? chipHTML('critical', '▲ Critical', 'sm') : low ? chipHTML('warning', '● Low', 'sm') : chipHTML('good', '✓ OK', 'sm');
+    const notes = [];
+    if (sp.pending) notes.push('Restock ordered · arrives within 15 min');
+    if (need > 0) notes.push('Waiting + inbound patients likely need ~' + need);
+    rows.push(eqRow(sp.label, sp.qty + ' ' + sp.unit + ' · ' + (left == null ? 'stable' : '~' + left + ' min left'),
+      sp.qty / Math.max(1, sp.cap), crit ? 'critical' : low ? 'warning' : 'good', notes.join(' · '), status));
+  }
+  setText($('#equipMeta'), alerts ? nounCount(alerts, 'item') + ' need attention' : 'All within limits');
+  setHTML($('#equipment'), html`${rows}`);
+}
+
+/* ---------- AI decision queue ---------- */
+function decisionCard(s) {
+  const lvl = s.level === 1 ? 'critical' : s.level === 2 ? 'serious' : 'info';
+  const actions = canAct(s.type)
+    ? html`<button type="button" class="btn primary sm" data-act="accept" data-id="${s.id}" aria-label="Accept: ${s.title}">Accept</button><button type="button" class="btn ghost sm" data-act="dismiss" data-id="${s.id}" aria-label="Dismiss: ${s.title}">Dismiss</button>`
+    : html`<span class="muted">Needs ${approverLabels(s.type)} sign-in</span>`;
+  return html`<article class="card l${s.level}"><div class="ctype"><span class="chip sm ${lvl}">${s.level === 1 ? '▲' : '●'} ${LEVEL_LABEL[s.level]}</span> ${SUGG_LABEL[s.type] || s.type} · ${agoText(s.at)}</div><h3>${s.title}</h3><p>${s.why}</p><div class="cact">${actions}</div></article>`;
+}
+function renderDecisions() {
+  const list = S.sugg.slice().sort((a, b) => a.level - b.level || a.at - b.at);
+  const crit = list.filter(s => s.level === 1).length;
+  const auto = prefs.autoAccept ? ' · auto-accept on' : '';
+  setText($('#decMeta'), list.length ? list.length + ' pending · ' + crit + ' critical' + auto : 'Up to date' + auto);
+  const nPlace = list.filter(s => s.type === 'placement').length;
+  const btn = $('#acceptAll');
+  if (btn) {
+    showEl(btn, nPlace > 0 && canAct('placement'));
+    setText(btn, 'Accept all placements (' + nPlace + ')');
+  }
+  setHTML($('#decisions'), list.length
+    ? html`<div class="cards">${list.map(decisionCard)}</div>`
+    : html`<p class="empty">No pending decisions. Watching ${S.patients.length} patients, ${S.beds.length} beds, ${SOURCES.length} data feeds.</p>`);
+}
+
+/* ---------- Integration feed / audit log ---------- */
+function renderFeed() {
+  document.querySelectorAll('#feedTabs [data-act="tab"]').forEach(b => {
+    const sel = String(b.dataset.id === UI.tab);
+    if (b.getAttribute('aria-selected') !== sel) b.setAttribute('aria-selected', sel);
+  });
+  const el = $('#feed');
+  if (UI.tab === 'audit') {
+    if (!ROLES[prefs.role].audit) {
+      setHTML(el, html`<p class="empty">Restricted: sign in as IT / Admin to view the audit log.</p>`);
+      return;
+    }
+    setHTML(el, S.audit.length
+      ? html`${S.audit.slice(0, 60).map(a => html`<div class="fr"><time datetime="${simDate(a.t).toISOString()}">${fmtClockS(a.t)}</time><span class="tag">${a.role}</span><span>${a.text}</span></div>`)}`
+      : html`<p class="empty">No audit entries yet.</p>`);
+    return;
+  }
+  setHTML(el, S.feed.length
+    ? html`${S.feed.slice(0, 40).map(f => {
+      const src = UI_SRC_BY_ID[f.src];
+      return html`<div class="fr"><time datetime="${simDate(f.t).toISOString()}">${fmtClockS(f.t)}</time><span class="tag" title="${src ? src.name : f.src}">${src ? src.short : f.src} · ${f.std}</span><span>${f.text}</span></div>`;
+    })}`
+    : html`<p class="empty">Waiting for the first message from the integration gateway.</p>`);
+}
+
+/* ---------- Occupancy chart: 60 min history + 30 min forecast ---------- */
+function chartParts() {
+  const box = $('#chart');
+  if (!box) return null;
+  let svg = box.querySelector('svg.occ');
+  if (!svg) {
+    if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
+    setHTML(box, html`<svg class="occ" role="img" aria-label="Bed occupancy chart" style="display:block;width:100%;height:100%"></svg><div class="xh" aria-hidden="true" style="display:none"></div><div class="tip" aria-hidden="true" style="display:none"></div>`);
+    svg = box.querySelector('svg.occ');
+  }
+  return { box, svg };
+}
+function renderChart(force) {
+  const parts = chartParts();
+  if (!parts) return;
+  const { box, svg } = parts;
+  const W = Math.round(box.clientWidth), H = Math.round(box.clientHeight);
+  const now = Date.now();
+  if (!force && W === UI.chartW && H === UI.chartH && now - UI.chartAt < UI_CHART_MS) return;
+  UI.chartAt = now; UI.chartW = W; UI.chartH = H;
+
+  const fc = S.fc || { pts: [], fullIn: null };
+  const status = fc.fullIn == null ? chipHTML('good', '✓ No overflow forecast', 'sm')
+    : fc.fullIn === 0 ? chipHTML('critical', '▲ At capacity now', 'sm')
+    : chipHTML(fc.fullIn <= 20 ? 'critical' : 'serious', (fc.fullIn <= 20 ? '▲' : '●') + ' Full in ~' + fc.fullIn + ' min', 'sm');
+  setHTML($('#chartMeta'), html`${status} <span class="muted">solid recorded · dashed forecast</span>`);
+  if (W < 80 || H < 60) { UI.geo = null; positionHover(); return; }
+
+  const pad = { l: 36, r: 12, t: 12, b: 22 };
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+  const nowPt = { m: 0, v: bedsBusy() / Math.max(1, S.beds.length) * 100 };
+  const hist = S.occ.map(o => ({ m: (o.t - S.t) / 60, v: o.occ })).filter(o => o.m >= -60.5 && o.m < 0).concat(nowPt);
+  const fcp = (fc.pts || []).map(o => ({ m: o.m, v: o.occ }));
+  const vmax = Math.max(100, ...hist.map(o => o.v), ...fcp.map(o => o.v));
+  const yMax = Math.ceil(vmax / 25) * 25;
+  const X = m => pad.l + (m + 60) / 90 * pw;
+  const Y = v => pad.t + (1 - v / yMax) * ph;
+  const f1 = n => n.toFixed(1);
+  const path = pts => pts.map((o, i) => (i ? 'L' : 'M') + f1(X(o.m)) + ' ' + f1(Y(o.v))).join(' ');
+
+  const grid = [];
+  for (let v = 0; v <= yMax; v += 25) grid.push(v);
+  const histArea = hist.length > 1
+    ? path(hist) + ' L' + f1(X(0)) + ' ' + f1(Y(0)) + ' L' + f1(X(hist[0].m)) + ' ' + f1(Y(0)) + ' Z'
+    : '';
+  const overflow = fcp.some(o => o.v > 100)
+    ? 'M' + fcp.map(o => f1(X(o.m)) + ' ' + f1(Y(Math.max(100, o.v)))).join(' L') +
+      ' L' + f1(X(fcp[fcp.length - 1].m)) + ' ' + f1(Y(100)) + ' L' + f1(X(fcp[0].m)) + ' ' + f1(Y(100)) + ' Z'
+    : '';
+  const xTicks = [-60, -30, 0, 15, 30];
+  const xLabel = m => (m === 0 ? 'now' : (m < 0 ? UI_MINUS + Math.abs(m) : '+' + m) + (m === -60 || m === 30 ? ' min' : ''));
+  const axisStyle = 'fill:var(--muted);font-size:10px;font-variant-numeric:tabular-nums';
+
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  const peak = fcp.length ? Math.round(Math.max(...fcp.map(o => o.v))) : null;
+  svg.setAttribute('aria-label', 'Bed occupancy over the last 60 minutes and 30-minute forecast. Now ' + Math.round(nowPt.v) + '%.' +
+    (peak != null ? ' Forecast peak ' + peak + '%.' : '') +
+    (fc.fullIn == null ? ' No overflow forecast.' : fc.fullIn === 0 ? ' At capacity now.' : ' Full in about ' + fc.fullIn + ' minutes.'));
+  setHTML(svg, html`${grid.map(v => html`<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}" style="stroke:var(--grid);stroke-width:1"/><text x="${pad.l - 6}" y="${f1(Y(v) + 3.5)}" text-anchor="end" style="${axisStyle}">${v}%</text>`)}${xTicks.map(m => html`<text x="${f1(X(m))}" y="${H - 6}" text-anchor="${m === -60 ? 'start' : m === 30 ? 'end' : 'middle'}" style="${axisStyle}">${xLabel(m)}</text>`)}${histArea ? html`<path d="${histArea}" style="fill:var(--accent);opacity:.12"/>` : ''}${overflow ? html`<path d="${overflow}" style="fill:var(--critical-weak)"/>` : ''}<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(100))}" y2="${f1(Y(100))}" style="stroke:var(--critical);stroke-width:1.5;stroke-dasharray:2 3"/><text x="${W - pad.r - 2}" y="${f1(Y(100) - 4)}" text-anchor="end" style="fill:var(--critical);font-size:10px;font-weight:600">100% capacity</text><line x1="${f1(X(0))}" x2="${f1(X(0))}" y1="${pad.t}" y2="${H - pad.b}" style="stroke:var(--text-2);stroke-width:1;stroke-dasharray:3 3"/><path d="${path(hist)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round"/>${fcp.length ? html`<path d="${path(fcp)}" style="fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4;stroke-linejoin:round"/>` : ''}<circle cx="${f1(X(0))}" cy="${f1(Y(nowPt.v))}" r="3.5" style="fill:var(--accent)"/>`);
+
+  UI.geo = { X, Y, pad, pw, W, H, hist, fc: fcp };
+  positionHover();
+}
+// Crosshair + tooltip live outside the SVG, so they survive redraws; recomputed from the latest geometry.
+function positionHover() {
+  const box = $('#chart');
+  if (!box) return;
+  const xh = box.querySelector('.xh'), tip = box.querySelector('.tip');
+  if (!xh || !tip) return;
+  const g = UI.geo;
+  const hide = () => { xh.style.display = 'none'; tip.style.display = 'none'; };
+  if (!g || UI.hoverPx == null) return hide();
+  const m = clamp((UI.hoverPx - g.pad.l) / g.pw * 90 - 60, -60, 30);
+  const pool = m <= 0 ? g.hist : g.fc;
+  if (!pool.length) return hide();
+  let best = pool[0];
+  for (const o of pool) if (Math.abs(o.m - m) < Math.abs(best.m - m)) best = o;
+  const x = g.X(best.m), y = g.Y(best.v), mm = Math.round(best.m), v = Math.round(best.v);
+  xh.style.display = '';
+  xh.style.left = x.toFixed(1) + 'px';
+  xh.style.top = g.pad.t + 'px';
+  xh.style.height = (g.H - g.pad.t - g.pad.b) + 'px';
+  tip.textContent = best.m > 0 ? '+' + mm + ' min (forecast) · ' + v + '%'
+    : mm === 0 ? 'Now · ' + v + '% occupied'
+    : UI_MINUS + Math.abs(mm) + ' min · ' + v + '% occupied';
+  tip.style.display = '';
+  const tw = tip.offsetWidth || 120;
+  tip.style.left = (x + 10 + tw > g.W ? x - 10 - tw : x + 10).toFixed(1) + 'px';
+  tip.style.top = clamp(y - 30, 0, Math.max(0, g.H - 24)).toFixed(1) + 'px';
+}
+
+/* ---------- Source systems footer ---------- */
+function srcChip(s) {
+  const st = S.src[s.id] || { status: 'offline', last: 0 };
+  const live = st.status === 'live';
+  const backup = s.id === 'beds' && S.bedsOffline && S.bedsFallback;
+  const title = s.name + ' · ' + s.std + ' · ' + (live ? 'live, last message ' + agoText(st.last) : backup ? 'offline, backup RTLS sensors in use' : 'offline');
+  return html`<span class="src${live ? '' : ' offline'}" title="${title}"><span class="dot" aria-hidden="true">${live ? '●' : '○'}</span>${s.short}${live ? '' : html` <small>${backup ? 'backup' : 'offline'}</small>`}</span> `;
+}
+function renderSources() {
+  const live = SOURCES.filter(s => S.src[s.id] && S.src[s.id].status === 'live').length;
+  setHTML($('#sources'), html`<span class="muted">Data sources ${live}/${SOURCES.length} live · FHIR R4 gateway</span> ${SOURCES.map(srcChip)}`);
+}
+
+/* ---------- Modals: patient record, standards & security, data map ---------- */
+const UI_STANDARDS = [
+  ['HL7 FHIR R4', 'Interoperability API', 'Integration gateway; EHR, bed (Location), EMS and pharmacy feeds; patient record exported as a FHIR Bundle (Encounter, Condition, Observation)'],
+  ['HL7 v2.5 ADT', 'Messaging', 'Registration events ADT^A04 (arrival), A02 (transfer), A03 (discharge) in the integration feed'],
+  ['IEEE 11073 SDC', 'Medical device connectivity', 'Bedside monitors and wearable patches stream vital signs; device recorded on every Observation'],
+  ['LOINC', 'Observation terminology', 'Vital signs coded 8867-4 HR, 8480-6 SBP, 9279-1 RR, 59408-5 SpO₂, 8310-5 temperature (record table, FHIR Observation, monitor feed)'],
+  ['ICD-10-CM', 'Diagnosis coding', 'Every presenting condition: patient list, record, FHIR Condition, ADT messages'],
+  ['SNOMED CT', 'Clinical terminology (mapping target)', 'Conditions carry ICD-10-CM today; the gateway maps them to SNOMED CT for problem-list exchange'],
+  ['ESI v4', 'Triage acuity', 'ESI badge on every patient; drives bed-zone matching, nurse workload weights and AI re-triage suggestions'],
+  ['NEWS2 (RCP 2017)', 'Early-warning score', 'Live score and 12-minute trend per patient; per-parameter points in the record; deterioration alerts'],
+  ['ISO 9241-210', 'Human-centred design', 'Role-specific views; AI suggests and a human decides; one decision queue; low-clutter layout'],
+  ['WCAG 2.2 AA', 'Accessibility', 'Real buttons with keyboard support, dialog focus management, live-region announcements, status as text + colour, light/dark themes'],
+  ['HIPAA Security Rule + NIST SP 800-66 Rev. 2', 'Security safeguards', 'Access control, audit controls (§164.312(b)), automatic logoff (§164.312(a)(2)(iii)), minimum-necessary display'],
+  ['ISO/IEC 27001', 'Information security management', 'Role-based access, event logging, degraded-mode handling of interface outages'],
+  ['UAE Federal Law No. 2 of 2019', 'ICT in health fields', 'Health data stored and processed inside the UAE; confidentiality and logged access to patient data'],
+  ['ADHICS', 'Abu Dhabi Healthcare Information & Cyber Security Standard', 'Access control, audit logging, session lock, incident handling for failed interfaces'],
+  ['GS1', 'Supply identification', 'Blood units and supply restocks received with GS1 barcodes (pharmacy feed)'],
+  ['I-PASS', 'Structured handover', 'Nurse handovers and reassignments sent as I-PASS summaries (roster feed)'],
+];
+const UI_CONTROLS = [
+  'Role-based access with least privilege: four roles; each AI suggestion type can be approved only by the roles allowed to act on it.',
+  'Minimum-necessary display: full names for Physician, initial + surname for Charge nurse, initials only on the wall display and for IT; MRN masked outside clinical roles.',
+  'Patient records open only for clinical roles; every view and every blocked attempt is written to the audit log.',
+  'Audit trail of sessions, role switches, record views, accepted, dismissed and auto-accepted suggestions and scenario starts; readable only by IT / Admin.',
+  'Automatic logoff: clinical roles fall back to the wall display after 5 minutes without input.',
+  'Output encoding: all dynamic text is HTML-escaped by default before rendering (XSS); no eval, no inline event handlers, no third-party scripts, fonts or CDNs.',
+  'Human in the loop: AI only suggests; the single exception is opt-in auto-accept of bed placements, logged as policy.',
+  'Fail-safe data: offline feeds are flagged; stale bed data is overlaid as STALE instead of being shown as current.',
+  'Synthetic, fictional patients only; no data leaves the browser (only the theme choice is stored locally).',
+];
+
+function sparkline(p, key, label, unit) {
+  const pts = (p.hist || []).filter(h => h.t >= S.t - 1800 && h[key] != null);
+  if (pts.length < 2) return html`<div><div>${label}</div><div class="muted">collecting data…</div></div>`;
+  const vals = pts.map(h => h[key]);
+  const vMin = Math.min(...vals), vMax = Math.max(...vals);
+  let lo = vMin, hi = vMax;
+  if (hi - lo < 4) { const mid = (hi + lo) / 2; lo = mid - 2; hi = mid + 2; }
+  const W = 160, H = 40, t0 = S.t - 1800;
+  const d = pts.map((h, i) => (i ? 'L' : 'M') + ((h.t - t0) / 1800 * W).toFixed(1) + ' ' + (H - 3 - (h[key] - lo) / (hi - lo) * (H - 6)).toFixed(1)).join(' ');
+  const last = r0(vals[vals.length - 1]);
+  return html`<div><div>${label} <b>${last}${unit}</b> <span class="muted">range ${r0(vMin)}–${r0(vMax)}</span></div><svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${label} over the last 30 minutes, from ${r0(vals[0])} to ${last}"><path d="${d}" style="fill:none;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round"/></svg></div>`;
+}
+function fhirBundle(p) {
+  const c = condInfo(p), subject = { reference: 'Patient/' + p.id };
+  const last = p.hist && p.hist.length ? p.hist[p.hist.length - 1] : null;
+  const when = simDate(last ? last.t : S.t).toISOString();
+  const value = k => (k === 'temp' ? Math.round(p.v.temp * 10) / 10 : r0(last && last[k] != null ? last[k] : p.v[k]));
+  const encStatus = isActiveCare(p) ? 'in-progress' : p.stage === 'waiting' ? 'triaged' : 'planned';
+  const observations = ['hr', 'sbp', 'rr', 'spo2', 'temp'].map(k => ({
+    fullUrl: 'urn:uuid:obs-' + p.id + '-' + k,
+    resource: {
+      resourceType: 'Observation', id: 'obs-' + p.id + '-' + k, status: 'final',
+      category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'vital-signs', display: 'Vital Signs' }] }],
+      code: { coding: [{ system: 'http://loinc.org', code: LOINC[k].code, display: LOINC[k].name }] },
+      subject, effectiveDateTime: when,
+      valueQuantity: { value: value(k), unit: unitText(LOINC[k].unit), system: 'http://unitsofmeasure.org', code: LOINC[k].unit },
+      device: { display: 'IEEE 11073 SDC wearable patch' },
+    },
+  }));
+  return {
+    resourceType: 'Bundle', id: 'ed-' + p.id, type: 'collection', timestamp: when,
+    entry: [
+      {
+        fullUrl: 'urn:uuid:enc-' + p.id,
+        resource: {
+          resourceType: 'Encounter', id: 'enc-' + p.id, status: encStatus,
+          class: { system: 'http://terminology.hl7.org/CodeSystem/v3-ActCode', code: 'EMER', display: 'emergency' },
+          priority: { text: 'ESI ' + p.esi + ' (' + ESI_LABEL[p.esi] + ')' }, subject,
+        },
+      },
+      {
+        fullUrl: 'urn:uuid:cond-' + p.id,
+        resource: {
+          resourceType: 'Condition', id: 'cond-' + p.id,
+          clinicalStatus: { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/condition-clinical', code: 'active' }] },
+          code: { coding: [{ system: 'http://hl7.org/fhir/sid/icd-10-cm', code: c.icd, display: c.label }], text: c.label },
+          subject, encounter: { reference: 'Encounter/enc-' + p.id },
+        },
+      },
+      ...observations,
+    ],
+  };
+}
+function kvList(rows) {
+  return html`<dl class="kv">${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>`;
+}
+function patientModal(id) {
+  const p = P(id);
+  if (!p) {
+    return ['Patient ' + id, html`<p class="empty">Encounter closed: ${id} has left the emergency department, so the record is no longer live on this board.</p>`];
+  }
+  const c = condInfo(p);
+  const news = news2(p.v, p.onO2), parts = news2Parts(p.v, p.onO2);
+  const risk = news >= 7 ? 'high clinical risk' : news >= 5 ? 'medium clinical risk'
+    : Object.values(parts).some(x => x === 3) ? 'low–medium risk (a single parameter scores 3)' : 'low clinical risk';
+  const trend = p.trend > 0 ? 'rising +' + p.trend + ' in 12 min' : p.trend < 0 ? 'falling ' + p.trend + ' in 12 min' : 'stable';
+  const n = p.nurse ? nurse(p.nurse) : null;
+  const pb = p.bed ? bed(p.bed) : null;
+  let where = locationText(p);
+  if (isActiveCare(p)) where = 'Bed ' + p.bed + (pb ? ' (' + zoneName(pb.zone) + ')' : '') + ' · nurse ' + (n && n.status === 'on' ? n.name : 'not assigned') + (p.stage === 'boarding' ? ' · awaiting ' + (DISPO_LABEL[p.dispo] || 'transfer') : '');
+  const resources = [p.monitor && 'Cardiac monitor', p.vent && 'Ventilator', p.needsVent && !p.vent && 'Needs ventilator (none free)',
+    p.onO2 && 'Oxygen', S.eq.ctQueue.includes(p.id) && 'Queued for CT'].filter(Boolean).join(' · ') || 'None';
+  const details = kvList([
+    ['Triage', html`${esiMini(p.esi)} ${ESI_LABEL[p.esi]}${p.retriaged ? ' · re-triaged' : ''}`],
+    ['Name', pname(p)],
+    ['Patient ID', p.id],
+    ['MRN', pmrn(p)],
+    ['Age / sex', p.age + ' y · ' + (p.sex === 'F' ? 'Female' : 'Male')],
+    ['Arrival', p.src + (p.amb ? ' · ' + p.amb : '') + (p.arrivedAt != null ? ' · arrived ' + fmtClock(p.arrivedAt) : ' · not yet arrived')],
+    ['Location', where],
+    ['Condition', c.label + ' · ICD-10-CM ' + c.icd],
+    ['Resources', resources],
+  ]);
+  const vrow = k => html`<tr><td>${LOINC[k].name}</td><td><code>${LOINC[k].code}</code></td><td>${fmtV(k, p.v[k])} ${unitText(LOINC[k].unit)}</td><td>${parts[k]}</td></tr>`;
+  const table = html`<table><thead><tr><th scope="col">Observation</th><th scope="col">LOINC</th><th scope="col">Value</th><th scope="col">NEWS2 pts</th></tr></thead><tbody>${['rr', 'spo2', 'sbp', 'hr', 'temp'].map(vrow)}<tr><td>Supplemental oxygen</td><td>—</td><td>${p.onO2 ? 'Yes' : 'No (room air)'}</td><td>${parts.o2}</td></tr><tr><td>Consciousness (ACVPU)</td><td>—</td><td>${p.v.avpu === 'A' ? 'Alert' : 'Responds to voice'}</td><td>${parts.avpu}</td></tr></tbody><tfoot><tr><th scope="row" colspan="3">NEWS2 total · ${trend}</th><td><b>${news}</b></td></tr></tfoot></table>`;
+  const f = p.flag;
+  const pending = S.sugg.filter(s => s.pid === p.id);
+  const assessment = html`${f
+    ? html`<p>${chipHTML(f.level, (f.level === 'critical' ? '▲ ' : '● ') + LEVEL_LABEL[f.level === 'critical' ? 1 : 2], 'sm')} ${f.text}</p>${f.hint ? html`<p>${f.hint}.</p>` : ''}`
+    : html`<p>${chipHTML('good', '✓ Stable', 'sm')} No deterioration pattern detected over the last 12 minutes.</p>`}${pending.length ? html`<p>In decision queue: ${pending.map(s => s.title).join(' · ')}</p>` : ''}<p class="muted">NEWS2 ${news}: ${risk}. AI output is decision support only; the treating clinician decides.</p>`;
+  const sparks = html`<div style="display:flex;flex-wrap:wrap;gap:16px">${sparkline(p, 'hr', 'Heart rate', '/min')}${sparkline(p, 'sbp', 'Systolic BP', ' mmHg')}${sparkline(p, 'spo2', 'SpO₂', '%')}</div>`;
+  const body = html`<div class="mgrid"><section><h3>Patient</h3>${details}<h3>AI assessment</h3>${assessment}</section><section><h3>Vital signs · NEWS2 ${news}</h3>${table}<h3>Trends · last 30 min</h3>${sparks}</section></div><h3>FHIR R4 Bundle</h3><pre tabindex="0">${JSON.stringify(fhirBundle(p), null, 2)}</pre><p class="muted">This view was recorded in the audit log.</p>`;
+  return [pname(p) + ' · ' + p.id, body];
+}
+function standardsModal() {
+  const idleMin = Math.max(0, Math.ceil((UI_LOCK_MS - (Date.now() - UI.lastInput)) / 60000));
+  const lockText = prefs.role === 'charge' || prefs.role === 'physician' ? 'auto-lock in ' + idleMin + ' min without input' : 'no clinical session to lock';
+  return ['Standards & security', html`<p>Signed in as <b>${ROLES[prefs.role].label}</b> (demo sign-in) · ${lockText} · ${S.audit.length} audit entries this session.</p><table><thead><tr><th scope="col">Standard</th><th scope="col">Area</th><th scope="col">Where in this system</th></tr></thead><tbody>${UI_STANDARDS.map(([s, a, w]) => html`<tr><th scope="row">${s}</th><td>${a}</td><td>${w}</td></tr>`)}</tbody></table><h3>Security controls implemented in this build</h3><ul>${UI_CONTROLS.map(c => html`<li>${c}</li>`)}</ul><p class="muted">Production deployment: SSO with MFA (OIDC / SAML) replaces the demo role selector; TLS 1.2+ on every interface; AES-256 encryption at rest; UAE-hosted servers; audit log streamed to a SIEM.</p>`];
+}
+function dataMapModal() {
+  const live = SOURCES.filter(s => S.src[s.id] && S.src[s.id].status === 'live').length;
+  const rows = SOURCES.map(s => {
+    const st = S.src[s.id] || { status: 'offline', last: 0 };
+    const on = st.status === 'live';
+    const status = on ? chipHTML('good', '● Live · ' + agoText(st.last), 'sm')
+      : chipHTML('critical', s.id === 'beds' && S.bedsFallback ? '○ Offline · backup sensors' : '○ Offline', 'sm');
+    return html`<tr><th scope="row">${s.name}</th><td>${s.std}</td><td>${s.feeds}</td><td>${s.panel}</td><td>${status}</td></tr>`;
+  });
+  return ['Data map · ' + live + '/' + SOURCES.length + ' sources live', html`<p>Ten hospital systems → integration gateway (normalised to HL7 FHIR R4, coded with LOINC and ICD-10-CM) → this command center. Nothing is entered twice; every panel cites its source.</p><table><thead><tr><th scope="col">Source system</th><th scope="col">Standard</th><th scope="col">Data received</th><th scope="col">Shown in</th><th scope="col">Status</th></tr></thead><tbody>${rows}</tbody></table>`];
+}
+function renderModal() {
+  if (!UI.modal) return;
+  const { kind, id } = UI.modal;
+  if (kind === 'patient' && !ROLES[prefs.role].detail) { closeModal(); return; }
+  const [title, body] = kind === 'patient' ? patientModal(id) : kind === 'standards' ? standardsModal() : dataMapModal();
+  setText($('#mtitle'), title);
+  setHTML($('#mbody'), body);
+}
+function openModal(kind, id) {
+  const m = $('#modal');
+  if (!m) return;
+  if (!UI.modal) {
+    const a = document.activeElement;
+    UI.lastFocus = a && a.dataset ? { el: a, act: a.dataset.act, id: a.dataset.id } : null;
+  }
+  UI.modal = { kind, id };
+  renderModal();
+  showEl(m, true);
+  const close = m.querySelector('[data-act="close"]');
+  if (close) setTimeout(() => close.focus(), 0);   // after the pointer's own focus handling
+}
+function closeModal() {
+  const m = $('#modal');
+  UI.modal = null;
+  if (m) showEl(m, false);
+  const last = UI.lastFocus;
+  UI.lastFocus = null;
+  if (!last) return;
+  let target = last.el && last.el.isConnected ? last.el : null;
+  if (!target && last.act) {
+    target = document.querySelector('[data-act="' + CSS.escape(last.act) + '"]' + (last.id != null ? '[data-id="' + CSS.escape(last.id) + '"]' : ''));
+  }
+  if (target) target.focus({ preventScroll: true });
+}
+function enforceModalAccess() {
+  if (UI.modal && UI.modal.kind === 'patient' && !ROLES[prefs.role].detail) {
+    closeModal();
+    toast('Patient record closed: ' + ROLES[prefs.role].label + ' has no clinical access.');
+  }
+}
+function openPatient(id) {
+  const p = P(id);
+  if (!p) { toast('That patient is no longer in the department.'); return; }
+  if (!ROLES[prefs.role].detail) {
+    audit('Blocked: patient record ' + p.id + ' view attempt (' + ROLES[prefs.role].label + ' has no clinical access)');
+    toast('Patient records need Charge nurse or Physician sign-in. Attempt logged.');
+    return;
+  }
+  audit('Viewed patient record ' + p.id);
+  openModal('patient', p.id);
+}
+
+/* ---------- Controls, theme, auto-lock ---------- */
+function applyTheme(theme) {
+  UI.theme = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', UI.theme);
+  const b = $('#theme');
+  if (b) {
+    // Icon-only button (shell): keep the glyph, describe the action for screen readers
+    b.title = 'Switch to ' + (UI.theme === 'dark' ? 'light' : 'dark') + ' theme';
+    b.setAttribute('aria-label', b.title);
+  }
+}
+function toggleTheme() {
+  applyTheme(UI.theme === 'dark' ? 'light' : 'dark');
+  try { localStorage.setItem(UI_THEME_KEY, UI.theme); } catch (err) { /* storage blocked: theme applies to this session only */ }
+}
+function syncControls() {
+  const sp = $('#speed');
+  if (sp && document.activeElement !== sp && sp.value !== String(S.speed)) sp.value = String(S.speed);
+  const rl = $('#role');
+  if (rl && document.activeElement !== rl && rl.value !== prefs.role) rl.value = prefs.role;
+  const au = $('#auto');
+  if (au) {
+    au.checked = !!prefs.autoAccept;
+    au.disabled = !canAct('placement');
+    au.title = au.disabled ? 'Policy can be changed by ' + approverLabels('placement') : '';
+  }
+  if (document.body && document.body.dataset.role !== prefs.role) document.body.dataset.role = prefs.role;
+}
+function checkAutoLock() {
+  if (prefs.role !== 'charge' && prefs.role !== 'physician') return;
+  if (Date.now() - UI.lastInput < UI_LOCK_MS) return;
+  audit('Session auto-locked after 5 min inactivity');
+  prefs.role = 'wall';
+  const sel = $('#role');
+  if (sel) sel.value = 'wall';
+  enforceModalAccess();
+  toast('Session locked after 5 min without input. Showing wall display.');
+}
+
+/* ---------- Actions ---------- */
+function findSugg(id) { return S.sugg.find(s => s.id === id) || null; }
+function handleAction(el) {
+  if (el.disabled || el.getAttribute('aria-disabled') === 'true') return;
+  UI.lastInput = Date.now();
+  const act = el.id === 'pause' ? 'pause' : el.id === 'theme' ? 'theme' : el.dataset.act;
+  const id = el.dataset.id;
+  switch (act) {
+    case 'pause':
+      S.running = !S.running;
+      UI.lastTick = Date.now();
+      break;
+    case 'theme':
+      toggleTheme();
+      break;
+    case 'scenario':
+      if (!SCEN[id]) return;
+      runScenario(id);
+      toast('Scenario started: ' + ((SCEN_LABEL && SCEN_LABEL[id]) || id));
+      break;
+    case 'reset':
+      if (UI.modal) closeModal();
+      init();
+      UI.lastTick = Date.now();
+      UI.chartAt = 0;
+      toast('Simulation reset');
+      break;
+    case 'accept': {
+      const s = findSugg(id);
+      if (!s) { toast('That suggestion is no longer valid.'); break; }
+      if (!canAct(s.type)) {
+        audit('Blocked: accept attempt on "' + s.title + '" (' + ROLES[prefs.role].label + ' lacks approval rights)');
+        toast('Needs ' + approverLabels(s.type) + ' sign-in. Attempt logged.');
+        break;
+      }
+      toast(accept(s, 'manual') ? 'Accepted: ' + s.title : 'Could not apply: ' + s.title);
+      break;
+    }
+    case 'dismiss': {
+      const s = findSugg(id);
+      if (!s) { toast('That suggestion is no longer valid.'); break; }
+      if (!canAct(s.type)) { toast('Needs ' + approverLabels(s.type) + ' sign-in.'); break; }
+      dismiss(s);
+      toast('Dismissed for 10 min: ' + s.title);
+      break;
+    }
+    case 'acceptAll': {
+      if (!canAct('placement')) { toast('Needs ' + approverLabels('placement') + ' sign-in.'); break; }
+      let ok = 0;
+      for (const s of S.sugg.filter(x => x.type === 'placement')) if (S.sugg.includes(s) && accept(s, 'bulk')) ok++;
+      toast(ok ? 'Accepted ' + nounCount(ok, 'bed placement') : 'No placements could be applied.');
+      break;
+    }
+    case 'patient':
+      openPatient(id);
+      break;
+    case 'close':
+      closeModal();
+      break;
+    case 'standards':
+      openModal('standards');
+      break;
+    case 'datamap':
+      openModal('datamap');
+      break;
+    case 'tab':
+      if (id !== 'feed' && id !== 'audit') return;
+      UI.tab = id;
+      if (id === 'audit') audit(ROLES[prefs.role].audit ? 'Viewed audit log' : 'Blocked: audit log view attempt (' + ROLES[prefs.role].label + ')');
+      break;
+    default:
+      return;
+  }
+  render();
+}
+function actionTarget(e) {
+  return e.target && e.target.closest ? e.target.closest('[data-act], #pause, #theme') : null;
+}
+// Mouse/pen act on pointerdown (robust while panels re-render); touch waits for click so scrolling never triggers actions.
+function onPointerDown(e) {
+  UI.lastPointer = e.pointerType || 'mouse';
+  if (e.button !== 0 || e.pointerType === 'touch') return;
+  const el = actionTarget(e);
+  if (!el) return;
+  e.preventDefault();
+  handleAction(el);
+}
+function onClick(e) {
+  const modal = $('#modal');
+  if (modal && e.target === modal && UI.modal) { closeModal(); return; }   // backdrop
+  const keyboard = e.detail === 0;
+  const touch = UI.lastPointer === 'touch' && !keyboard;
+  if (!keyboard && !touch) return;
+  const el = actionTarget(e);
+  if (el) handleAction(el);
+}
+function onChange(e) {
+  const t = e.target;
+  UI.lastInput = Date.now();
+  if (t.id === 'speed') {
+    const v = Number(t.value);
+    S.speed = [1, 10, 30, 60].includes(v) ? v : 30;
+  } else if (t.id === 'role') {
+    if (!ROLES[t.value]) { t.value = prefs.role; return; }
+    prefs.role = t.value;
+    audit('Role switched to ' + ROLES[prefs.role].label + ' (demo sign-in; production: SSO + MFA)');
+    enforceModalAccess();
+    toast('Signed in as ' + ROLES[prefs.role].label);
+  } else if (t.id === 'auto') {
+    if (!canAct('placement')) { t.checked = !!prefs.autoAccept; toast('Only ' + approverLabels('placement') + ' can change this policy.'); return; }
+    prefs.autoAccept = !!t.checked;
+    audit('Auto-accept of bed placements ' + (prefs.autoAccept ? 'enabled' : 'disabled'));
+    toast(prefs.autoAccept ? 'Bed placements will be auto-accepted (logged as policy)' : 'Auto-accept turned off');
+  } else {
+    return;
+  }
+  render();
+}
+function trapFocus(e) {
+  const m = $('#modal');
+  if (!UI.modal || !m) return;
+  const items = Array.from(m.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+    .filter(x => !x.disabled && x.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1], active = document.activeElement;
+  if (!m.contains(active)) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+}
+function onKeyDown(e) {
+  if (e.key === 'Escape' && UI.modal) { e.preventDefault(); closeModal(); }
+  else if (e.key === 'Tab') trapFocus(e);
+}
+function wireEvents() {
+  const markInput = () => { UI.lastInput = Date.now(); };
+  ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'].forEach(ev =>
+    document.addEventListener(ev, markInput, { passive: true, capture: true }));
+  document.addEventListener('pointerdown', onPointerDown);
+  document.addEventListener('click', onClick);
+  document.addEventListener('change', onChange);
+  document.addEventListener('keydown', onKeyDown);
+
+  const box = $('#chart');
+  if (box) {
+    box.addEventListener('pointermove', e => { UI.hoverPx = e.clientX - box.getBoundingClientRect().left; positionHover(); });
+    box.addEventListener('pointerleave', () => { UI.hoverPx = null; positionHover(); });
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => renderChart(true)).observe(box);
+  }
+  window.addEventListener('resize', () => renderChart(true));
+}
+
+/* ---------- Loop & render ---------- */
+function render() {
+  if (!S) return;
+  renderHeader();
+  renderJourney();
+  renderInbound();
+  renderStaff();
+  renderPatients();
+  renderBeds();
+  renderEquipment();
+  renderDecisions();
+  renderFeed();
+  renderChart(false);
+  renderSources();
+  renderAnnouncements();
+  renderModal();
+  syncControls();
+}
+function loop() {
+  const now = Date.now();
+  const realDt = Math.min(1, Math.max(0, (now - UI.lastTick) / 1000));
+  UI.lastTick = now;
+  if (S.running) step(realDt * S.speed);
+  checkAutoLock();
+  render();
+}
+function boot() {
+  let theme = 'dark';
+  try {
+    const saved = localStorage.getItem(UI_THEME_KEY);
+    if (saved === 'light' || saved === 'dark') theme = saved;
+  } catch (err) { /* storage unavailable (private mode / sandbox): keep default theme */ }
+  applyTheme(theme);
+  init();
+  wireEvents();
+  UI.lastTick = Date.now();
+  UI.lastInput = Date.now();
+  setInterval(loop, 500);
+  render();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+
+</script>
+</body>
+</html>

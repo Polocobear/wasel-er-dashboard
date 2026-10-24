@@ -1,0 +1,9 @@
+# Local-only files
+.DS_Store
+.claude/
+v1.html
+__pycache__/
+*.pyc
+# Never commit biometric data
+*.db
+faces/
